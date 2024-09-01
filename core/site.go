@@ -123,7 +123,7 @@ type MetersConfig struct {
 
 // NewSiteFromConfig creates a new site
 func NewSiteFromConfig(other map[string]interface{}) (*Site, error) {
-	site := NewSite()		
+	site := NewSite()
 
 	// TODO remove
 	if err := util.DecodeOther(other, site); err != nil {
@@ -352,7 +352,8 @@ func (site *Site) restoreSettings() error {
 //		if err := site.SetHoldBatteryOnSmartCostLimit(v); err !=  nil {
 //			return err
 //		}
-//	}	
+//	}
+
 	return nil
 }
 

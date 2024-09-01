@@ -347,6 +347,7 @@ func (lp *Loadpoint) restoreSettings() {
 //	if v, err := lp.settings.Bool(keys.DisableDischargeControl); err == nil {
 //		lp.SetDisableDischargeControl(v)
 //	}
+
 	t, err1 := lp.settings.Time(keys.PlanTime)
 	v, err2 := lp.settings.Float(keys.PlanEnergy)
 	if err1 == nil && err2 == nil {
