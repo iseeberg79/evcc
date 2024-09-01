@@ -32,6 +32,7 @@ const (
 	SmartCostActive    = "smartCostActive"    // smart cost active
 	SmartCostLimit     = "smartCostLimit"     // smart cost limit
 	SmartCostNextStart = "smartCostNextStart" // smart cost next start
+	DisableDischargeControl = "disableDischargeControl" // disabling battery discharge control for this loadpoint
 
 	// effective values
 	EffectivePriority   = "effectivePriority"   // effective priority

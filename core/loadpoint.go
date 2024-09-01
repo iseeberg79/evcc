@@ -120,6 +120,8 @@ type Loadpoint struct {
 	ConfiguredPhases_ int           `mapstructure:"phases"`
 	MinCurrent_       float64       `mapstructure:"minCurrent"`
 	MaxCurrent_       float64       `mapstructure:"maxCurrent"`
+	
+	DisableDischargeControl	bool	`mapstructure:"disableDischargeControl"`
 
 	minCurrent       float64  // PV mode: start current	Min+PV mode: min current
 	maxCurrent       float64  // Max allowed current. Physically ensured by the charger
@@ -127,6 +129,8 @@ type Loadpoint struct {
 	limitSoc         int      // Session limit for soc
 	limitEnergy      float64  // Session limit for energy
 	smartCostLimit   *float64 // always charge if cost is below this value
+	//TODO decide wether to use the YAML/UI based variable
+	//disableDischargeControl	bool // disable discharge control for this loadpoint
 
 	mode                api.ChargeMode
 	enabled             bool      // Charger enabled state
@@ -339,7 +343,10 @@ func (lp *Loadpoint) restoreSettings() {
 	if v, err := lp.settings.Float(keys.SmartCostLimit); err == nil {
 		lp.SetSmartCostLimit(&v)
 	}
-
+	//TODO prepared for later use
+//	if v, err := lp.settings.Bool(keys.DisableDischargeControl); err == nil {
+//		lp.SetDisableDischargeControl(v)
+//	}
 	t, err1 := lp.settings.Time(keys.PlanTime)
 	v, err2 := lp.settings.Float(keys.PlanEnergy)
 	if err1 == nil && err2 == nil {
