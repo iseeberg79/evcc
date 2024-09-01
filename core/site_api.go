@@ -423,3 +423,24 @@ func (site *Site) SetBatteryGridChargeDisableThreshold(val float64) error {
 	}
 	return nil
 }
+
+func (site *Site) GetHoldBatteryOnSmartCostLimit() bool {
+	site.RLock()
+	defer site.RUnlock()
+	//site.log.DEBUG.Println("hold on BatterySmartCostLimit: ", site.HoldBatteryOnSmartCostLimit)
+	return site.HoldBatteryOnSmartCostLimit
+}
+
+func (site *Site) SetHoldBatteryOnSmartCostLimit(val bool) error {
+	site.log.DEBUG.Println("set hold on BatterySmartCostLimit: ", val)
+
+	site.Lock()
+	defer site.Unlock()
+
+	if site.HoldBatteryOnSmartCostLimit != val {
+		site.HoldBatteryOnSmartCostLimit = val
+		settings.SetBool(keys.HoldBatteryOnSmartCostLimit, val)
+		site.publish(keys.HoldBatteryOnSmartCostLimit, val)
+	}
+	return nil
+}

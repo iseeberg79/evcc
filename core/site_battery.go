@@ -116,6 +116,15 @@ func (site *Site) dischargeControlActive(rate api.Rate) bool {
 	if !site.GetBatteryDischargeControl() {
 		return false
 	}
+	
+	//site.log.DEBUG.Println("batteryDischange on GridChargeLimit setting: ", site.GetHoldBatteryOnSmartCostLimit())
+	if site.GetHoldBatteryOnSmartCostLimit() {
+		limit := site.GetBatteryGridChargeLimit()
+		if limit != nil && !rate.IsEmpty() && rate.Price <= *limit {
+			site.log.DEBUG.Println("batteryDischange hold because of gridChargeLimit setting: ", site.GetHoldBatteryOnSmartCostLimit())
+			return true
+		}
+	}
 
 	for _, lp := range site.Loadpoints() {
 		smartCostActive := site.smartCostActive(lp, rate)

@@ -79,6 +79,7 @@ type Site struct {
 	
 	BatteryGridChargeEnableThreshold float64 `mapstructure:"batteryGridChargeEnableThreshold"`
 	BatteryGridChargeDisableThreshold float64 `mapstructure:"batteryGridChargeDisableThreshold"`
+	HoldBatteryOnSmartCostLimit bool `mapstructure:"holdBatteryOnSmartCostLimit"`
 
 	// meters
 	circuit       api.Circuit // Circuit
@@ -346,7 +347,11 @@ func (site *Site) restoreSettings() error {
 //			return err
 //		}
 //	}
-	
+//	if v, err := settings.Bool(keys.HoldBatteryOnSmartCostLimit); err == nil {
+//		if err := site.SetHoldBatteryOnSmartCostLimit(v); err !=  nil {
+//			return err
+//		}
+//	}	
 	return nil
 }
 

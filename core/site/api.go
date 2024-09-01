@@ -52,6 +52,10 @@ type API interface {
 	GetBatteryGridChargeDisableThreshold() float64
 	SetBatteryGridChargeDisableThreshold(val float64) error
 
+	// enable battery hold for lower prices than smartCostLimit
+	GetHoldBatteryOnSmartCostLimit() bool
+	SetHoldBatteryOnSmartCostLimit(val bool) error
+	
 	//
 	// power and energy
 	//
