@@ -123,7 +123,7 @@ type MetersConfig struct {
 // NewSiteFromConfig creates a new site
 func NewSiteFromConfig(other map[string]interface{}) (*Site, error) {
 	site := NewSite()		
-	
+
 	// TODO remove
 	if err := util.DecodeOther(other, site); err != nil {
 		return nil, err
@@ -131,7 +131,7 @@ func NewSiteFromConfig(other map[string]interface{}) (*Site, error) {
 
 	// add meters from config
 	site.restoreMetersAndTitle()
-	
+
 	// TODO title
 	Voltage = site.Voltage
 	
@@ -268,8 +268,8 @@ func NewSite() *Site {
 		publishCache: make(map[string]any),
 		Voltage:      230, // V
 	}
-	
-	return lp	
+
+	return lp
 }
 
 // restoreMetersAndTitle restores site meter configuration
