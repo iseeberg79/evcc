@@ -379,3 +379,47 @@ func (site *Site) SetBatteryGridChargeLimit(val *float64) {
 		}
 	}
 }
+
+func (site *Site) GetBatteryGridChargeEnableThreshold() float64 {
+	site.RLock()
+	defer site.RUnlock()
+	//enable := site.BatteryGridChargeEnableThreshold
+	//site.log.DEBUG.Println("grid charge enable threshold:", enable)
+	return site.BatteryGridChargeEnableThreshold
+}
+
+func (site *Site) SetBatteryGridChargeEnableThreshold(val float64) error {
+	site.log.DEBUG.Println("set grid charge enable threshold:", val)
+
+	site.Lock()
+	defer site.Unlock()
+
+	if site.BatteryGridChargeEnableThreshold != val {
+		site.BatteryGridChargeEnableThreshold = val
+		settings.SetFloat(keys.BatteryGridChargeEnableThreshold, val)
+		site.publish(keys.BatteryGridChargeEnableThreshold, val)
+	}
+	return nil
+}
+
+func (site *Site) GetBatteryGridChargeDisableThreshold() float64 {
+	site.RLock()
+	defer site.RUnlock()
+	//disable := site.BatteryGridChargeDisableThreshold
+	//site.log.DEBUG.Println("grid charge disable threshold:", disable)
+	return site.BatteryGridChargeDisableThreshold
+}
+
+func (site *Site) SetBatteryGridChargeDisableThreshold(val float64) error {
+	site.log.DEBUG.Println("set grid charge disable threshold:", val)
+
+	site.Lock()
+	defer site.Unlock()
+
+	if site.BatteryGridChargeDisableThreshold != val {
+		site.BatteryGridChargeDisableThreshold = val
+		settings.SetFloat(keys.BatteryGridChargeDisableThreshold, val)
+		site.publish(keys.BatteryGridChargeDisableThreshold, val)
+	}
+	return nil
+}

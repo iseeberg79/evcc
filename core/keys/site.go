@@ -43,6 +43,8 @@ const (
 	BatteryDischargeControl           = "batteryDischargeControl"
 	BatteryGridChargeLimit            = "batteryGridChargeLimit"
 	BatteryGridChargeActive           = "batteryGridChargeActive"
+	BatteryGridChargeEnableThreshold =  "batteryGridChargeEnableThreshold"
+	BatteryGridChargeDisableThreshold = "batteryGridChargeDisableThreshold"
 	BufferSoc                         = "bufferSoc"
 	BufferStartSoc                    = "bufferStartSoc"
 	MaxGridSupplyWhileBatteryCharging = "maxGridSupplyWhileBatteryCharging"

@@ -44,6 +44,13 @@ type API interface {
 	GetBatteryGridChargeLimit() *float64
 	// SetBatteryGridChargeLimit sets the grid charge limit
 	SetBatteryGridChargeLimit(limit *float64)
+	
+	//// sets the minimal SoC level to enable grid charge
+	GetBatteryGridChargeEnableThreshold() float64
+	SetBatteryGridChargeEnableThreshold(val float64) error
+	//// sets the maximum SoC level to disable grid charge
+	GetBatteryGridChargeDisableThreshold() float64
+	SetBatteryGridChargeDisableThreshold(val float64) error
 
 	//
 	// power and energy

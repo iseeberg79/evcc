@@ -184,6 +184,8 @@ func (m *MQTT) listenSiteSetters(topic string, site site.API) error {
 			}
 		}))},
 		{"/batteryGridChargeLimit", floatPtrSetter(pass(site.SetBatteryGridChargeLimit))},
+		{"/batteryGridChargeEnableThreshold", floatSetter(site.SetBatteryGridChargeEnableThreshold)},
+		{"/batteryGridChargeDisableThreshold", floatSetter(site.SetBatteryGridChargeDisableThreshold)},
 	} {
 		if err := m.Handler.ListenSetter(topic+s.topic, s.fun); err != nil {
 			return err

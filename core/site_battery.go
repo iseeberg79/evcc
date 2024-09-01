@@ -85,7 +85,31 @@ func (site *Site) smartCostActive(lp loadpoint.API, rate api.Rate) bool {
 
 func (site *Site) batteryGridChargeActive(rate api.Rate) bool {
 	limit := site.GetBatteryGridChargeLimit()
-	return limit != nil && !rate.IsEmpty() && rate.Price <= *limit
+	enable := site.GetBatteryGridChargeEnableThreshold()
+	disable := site.GetBatteryGridChargeDisableThreshold()
+	
+	// ensure proper values for thresholds and initialize smartGridUsage-Feature with defaults
+	// TODO based on batteryMaxSoC & batteryMinSoC 
+	if site.BatteryGridChargeDisableThreshold == 0 || site.BatteryGridChargeDisableThreshold>100 {
+		site.BatteryGridChargeDisableThreshold=100
+	}
+	if site.BatteryGridChargeEnableThreshold < 0 {
+		site.BatteryGridChargeEnableThreshold=0
+	}
+		
+	if disable < enable {
+		site.log.WARN.Println("correction of grid charge disable threshold as it shall not be lower than enable threshold, correcting: ", enable)
+		site.SetBatteryGridChargeDisableThreshold(enable)
+	} 
+	
+	//return limit != nil && !rate.IsEmpty() && rate.Price <= *limit
+	if site.batteryMode == api.BatteryCharge {
+		// take disable threshold into account
+		return limit != nil && !rate.IsEmpty() && rate.Price <= *limit && site.batterySoc <= disable
+	} else {
+		// take enable threshold into account (default: 20% lower than disable threshold)
+		return limit != nil && !rate.IsEmpty() && rate.Price <= *limit && site.batterySoc <= enable
+	}
 }
 
 func (site *Site) dischargeControlActive(rate api.Rate) bool {

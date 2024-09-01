@@ -76,6 +76,9 @@ type Site struct {
 	CircuitRef_ string `mapstructure:"circuit"` // Circuit reference
 
 	MaxGridSupplyWhileBatteryCharging float64 `mapstructure:"maxGridSupplyWhileBatteryCharging"` // ignore battery charging if AC consumption is above this value
+	
+	BatteryGridChargeEnableThreshold float64 `mapstructure:"batteryGridChargeEnableThreshold"`
+	BatteryGridChargeDisableThreshold float64 `mapstructure:"batteryGridChargeDisableThreshold"`
 
 	// meters
 	circuit       api.Circuit // Circuit
@@ -119,8 +122,8 @@ type MetersConfig struct {
 
 // NewSiteFromConfig creates a new site
 func NewSiteFromConfig(other map[string]interface{}) (*Site, error) {
-	site := NewSite()
-
+	site := NewSite()		
+	
 	// TODO remove
 	if err := util.DecodeOther(other, site); err != nil {
 		return nil, err
@@ -128,9 +131,17 @@ func NewSiteFromConfig(other map[string]interface{}) (*Site, error) {
 
 	// add meters from config
 	site.restoreMetersAndTitle()
-
+	
 	// TODO title
 	Voltage = site.Voltage
+	
+	//// initialize smartGridUsage-Feature with defaults
+	if site.BatteryGridChargeDisableThreshold == 0 || site.BatteryGridChargeDisableThreshold>100 {
+		site.BatteryGridChargeDisableThreshold=100
+	}
+	if site.BatteryGridChargeEnableThreshold < 0 {
+		site.BatteryGridChargeEnableThreshold=0
+	}
 
 	return site, nil
 }
@@ -210,7 +221,16 @@ func (site *Site) Boot(log *util.Logger, loadpoints []*Loadpoint, tariffs *tarif
 	if len(site.batteryMeters) > 0 && site.GetResidualPower() <= 0 {
 		site.log.WARN.Println("battery configured but residualPower is missing or <= 0 (add residualPower: 100 to site), see https://docs.evcc.io/en/docs/reference/configuration/site#residualpower")
 	}
-
+	
+	if len(site.batteryMeters) > 0 && (site.GetBatteryGridChargeEnableThreshold() <= 0 || site.GetBatteryGridChargeEnableThreshold() > 100) {
+		site.log.WARN.Println("battery configured, initializing GridChargeThreshold (add batteryGridChargeEnableThreshold: 100 to site)")
+		site.SetBatteryGridChargeEnableThreshold(100)
+	}	
+	if len(site.batteryMeters) > 0 && (site.GetBatteryGridChargeDisableThreshold() <= 0 || site.GetBatteryGridChargeDisableThreshold() > 100) {
+		site.log.WARN.Println("battery configured, initializing GridChargeThreshold (add batteryGridChargeDisableThreshold: 100 to site)")
+		site.SetBatteryGridChargeDisableThreshold(100)
+	}
+	
 	// Meters used only for monitoring
 	for _, ref := range site.Meters.ExtMetersRef {
 		dev, err := config.Meters().ByName(ref)
@@ -248,8 +268,7 @@ func NewSite() *Site {
 		publishCache: make(map[string]any),
 		Voltage:      230, // V
 	}
-
-	return lp
+	return lp	
 }
 
 // restoreMetersAndTitle restores site meter configuration
@@ -316,7 +335,18 @@ func (site *Site) restoreSettings() error {
 	if v, err := settings.Float(keys.BatteryGridChargeLimit); err == nil {
 		site.SetBatteryGridChargeLimit(&v)
 	}
-
+//  TODO based on UI configuration and stored settings
+//	if v, err := settings.Float(keys.BatteryGridChargeEnableThreshold); err == nil {
+//		if err := site.SetBatteryGridChargeEnableThreshold(v); err !=  nil {
+//			return err
+//		}
+//	}	
+//	if v, err := settings.Float(keys.BatteryGridChargeDisableThreshold); err == nil {
+//		if err := site.SetBatteryGridChargeDisableThreshold(v); err !=  nil {
+//			return err
+//		}
+//	}
+	
 	return nil
 }
 
@@ -914,6 +944,9 @@ func (site *Site) prepare() {
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
 	site.publish(keys.ResidualPower, site.GetResidualPower())
 
+	site.publish(keys.BatteryGridChargeEnableThreshold, site.GetBatteryGridChargeEnableThreshold())
+	site.publish(keys.BatteryGridChargeDisableThreshold, site.GetBatteryGridChargeDisableThreshold())
+	
 	site.publish(keys.Currency, site.tariffs.Currency)
 	if tariff := site.GetTariff(PlannerTariff); tariff != nil {
 		site.publish(keys.SmartCostType, tariff.Type())
