@@ -515,6 +515,27 @@ func (lp *Loadpoint) SetSmartCostLimit(val *float64) {
 	}
 }
 
+// GetDisableDischargeControl determines if discharge control is disabled
+func (lp *Loadpoint) GetDisableDischargeControl() bool {
+	lp.RLock()
+	defer lp.RUnlock()
+	//lp.log.DEBUG.Println("loadpoint discharge control disabled: ", lp.DisableDischargeControl)
+	//TODO decide wether to use YAML/UI based variable
+	return lp.DisableDischargeControl
+}
+
+// SetDisableDischargeControl sets the setting for battery control
+func (lp *Loadpoint) SetDisableDischargeControl(val bool) {
+	lp.Lock()
+	defer lp.Unlock()
+
+	lp.log.DEBUG.Println("set loadpoint discharge control disabled: ", val)
+
+	lp.settings.SetBool(keys.DisableDischargeControl, val)
+	lp.publish(keys.DisableDischargeControl, val)
+
+}
+
 // GetCircuit returns the assigned circuit
 func (lp *Loadpoint) GetCircuit() api.Circuit {
 	lp.RLock()

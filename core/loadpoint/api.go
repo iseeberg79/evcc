@@ -113,6 +113,11 @@ type API interface {
 	GetSmartCostLimit() *float64
 	// SetSmartCostLimit sets the smart cost limit
 	SetSmartCostLimit(limit *float64)
+	
+	// GetDisableDischargeControl determines if discharge control is disabled
+	GetDisableDischargeControl() bool
+	// SetDisableDischargeControl sets the setting for battery control
+	SetDisableDischargeControl(val bool)
 
 	//
 	// power and energy
