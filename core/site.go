@@ -268,6 +268,7 @@ func NewSite() *Site {
 		publishCache: make(map[string]any),
 		Voltage:      230, // V
 	}
+	
 	return lp	
 }
 
