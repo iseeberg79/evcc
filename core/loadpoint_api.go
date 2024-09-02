@@ -533,7 +533,6 @@ func (lp *Loadpoint) SetDisableDischargeControl(val bool) {
 
 	lp.settings.SetBool(keys.DisableDischargeControl, val)
 	lp.publish(keys.DisableDischargeControl, val)
-
 }
 
 // GetCircuit returns the assigned circuit
