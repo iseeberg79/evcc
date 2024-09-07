@@ -531,7 +531,8 @@ func (lp *Loadpoint) SetDisableDischargeControl(val bool) {
 
 	lp.log.DEBUG.Println("set loadpoint discharge control disabled: ", val)
 
-	lp.settings.SetBool(keys.DisableDischargeControl, val)
+	//TODO prepared for later use
+	//lp.settings.SetBool(keys.DisableDischargeControl, val)
 	lp.publish(keys.DisableDischargeControl, val)
 }
 

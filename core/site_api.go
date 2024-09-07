@@ -396,7 +396,8 @@ func (site *Site) SetBatteryGridChargeEnableThreshold(val float64) error {
 
 	if site.BatteryGridChargeEnableThreshold != val {
 		site.BatteryGridChargeEnableThreshold = val
-		settings.SetFloat(keys.BatteryGridChargeEnableThreshold, val)
+		//TODO prepared for later use
+		//settings.SetFloat(keys.BatteryGridChargeEnableThreshold, val)
 		site.publish(keys.BatteryGridChargeEnableThreshold, val)
 	}
 	return nil
@@ -418,7 +419,8 @@ func (site *Site) SetBatteryGridChargeDisableThreshold(val float64) error {
 
 	if site.BatteryGridChargeDisableThreshold != val {
 		site.BatteryGridChargeDisableThreshold = val
-		settings.SetFloat(keys.BatteryGridChargeDisableThreshold, val)
+		//TODO prepared for later use
+		//settings.SetFloat(keys.BatteryGridChargeDisableThreshold, val)
 		site.publish(keys.BatteryGridChargeDisableThreshold, val)
 	}
 	return nil
