@@ -11,7 +11,7 @@ import (
 // timestampValid returns false if status timestamps are outdated
 func (conn *Connector) timestampValid(t time.Time) bool {
 	// reject if expired
-	if conn.clock.Since(t) > messageExpiry {
+	if conn.clock.Since(t) > Timeout {
 		return false
 	}
 
@@ -35,6 +35,14 @@ func (conn *Connector) StatusNotification(request *core.StatusNotificationReques
 		conn.status = request
 	} else {
 		conn.log.TRACE.Printf("ignoring status: %s < %s", request.Timestamp.Time, conn.status.Timestamp)
+	}
+
+	if conn.isWaitingForAuth() {
+		if conn.remoteIdTag != "" {
+			defer conn.remoteStartTransactionRequest()
+		} else {
+			conn.log.DEBUG.Printf("waiting for local authentication")
+		}
 	}
 
 	return new(core.StatusNotificationConfirmation), nil
@@ -84,7 +92,7 @@ func (conn *Connector) StartTransaction(request *core.StartTransactionRequest) (
 	defer conn.mu.Unlock()
 
 	// expired request
-	if request.Timestamp != nil && conn.clock.Since(request.Timestamp.Time) > transactionExpiry {
+	if request.Timestamp != nil && conn.clock.Since(request.Timestamp.Time) > Timeout {
 		res := &core.StartTransactionConfirmation{
 			IdTagInfo: &types.IdTagInfo{
 				Status: types.AuthorizationStatusExpired, // reject
@@ -133,7 +141,7 @@ func (conn *Connector) StopTransaction(request *core.StopTransactionRequest) (*c
 	defer conn.mu.Unlock()
 
 	// expired request
-	if request.Timestamp != nil && conn.clock.Since(request.Timestamp.Time) > transactionExpiry {
+	if request.Timestamp != nil && conn.clock.Since(request.Timestamp.Time) > Timeout {
 		res := &core.StopTransactionConfirmation{
 			IdTagInfo: &types.IdTagInfo{
 				Status: types.AuthorizationStatusExpired, // reject

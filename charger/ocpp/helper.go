@@ -9,13 +9,13 @@ import (
 	"github.com/lorenzodonini/ocpp-go/ocpp1.6/types"
 )
 
-// Wait waits for a CP roundtrip with timeout
-func Wait(err error, rc chan error, timeout time.Duration) error {
+// wait waits for a CP roundtrip with timeout
+func wait(err error, rc chan error) error {
 	if err == nil {
 		select {
 		case err = <-rc:
 			close(rc)
-		case <-time.After(timeout):
+		case <-time.After(Timeout):
 			err = api.ErrTimeout
 		}
 	}

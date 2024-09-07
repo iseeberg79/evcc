@@ -435,6 +435,9 @@ func (lp *Loadpoint) evChargeStartHandler() {
 	lp.log.INFO.Println("start charging ->")
 	lp.pushEvent(evChargeStart)
 
+	// charge status
+	lp.publish(keys.ChargerStatusReason, api.ReasonUnknown)
+
 	lp.stopWakeUpTimer()
 
 	// soc update reset
@@ -516,6 +519,9 @@ func (lp *Loadpoint) evVehicleDisconnectHandler() {
 	lp.sessionEnergy.Publish("session", lp)
 	lp.publish(keys.ChargedEnergy, lp.getChargedEnergy())
 	lp.publish(keys.ConnectedDuration, lp.clock.Since(lp.connectedTime).Round(time.Second))
+
+	// charge status
+	lp.publish(keys.ChargerStatusReason, api.ReasonUnknown)
 
 	// forget startup energy offset
 	lp.chargedAtStartup = 0
@@ -1682,7 +1688,7 @@ func (lp *Loadpoint) Update(sitePower float64, rates api.Rates, batteryBuffered,
 	lp.publish(keys.Connected, lp.connected())
 	lp.publish(keys.Charging, lp.charging())
 
-	if sr, ok := lp.charger.(api.StatusReasoner); ok {
+	if sr, ok := lp.charger.(api.StatusReasoner); ok && lp.GetStatus() == api.StatusB {
 		if r, err := sr.StatusReason(); err == nil {
 			lp.publish(keys.ChargerStatusReason, r)
 		} else {

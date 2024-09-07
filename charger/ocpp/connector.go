@@ -1,6 +1,7 @@
 package ocpp
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -27,14 +28,15 @@ type Connector struct {
 
 	meterUpdated time.Time
 	measurements map[types.Measurand]types.SampledValue
-	timeout      time.Duration
 
 	txnCount int // change initial value to the last known global transaction. Needs persistence
 	txnId    int
 	idTag    string
+
+	remoteIdTag string
 }
 
-func NewConnector(log *util.Logger, id int, cp *CP, timeout time.Duration) (*Connector, error) {
+func NewConnector(log *util.Logger, id int, cp *CP, idTag string) (*Connector, error) {
 	conn := &Connector{
 		log:          log,
 		cp:           cp,
@@ -42,7 +44,8 @@ func NewConnector(log *util.Logger, id int, cp *CP, timeout time.Duration) (*Con
 		clock:        clock.New(),
 		statusC:      make(chan struct{}, 1),
 		measurements: make(map[types.Measurand]types.SampledValue),
-		timeout:      timeout,
+
+		remoteIdTag: idTag,
 	}
 
 	err := cp.registerConnector(id, conn)
@@ -73,6 +76,45 @@ func (conn *Connector) TriggerMessageRequest(feature remotetrigger.MessageTrigge
 	})
 }
 
+func (conn *Connector) remoteStartTransactionRequest() {
+	rc := make(chan error, 1)
+	err := Instance().RemoteStartTransaction(conn.cp.ID(), func(resp *core.RemoteStartTransactionConfirmation, err error) {
+		if err == nil && resp != nil && resp.Status != types.RemoteStartStopStatusAccepted {
+			err = errors.New(string(resp.Status))
+		}
+
+		rc <- err
+	}, conn.remoteIdTag, func(request *core.RemoteStartTransactionRequest) {
+		connector := conn.id
+		request.ConnectorId = &connector
+	})
+
+	if err := wait(err, rc); err != nil {
+		conn.log.ERROR.Printf("failed to start remote transaction: %v", err)
+	}
+}
+
+func (conn *Connector) SetChargingProfile(profile *types.ChargingProfile) error {
+	return Instance().SetChargingProfileRequest(conn.cp.ID(), conn.id, profile)
+}
+
+// getScheduleLimit queries the current or power limit the charge point is currently set to offer
+func (conn *Connector) GetScheduleLimit(duration int) (float64, error) {
+	var limit float64
+	schedule, err := Instance().GetCompositeScheduleRequest(conn.cp.ID(), conn.id, duration)
+
+	if err == nil {
+		if schedule != nil && len(schedule.ChargingSchedulePeriod) > 0 {
+			// return first (current) period limit
+			limit = schedule.ChargingSchedulePeriod[0].Limit
+		} else {
+			err = fmt.Errorf("invalid ChargingSchedule")
+		}
+	}
+
+	return limit, err
+}
+
 // WatchDog triggers meter values messages if older than timeout.
 // Must be wrapped in a goroutine.
 func (conn *Connector) WatchDog(timeout time.Duration) {
@@ -90,8 +132,8 @@ func (conn *Connector) WatchDog(timeout time.Duration) {
 
 // Initialized waits for initial charge point status notification
 func (conn *Connector) Initialized() error {
-	trigger := time.After(conn.timeout / 2)
-	timeout := time.After(conn.timeout)
+	trigger := time.After(Timeout / 2)
+	timeout := time.After(Timeout)
 	for {
 		select {
 		case <-conn.statusC:
@@ -147,13 +189,19 @@ func (conn *Connector) NeedsAuthentication() bool {
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 
+	return conn.isWaitingForAuth()
+}
+
+// isWaitingForAuth checks if meter values are outdated.
+// Must only be called while holding lock.
+func (conn *Connector) isWaitingForAuth() bool {
 	return conn.status != nil && conn.txnId == 0 && conn.status.Status == core.ChargePointStatusPreparing
 }
 
 // isMeterTimeout checks if meter values are outdated.
 // Must only be called while holding lock.
 func (conn *Connector) isMeterTimeout() bool {
-	return conn.timeout > 0 && conn.clock.Since(conn.meterUpdated) > conn.timeout
+	return conn.clock.Since(conn.meterUpdated) > Timeout
 }
 
 var _ api.CurrentGetter = (*Connector)(nil)
