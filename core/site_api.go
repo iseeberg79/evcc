@@ -11,11 +11,14 @@ import (
 	"github.com/evcc-io/evcc/server/db/settings"
 	"github.com/evcc-io/evcc/util/config"
 	"github.com/samber/lo"
+
+	"time"
 )
 
 var _ site.API = (*Site)(nil)
 
 var ErrBatteryNotConfigured = errors.New("battery not configured")
+var batteryModeExternalTimer time.Time
 
 const (
 	GridTariff    = "grid"
@@ -379,3 +382,48 @@ func (site *Site) SetBatteryGridChargeLimit(val *float64) {
 		}
 	}
 }
+
+// GetMode returns external battery mode
+func (site *Site) GetBatteryModeExternal() api.BatteryMode {
+	site.RLock()
+	defer site.RUnlock()
+	return site.batteryModeExternal
+}
+
+// setMode sets external battery mode (no mutex)
+func (site *Site) setBatteryModeExternal(mode api.BatteryMode) {
+	site.batteryModeExternal = mode
+	site.publish(keys.BatteryModeExternal, mode)
+}
+
+// SetMode sets external battery mode
+func (site *Site) SetBatteryModeExternal(mode api.BatteryMode) {
+	site.Lock()
+	defer site.Unlock()
+
+	if _, err := api.BatteryModeString(mode.String()); err != nil {
+		site.log.ERROR.Printf("invalid battery mode external: %s", string(mode))
+		return
+	}
+
+	site.log.DEBUG.Printf("set battery mode external: %s", string(mode))
+
+	// apply immediately
+	if site.batteryModeExternal != mode {
+		site.setBatteryModeExternal(mode)
+		
+		// reset timers
+	}
+	batteryModeExternalTimer = time.Now()
+}
+
+// GetBatteryModeExternalModified returns the seconds since last modification 
+func (site *Site) GetBatteryModeExternalModified() int {
+	site.RLock()
+	defer site.RUnlock()
+	if !(batteryModeExternalTimer.IsZero()) {
+		return int(time.Since(batteryModeExternalTimer).Seconds())
+	}
+	return -1
+}
+

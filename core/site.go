@@ -99,11 +99,12 @@ type Site struct {
 	stats       *Stats                   // Stats
 
 	// cached state
-	gridPower    float64         // Grid power
-	pvPower      float64         // PV power
-	batteryPower float64         // Battery charge power
-	batterySoc   float64         // Battery soc
-	batteryMode  api.BatteryMode // Battery mode (runtime only, not persisted)
+	gridPower    float64                // Grid power
+	pvPower      float64                // PV power
+	batteryPower float64                // Battery charge power
+	batterySoc   float64                // Battery soc
+	batteryMode  api.BatteryMode        // Battery mode (runtime only, not persisted)
+	batteryModeExternal api.BatteryMode // Battery mode (external, runtime only, not persisted)
 
 	publishCache map[string]any // store last published values to avoid unnecessary republishing
 }

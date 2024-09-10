@@ -92,6 +92,11 @@ func (site *Site) dischargeControlActive(rate api.Rate) bool {
 	if !site.GetBatteryDischargeControl() {
 		return false
 	}
+	
+	// Batteriesperre innerhalb der letzten 5 Minuten wiederholt gesetzt?
+	if (site.GetBatteryModeExternalModified()>0 && site.GetBatteryModeExternalModified()<300) {
+		return true
+	}
 
 	for _, lp := range site.Loadpoints() {
 		smartCostActive := site.smartCostActive(lp, rate)
