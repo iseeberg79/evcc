@@ -118,6 +118,7 @@ func (s *HTTPd) RegisterSiteHandlers(site site.API, valueChan chan<- util.Param)
 		"deletesession":           {"DELETE", "/session/{id:[0-9]+}", deleteSessionHandler},
 		"telemetry":               {"GET", "/settings/telemetry", boolGetHandler(telemetry.Enabled)},
 		"telemetry2":              {"POST", "/settings/telemetry/{value:[a-z]+}", boolHandler(telemetry.Enable, telemetry.Enabled)},
+		"batterymodeexternal":     {"POST", "/batterymodeexternal/{value:[a-z]+}", modeHandler(pass(site.SetBatteryModeExternal), site.GetBatteryModeExternal)},
 	}
 
 	for _, r := range routes {
