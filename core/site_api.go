@@ -392,6 +392,7 @@ func (site *Site) GetBatteryModeExternal() api.BatteryMode {
 
 // setMode sets external battery mode (no mutex)
 func (site *Site) setBatteryModeExternal(mode api.BatteryMode) {
+	site.log.DEBUG.Printf("set battery mode external: %s", string(mode))
 	site.batteryModeExternal = mode
 	site.publish(keys.BatteryModeExternal, mode)
 }
@@ -405,8 +406,6 @@ func (site *Site) SetBatteryModeExternal(mode api.BatteryMode) {
 		site.log.ERROR.Printf("invalid battery mode external: %s", string(mode))
 		return
 	}
-
-	site.log.DEBUG.Printf("set battery mode external: %s", string(mode))
 
 	// apply immediately
 	if site.batteryModeExternal != mode {
@@ -424,6 +423,7 @@ func (site *Site) GetBatteryModeExternalModified() int {
 	if !(batteryModeExternalTimer.IsZero()) {
 		return int(time.Since(batteryModeExternalTimer).Seconds())
 	}
+	site.setBatteryModeExternal(api.BatteryNormal) //reset batteryMode to normal (no external updates)
 	return -1
 }
 
