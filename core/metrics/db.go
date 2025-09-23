@@ -53,12 +53,13 @@ func Profile(from time.Time) (*[96]float64, error) {
 	}
 
 	// 2. Werte abrufen wie im Original
+	// Use 'localtime' in strftime to fix https://github.com/evcc-io/evcc/discussions/23759
 	rows, err := db.Query(`
 		SELECT min(ts) AS ts, avg(val) AS val
 		FROM meters
 		WHERE meter = ? AND ts >= ?
-		GROUP BY strftime("%H:%M", ts)
-		ORDER BY strftime("%H:%M", ts) ASC
+		GROUP BY strftime("%H:%M", ts, 'localtime')
+		ORDER BY strftime("%H:%M", ts, 'localtime') ASC
 	`, 1, from)
 	if err != nil {
 		return nil, err
@@ -98,14 +99,6 @@ func Profile(from time.Time) (*[96]float64, error) {
 		}
 	}
 
-	//// 5. Werte ausgeben (Debug)
-	//total := len(res)
-	//for i, val := range res {
-	//	hour := i / 4
-	//	min := (i % 4) * 15
-	//	fmt.Printf("[%d/%d] %02d:%02d -> %.6f\n", i+1, total, hour, min, val)
-	//}
-
-	// 6. Direkt als Array-Pointer zurückgeben
+	// 5. Direkt als Array-Pointer zurückgeben
 	return (*[96]float64)(res[:]), nil
 }
