@@ -58,6 +58,7 @@ func (m *batterySocLimits) Decorator() func() (float64, float64) {
 		return m.MinSoc, m.MaxSoc
 	}
 }
+
 // LimitController returns an api.BatteryController decorator with support for dynamic SoC limits
 func (m *batterySocLimits) LimitController(
 	socG func() (float64, error),
@@ -111,4 +112,29 @@ func (m *batterySocLimits) LimitController(
 			return api.ErrNotAvailable
 		}
 	}
+}
+
+// GetSocLimits returns the current min and max SoC limits.
+// If dynamic sources are configured, it will read them; otherwise static defaults are returned.
+func (b *batterySocLimits) GetSocLimits() (float64, float64) {
+	min, max := b.MinSoc, b.MaxSoc
+	ctx := context.Background()
+
+	if b.MinSocSource != nil {
+		if getter, err := b.MinSocSource.FloatGetter(ctx); err == nil {
+			if val, err := getter(); err == nil {
+				min = val
+			}
+		}
+	}
+
+	if b.MaxSocSource != nil {
+		if getter, err := b.MaxSocSource.FloatGetter(ctx); err == nil {
+			if val, err := getter(); err == nil {
+				max = val
+			}
+		}
+	}
+
+	return min, max
 }
