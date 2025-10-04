@@ -40,12 +40,17 @@ params:
     advanced: true
   - name: capacity
     advanced: true
+  - name: maxsoc
+    advanced: true
   - name: maxacpower
   - name: maxchargerate
+    deprecated: true
     advanced: true
-  - name: minsoc
+  - name: maxchargepower
+    default: 4200
     advanced: true
-  - name: maxsoc
+  - name: maxdischargepower
+    default: 4200
     advanced: true
   - name: watchdog
     type: duration
@@ -83,8 +88,6 @@ render: |
     source: sunspec
     {{- include "modbus" . | indent 2 }}
     value: 802:SoC # 802 battery control
-  minsoc: {{ .minsoc }} # %
-  maxsoc: {{ .maxsoc }} # %
   batterymode:
     source: watchdog
     timeout: {{ .watchdog }} # re-write at timeout/2
@@ -95,35 +98,40 @@ render: |
       - case: 1 # normal
         set:
           source: const
-          value: 0 # % (set once to reset from forced charge)
+          value: 0 # W (set once to reset from forced charge)
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}
             register:
-              address: 1028 # battery charge current (DC) setpoint, relative [%]
+              address: 1034 # battery charge current (DC) setpoint, absolute [W]
               type: writemultiple
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
       - case: 2 # hold
         set:
           source: const
-          value: 0 # %
+          value: 0 # W
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}
             register:
-              address: 1028 # battery charge current (DC) setpoint, relative [%]
+              address: 1034 # battery charge current (DC) setpoint, absolute [W]
               type: writemultiple
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
       - case: 3 # charge
         set:
           source: const
-          value: -{{ .maxchargerate }} # %
+          value: -{{ .maxchargepower }} # W
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}
             register:
-              address: 1028 # battery charge current (DC) setpoint, relative [%]
+              address: 1034 # battery charge current (DC) setpoint, relative [W]
               type: writemultiple
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
   capacity: {{ .capacity }} # kWh
+  minsoc:
+    source: sunspec
+    {{- include "modbus" . | indent 2 }}
+    value: 802:SoCRsvMin # minimum reserve SoC
+  maxsoc: {{ .maxsoc }} # maxsoc
   {{- end }}
