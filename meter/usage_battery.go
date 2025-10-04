@@ -1,6 +1,10 @@
 package meter
 
-import "github.com/evcc-io/evcc/api"
+import (
+	"context"
+	"github.com/evcc-io/evcc/plugin"
+	"github.com/evcc-io/evcc/api"
+)
 
 type batteryCapacity struct {
 	Capacity float64
@@ -35,8 +39,14 @@ func (m *batteryPowerLimits) Decorator() func() (float64, float64) {
 	}
 }
 
+// extended structure to enable plugin-config
 type batterySocLimits struct {
-	MinSoc, MaxSoc float64
+        MinSoc float64 `mapstructure:"minsoc"`
+        MaxSoc float64 `mapstructure:"maxsoc"`
+
+        // dynamic plugin configuration (optional, if not filled by mapstructure)
+        MinSocSource *plugin.Config `mapstructure:"-"`
+        MaxSocSource *plugin.Config `mapstructure:"-"`
 }
 
 // Decorator returns an api.BatterySocLimiter decorator

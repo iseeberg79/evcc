@@ -16,16 +16,6 @@ func init() {
 
 //go:generate go tool decorate -f decorateMeter -b api.Meter -t "api.MeterEnergy,TotalEnergy,func() (float64, error)" -t "api.PhaseCurrents,Currents,func() (float64, float64, float64, error)" -t "api.PhaseVoltages,Voltages,func() (float64, float64, float64, error)" -t "api.PhasePowers,Powers,func() (float64, float64, float64, error)" -t "api.Battery,Soc,func() (float64, error)" -t "api.BatteryCapacity,Capacity,func() float64" -t "api.BatterySocLimiter,GetSocLimits,func() (float64, float64)" -t "api.BatteryPowerLimiter,GetPowerLimits,func() (float64, float64)" -t "api.BatteryController,SetBatteryMode,func(api.BatteryMode) error" -t "api.MaxACPowerGetter,MaxACPower,func() float64"
 
-// extended structure to enable plugin-config
-type batterySocLimits struct {
-	MinSoc float64 `mapstructure:"minsoc"`
-	MaxSoc float64 `mapstructure:"maxsoc"`
-
-	// dynamic plugin configuration (optional, if not filled by mapstructure)
-	MinSocSource *plugin.Config `mapstructure:"-"`
-	MaxSocSource *plugin.Config `mapstructure:"-"`
-}
-
 // NewConfigurableFromConfig creates api.Meter from config
 func NewConfigurableFromConfig(ctx context.Context, other map[string]interface{}) (api.Meter, error) {
 	// defensive copy, deleting keys
