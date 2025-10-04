@@ -16,8 +16,35 @@ func init() {
 
 //go:generate go tool decorate -f decorateMeter -b api.Meter -t "api.MeterEnergy,TotalEnergy,func() (float64, error)" -t "api.PhaseCurrents,Currents,func() (float64, float64, float64, error)" -t "api.PhaseVoltages,Voltages,func() (float64, float64, float64, error)" -t "api.PhasePowers,Powers,func() (float64, float64, float64, error)" -t "api.Battery,Soc,func() (float64, error)" -t "api.BatteryCapacity,Capacity,func() float64" -t "api.BatterySocLimiter,GetSocLimits,func() (float64, float64)" -t "api.BatteryPowerLimiter,GetPowerLimits,func() (float64, float64)" -t "api.BatteryController,SetBatteryMode,func(api.BatteryMode) error" -t "api.MaxACPowerGetter,MaxACPower,func() float64"
 
+// extended structure to enable plugin-config
+type batterySocLimits struct {
+	MinSoc float64 `mapstructure:"minsoc"`
+	MaxSoc float64 `mapstructure:"maxsoc"`
+
+	// dynamic plugin configuration (optional, if not filled by mapstructure)
+	MinSocSource *plugin.Config `mapstructure:"-"`
+	MaxSocSource *plugin.Config `mapstructure:"-"`
+}
+
 // NewConfigurableFromConfig creates api.Meter from config
 func NewConfigurableFromConfig(ctx context.Context, other map[string]interface{}) (api.Meter, error) {
+	// defensive copy, deleting keys
+	otherCopy := make(map[string]interface{}, len(other))
+	for k, v := range other {
+		otherCopy[k] = v
+	}
+
+	// check minsoc/maxsoc for plugin maps
+	var minsocMap, maxsocMap map[string]interface{}
+	if v, ok := otherCopy["minsoc"].(map[string]interface{}); ok {
+		minsocMap = v
+		delete(otherCopy, "minsoc")
+	}
+	if v, ok := otherCopy["maxsoc"].(map[string]interface{}); ok {
+		maxsocMap = v
+		delete(otherCopy, "maxsoc")
+	}
+
 	cc := struct {
 		measurement.Energy `mapstructure:",squash"` // energy optional
 		measurement.Phases `mapstructure:",squash"` // optional
@@ -39,8 +66,25 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]interface{}
 		},
 	}
 
-	if err := util.DecodeOther(other, &cc); err != nil {
+	// decode anything, but dynamic maps
+	if err := util.DecodeOther(otherCopy, &cc); err != nil {
 		return nil, err
+	}
+
+	// decode dynamic plugin configs
+	if minsocMap != nil {
+		var cfg plugin.Config
+		if err := util.DecodeOther(minsocMap, &cfg); err != nil {
+			return nil, fmt.Errorf("decoding minsoc plugin config: %w", err)
+		}
+		cc.batterySocLimits.MinSocSource = &cfg
+	}
+	if maxsocMap != nil {
+		var cfg plugin.Config
+		if err := util.DecodeOther(maxsocMap, &cfg); err != nil {
+			return nil, fmt.Errorf("decoding maxsoc plugin config: %w", err)
+		}
+		cc.batterySocLimits.MaxSocSource = &cfg
 	}
 
 	powerG, energyG, err := cc.Energy.Configure(ctx)
@@ -69,7 +113,6 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]interface{}
 		if err != nil {
 			return nil, fmt.Errorf("battery limit soc: %w", err)
 		}
-
 		batModeS = cc.batterySocLimits.LimitController(socG, limitSocS)
 
 	case cc.BatteryMode != nil:
@@ -77,15 +120,46 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]interface{}
 		if err != nil {
 			return nil, fmt.Errorf("battery mode: %w", err)
 		}
-
 		batModeS = func(mode api.BatteryMode) error {
 			return modeS(int64(mode))
 		}
 	}
 
+	// create dynamic SoC limits (plugin oder static)
+	var minSocGetter func() (float64, error)
+	if cc.batterySocLimits.MinSocSource != nil {
+		g, err := cc.batterySocLimits.MinSocSource.FloatGetter(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("minsoc: create float getter: %w", err)
+		}
+		minSocGetter = g
+	} else {
+		static := cc.batterySocLimits.MinSoc
+		minSocGetter = func() (float64, error) { return static, nil }
+	}
+
+	var maxSocGetter func() (float64, error)
+	if cc.batterySocLimits.MaxSocSource != nil {
+		g, err := cc.batterySocLimits.MaxSocSource.FloatGetter(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("maxsoc: create float getter: %w", err)
+		}
+		maxSocGetter = g
+	} else {
+		static := cc.batterySocLimits.MaxSoc
+		maxSocGetter = func() (float64, error) { return static, nil }
+	}
+
+	// combined getter for decorator
+	socLimitsG := func() (float64, float64) {
+		min, _ := minSocGetter()
+		max, _ := maxSocGetter()
+		return min, max
+	}
+
 	res := m.Decorate(
 		energyG, currentsG, voltagesG, powersG,
-		socG, cc.batteryCapacity.Decorator(), cc.batterySocLimits.Decorator(), cc.batteryPowerLimits.Decorator(), batModeS,
+		socG, cc.batteryCapacity.Decorator(), socLimitsG, cc.batteryPowerLimits.Decorator(), batModeS,
 		cc.pvMaxACPower.Decorator(),
 	)
 
@@ -126,3 +200,4 @@ func (m *Meter) Decorate(
 func (m *Meter) CurrentPower() (float64, error) {
 	return m.currentPowerG()
 }
+
