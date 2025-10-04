@@ -48,23 +48,54 @@ func (m *batterySocLimits) Decorator() func() (float64, float64) {
 		return m.MinSoc, m.MaxSoc
 	}
 }
+// LimitController returns an api.BatteryController decorator with support for dynamic SoC limits
+func (m *batterySocLimits) LimitController(
+	socG func() (float64, error),
+	limitSocS func(float64) error,
+) func(api.BatteryMode) error {
 
-// LimitController returns an api.BatteryController decorator
-func (m *batterySocLimits) LimitController(socG func() (float64, error), limitSocS func(float64) error) func(api.BatteryMode) error {
 	return func(mode api.BatteryMode) error {
+		// Start with static default values
+		minSoc := m.MinSoc
+		maxSoc := m.MaxSoc
+
+		// Prefer dynamic sources if available
+		ctx := context.Background()
+
+		if m.MinSocSource != nil {
+			if getter, err := m.MinSocSource.FloatGetter(ctx); err == nil {
+				if val, err := getter(); err == nil {
+					minSoc = val
+				}
+			}
+		}
+
+		if m.MaxSocSource != nil {
+			if getter, err := m.MaxSocSource.FloatGetter(ctx); err == nil {
+				if val, err := getter(); err == nil {
+					maxSoc = val
+				}
+			}
+		}
+
 		switch mode {
 		case api.BatteryNormal:
-			return limitSocS(m.MinSoc)
+			// Reset to minimum value
+			return limitSocS(minSoc)
 
 		case api.BatteryHold:
 			soc, err := socG()
 			if err != nil {
 				return err
 			}
-			return limitSocS(min(100, max(soc, m.MinSoc)))
+
+			// Keep SOC between Min and 100%
+			target := min(100, max(soc, minSoc))
+			return limitSocS(target)
 
 		case api.BatteryCharge:
-			return limitSocS(m.MaxSoc)
+			// Allow charging up to MaxSoC
+			return limitSocS(maxSoc)
 
 		default:
 			return api.ErrNotAvailable
