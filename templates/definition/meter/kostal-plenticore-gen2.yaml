@@ -40,8 +40,6 @@ params:
     advanced: true
   - name: capacity
     advanced: true
-  - name: maxsoc
-    advanced: true
   - name: maxacpower
   - name: maxchargerate
     deprecated: true
@@ -130,8 +128,17 @@ render: |
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
   capacity: {{ .capacity }} # kWh
   minsoc:
-    source: sunspec
+    source: modbus
     {{- include "modbus" . | indent 2 }}
-    value: 802:SoCRsvMin # minimum reserve SoC
+    register:
+      address: 1042 # minimum SoC
+      type: holding
+      encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
   maxsoc: {{ .maxsoc }} # maxsoc
+    source: modbus
+    {{- include "modbus" . | indent 2 }}
+    register:
+      address: 1044 # maximum SoC
+      type: holding
+      encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
   {{- end }}
