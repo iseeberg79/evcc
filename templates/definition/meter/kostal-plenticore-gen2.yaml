@@ -134,7 +134,7 @@ render: |
       address: 1042 # minimum SoC
       type: holding
       encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
-  maxsoc: {{ .maxsoc }} # maxsoc
+  maxsoc:
     source: modbus
     {{- include "modbus" . | indent 2 }}
     register:
