@@ -46,10 +46,7 @@ params:
     advanced: true
   - name: maxchargepower
     default: 4200
-    advanced: true
   - name: maxdischargepower
-    default: 4200
-    advanced: true
   - name: watchdog
     type: duration
     default: 60s
@@ -141,4 +138,6 @@ render: |
       address: 1044 # maximum SoC
       type: holding
       encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
+  maxchargepower: {{ .maxchargepower }}
+  maxdischargepower: {{ .maxdischargepower }}
   {{- end }}
