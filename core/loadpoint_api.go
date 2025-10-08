@@ -240,6 +240,34 @@ func (lp *Loadpoint) SetPriority(prio int) {
 	}
 }
 
+// GetSlotBundling returns the slot bundling setting
+func (lp *Loadpoint) GetSlotBundling() bool {
+	lp.RLock()
+	defer lp.RUnlock()
+	return lp.SlotBundling
+}
+
+// setSlotBundling sets the slot bundling setting (no mutex)
+func (lp *Loadpoint) setSlotBundling(enabled bool) {
+	lp.SlotBundling = enabled
+	if lp.planner != nil {
+		lp.planner.SetSlotBundling(enabled)
+	}
+	lp.publish(keys.SlotBundling, enabled)
+	lp.settings.SetBool(keys.SlotBundling, enabled)
+}
+
+// SetSlotBundling sets the slot bundling setting
+func (lp *Loadpoint) SetSlotBundling(enabled bool) {
+	lp.Lock()
+	defer lp.Unlock()
+
+	lp.log.DEBUG.Println("set slot bundling:", enabled)
+	if lp.SlotBundling != enabled {
+		lp.setSlotBundling(enabled)
+	}
+}
+
 // GetPhases returns the enabled phases
 func (lp *Loadpoint) GetPhases() int {
 	lp.RLock()

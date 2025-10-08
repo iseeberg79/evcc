@@ -57,6 +57,10 @@ type API interface {
 	GetPriority() int
 	// SetPriority sets the priority
 	SetPriority(int)
+	// GetSlotBundling returns the slot bundling setting
+	GetSlotBundling() bool
+	// SetSlotBundling sets the slot bundling setting
+	SetSlotBundling(bool)
 	// GetMinCurrent returns the min charging current
 	GetMinCurrent() float64
 	// SetMinCurrent sets the min charging current

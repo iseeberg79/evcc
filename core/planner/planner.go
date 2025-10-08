@@ -39,6 +39,11 @@ func WithSlotBundling(enabled bool) func(*Planner) {
 	}
 }
 
+// SetSlotBundling enables or disables charge bundling
+func (t *Planner) SetSlotBundling(enabled bool) {
+	t.slotBundlingEnabled = enabled
+}
+
 // plan creates a lowest-cost plan or required duration.
 // It MUST already established that
 // - rates are sorted in ascending order by cost and descending order by start time (prefer late slots)

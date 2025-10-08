@@ -9,9 +9,10 @@ const (
 	Meter            = "meter"       // meter ref
 	Circuit          = "circuit"     // circuit ref
 	DefaultVehicle   = "vehicle"     // default vehicle ref
-	Priority         = "priority"    // priority
-	MinCurrent       = "minCurrent"  // min current
-	MaxCurrent       = "maxCurrent"  // max current
+	Priority         = "priority"      // priority
+	SlotBundling     = "slotBundling"  // slot bundling (charge bundling)
+	MinCurrent       = "minCurrent"    // min current
+	MaxCurrent       = "maxCurrent"    // max current
 	MinSoc           = "minSoc"      // min soc
 	LimitSoc         = "limitSoc"    // limit soc
 	LimitEnergy      = "limitEnergy" // limit energy

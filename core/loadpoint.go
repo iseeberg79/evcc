@@ -334,6 +334,9 @@ func (lp *Loadpoint) restoreSettings() {
 	if v, err := lp.settings.Int(keys.Priority); err == nil {
 		lp.setPriority(int(v))
 	}
+	if v, err := lp.settings.Bool(keys.SlotBundling); err == nil {
+		lp.setSlotBundling(v)
+	}
 	if v, err := lp.settings.Int(keys.PhasesConfigured); err == nil && (v > 0 || lp.hasPhaseSwitching()) {
 		lp.setPhasesConfigured(int(v))
 	}
@@ -629,6 +632,7 @@ func (lp *Loadpoint) Prepare(site site.API, uiChan chan<- util.Param, pushChan c
 	lp.publish(keys.Title, lp.GetTitle())
 	lp.publish(keys.Mode, lp.GetMode())
 	lp.publish(keys.Priority, lp.GetPriority())
+	lp.publish(keys.SlotBundling, lp.SlotBundling)
 	lp.publish(keys.MinCurrent, lp.GetMinCurrent())
 	lp.publish(keys.MaxCurrent, lp.GetMaxCurrent())
 

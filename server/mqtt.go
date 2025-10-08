@@ -238,6 +238,7 @@ func (m *MQTT) listenLoadpointSetters(topic string, site site.API, lp loadpoint.
 		{"phases", intSetter(lp.SetPhasesConfigured)},
 		{"limitSoc", intSetter(pass(lp.SetLimitSoc))},
 		{"priority", intSetter(pass(lp.SetPriority))},
+		{"slotBundling", boolSetter(pass(lp.SetSlotBundling))},
 		{"minCurrent", floatSetter(lp.SetMinCurrent)},
 		{"maxCurrent", floatSetter(lp.SetMaxCurrent)},
 		{"limitEnergy", floatSetter(pass(lp.SetLimitEnergy))},
