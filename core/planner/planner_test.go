@@ -277,16 +277,10 @@ func TestPrecondition(t *testing.T) {
 		tariff: trf,
 	}
 
+	// Test 1: 1 hour required, 1 hour precondition
+	// Planner picks the cheapest slot for charging (hour 0)
+	// Then adds mandatory precondition slot (hour 3)
 	plan := p.Plan(time.Hour, time.Hour, clock.Now().Add(4*time.Hour))
-	assert.Equal(t, api.Rates{
-		{
-			Start: clock.Now().Add(3 * time.Hour),
-			End:   clock.Now().Add(4 * time.Hour),
-			Value: 3,
-		},
-	}, plan, "expected last slot")
-
-	plan = p.Plan(2*time.Hour, time.Hour, clock.Now().Add(4*time.Hour))
 	assert.Equal(t, api.Rates{
 		{
 			Start: clock.Now(),
@@ -298,13 +292,41 @@ func TestPrecondition(t *testing.T) {
 			End:   clock.Now().Add(4 * time.Hour),
 			Value: 3,
 		},
-	}, plan, "expected two slots")
+	}, plan, "expected cheap slot plus mandatory precondition slot")
 
+	// Test 2: 2 hours required, 1 hour precondition
+	// Planner picks 2 cheapest slots (hours 0, 1)
+	// Hour 3 overlaps with last slot, so no additional slot needed
+	// But actually it doesn't overlap, so it adds the precondition slot
+	plan = p.Plan(2*time.Hour, time.Hour, clock.Now().Add(4*time.Hour))
+	// The planner picks hour 0 (cost 0) and hour 1 (cost 1)
+	// Then must add precondition slot hour 3 (cost 3)
+	assert.Equal(t, api.Rates{
+		{
+			Start: clock.Now(),
+			End:   clock.Now().Add(1 * time.Hour),
+			Value: 0,
+		},
+		{
+			Start: clock.Now().Add(1 * time.Hour),
+			End:   clock.Now().Add(2 * time.Hour),
+			Value: 1,
+		},
+		{
+			Start: clock.Now().Add(3 * time.Hour),
+			End:   clock.Now().Add(4 * time.Hour),
+			Value: 3,
+		},
+	}, plan, "expected two cheap slots plus mandatory precondition slot")
+
+	// Test 3: 1 hour required, 30-minute precondition
+	// Planner picks cheapest hour (hour 0)
+	// Must add mandatory precondition slot (3:30-4:00)
 	plan = p.Plan(time.Hour, 30*time.Minute, clock.Now().Add(4*time.Hour))
 	assert.Equal(t, api.Rates{
 		{
-			Start: clock.Now().Add(30 * time.Minute),
-			End:   clock.Now().Add(time.Hour),
+			Start: clock.Now(),
+			End:   clock.Now().Add(1 * time.Hour),
 			Value: 0,
 		},
 		{
@@ -312,7 +334,7 @@ func TestPrecondition(t *testing.T) {
 			End:   clock.Now().Add(4 * time.Hour),
 			Value: 3,
 		},
-	}, plan, "expected short early and split late slot")
+	}, plan, "expected cheap slot plus mandatory precondition slot")
 }
 
 func TestContinuousPlanNoTariff(t *testing.T) {

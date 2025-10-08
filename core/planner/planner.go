@@ -17,18 +17,12 @@ type Planner struct {
 }
 
 // New creates a price planner
-func New(log *util.Logger, tariff api.Tariff, opt ...func(t *Planner)) *Planner {
-	p := &Planner{
+func New(log *util.Logger, tariff api.Tariff) *Planner {
+	return &Planner{
 		log:    log,
 		clock:  clock.New(),
 		tariff: tariff,
 	}
-
-	for _, o := range opt {
-		o(p)
-	}
-
-	return p
 }
 
 // plan creates a lowest-cost plan or required duration.
@@ -175,11 +169,8 @@ func (t *Planner) Plan(requiredDuration, precondition time.Duration, targetTime 
 	// rates are by default sorted by date, oldest to newest
 	last := rates[len(rates)-1].End
 
-	// sort rates by price and time
-	slices.SortStableFunc(rates, sortByCost)
-
-	// for late start ensure that the last slot is the cheapest
-	rates, adjusted := splitPreconditionSlots(rates, precondition, targetTime)
+	// keep track of precondition slots for mandatory enforcement later
+	preCondRates := extractPreconditionSlots(rates, precondition, targetTime)
 
 	// reduce planning horizon to available rates
 	if targetTime.After(last) {
@@ -197,16 +188,12 @@ func (t *Planner) Plan(requiredDuration, precondition time.Duration, targetTime 
 		requiredDuration -= durationAfterRates
 	}
 
-	// sort rates by price and time
-	slices.SortStableFunc(rates, sortByCost)
+	// use slot bundling to minimize charging interruptions
+	plan := t.planSlotBundled(rates, requiredDuration, targetTime)
 
-	plan := t.plan(rates, requiredDuration, targetTime)
-
-	// correct plan slots to show original, non-adjusted prices
-	for i, r := range plan {
-		if rr, err := adjusted.At(r.Start); err == nil {
-			plan[i].Value = rr.Value
-		}
+	// if precondition is enabled, ensure we have charging during the precondition window
+	if precondition > 0 {
+		plan = t.ensurePreconditionSlot(plan, preCondRates, precondition, targetTime)
 	}
 
 	// sort plan by time
@@ -215,44 +202,79 @@ func (t *Planner) Plan(requiredDuration, precondition time.Duration, targetTime 
 	return plan
 }
 
-func splitPreconditionSlots(rates api.Rates, precondition time.Duration, targetTime time.Time) (api.Rates, api.Rates) {
-	var res, adjusted api.Rates
+// ensurePreconditionSlot ensures that the plan includes at least one slot during the precondition window.
+// This is mandatory when precondition is enabled, to allow the vehicle to use grid power for climate control.
+func (t *Planner) ensurePreconditionSlot(plan api.Rates, preCondRates api.Rates, precondition time.Duration, targetTime time.Time) api.Rates {
+	if len(preCondRates) == 0 {
+		return plan // No precondition slots available
+	}
 
-	for _, r := range slices.Clone(rates) {
-		preCondStart := targetTime.Add(-precondition)
+	preCondStart := targetTime.Add(-precondition)
 
-		if !r.End.After(preCondStart) {
-			res = append(res, r)
+	// Check if plan already includes slots in the precondition window
+	for _, slot := range plan {
+		// If any slot overlaps with the precondition window, we're good
+		if slot.Start.Before(targetTime) && slot.End.After(preCondStart) {
+			return plan
+		}
+	}
+
+	// No precondition slot found, we need to add one
+	// Filter slots that are valid (after current time)
+	var validSlots api.Rates
+	for _, slot := range preCondRates {
+		if slot.End.After(t.clock.Now()) {
+			// Adjust slot if it starts before now
+			if slot.Start.Before(t.clock.Now()) {
+				slot.Start = t.clock.Now()
+			}
+			validSlots = append(validSlots, slot)
+		}
+	}
+
+	if len(validSlots) == 0 {
+		return plan // No valid slots available
+	}
+
+	// Sort by cost and pick the cheapest
+	slices.SortFunc(validSlots, sortByCost)
+
+	// Add the cheapest precondition slot to the plan
+	plan = append(plan, validSlots[0])
+
+	t.log.DEBUG.Printf("added mandatory precondition slot: %v - %v (cost: %.3f)",
+		validSlots[0].Start.Format("15:04"), validSlots[0].End.Format("15:04"), validSlots[0].Value)
+
+	return plan
+}
+
+// extractPreconditionSlots extracts slots that fall within the precondition window.
+// These slots will be used for mandatory precondition enforcement.
+func extractPreconditionSlots(rates api.Rates, precondition time.Duration, targetTime time.Time) api.Rates {
+	if precondition == 0 {
+		return nil
+	}
+
+	preCondStart := targetTime.Add(-precondition)
+	var preCondRates api.Rates
+
+	for _, r := range rates {
+		// Skip slots that don't overlap with precondition window
+		if !r.End.After(preCondStart) || !r.Start.Before(targetTime) {
 			continue
 		}
 
-		// split slot
-		if !r.Start.After(preCondStart) {
-			// keep the first part of the slot
-			res = append(res, api.Rate{
-				Start: r.Start,
-				End:   preCondStart,
-				Value: r.Value,
-			})
-
-			// adjust the second part of the slot
-			r = api.Rate{
-				Start: preCondStart,
-				End:   r.End,
-				Value: r.Value,
-			}
+		// Adjust slot boundaries to fit within precondition window
+		slot := r
+		if slot.Start.Before(preCondStart) {
+			slot.Start = preCondStart
+		}
+		if slot.End.After(targetTime) {
+			slot.End = targetTime
 		}
 
-		// set the value to 0 to include slot in the plan
-		res = append(res, api.Rate{
-			Start: r.Start,
-			End:   r.End,
-			Value: 0,
-		})
-
-		// keep a copy of the adjusted slot
-		adjusted = append(adjusted, r)
+		preCondRates = append(preCondRates, slot)
 	}
 
-	return res, adjusted
+	return preCondRates
 }
