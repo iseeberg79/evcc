@@ -279,6 +279,8 @@
       "pollModeLabel": "Update behaviour",
       "priorityHelp": "Higher priority get preferred access to solar surplus.",
       "priorityLabel": "Priority",
+      "optimizedPlanningHelp": "Bundles charging slots to minimize interruptions while maintaining cost-effectiveness. Recommended for tariffs with 15-minute intervals.",
+      "optimizedPlanningLabel": "Charge bundling",
       "save": "Save",
       "showAllSettings": "Show all settings",
       "solarBehaviorCustomHelp": "Define your own enable and disable thresholds and delays.",

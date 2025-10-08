@@ -313,6 +313,21 @@
 					/>
 				</FormRow>
 
+				<div class="d-flex mb-4">
+					<input
+						id="loadpointOptimizedPlanning"
+						v-model="values.optimizedplanning"
+						class="form-check-input"
+						type="checkbox"
+					/>
+					<label class="form-check-label ms-2" for="loadpointOptimizedPlanning">
+						{{ $t("config.loadpoint.optimizedPlanningLabel") }}
+					</label>
+				</div>
+				<div v-if="values.optimizedplanning" class="form-text evcc-gray mb-4">
+					{{ $t("config.loadpoint.optimizedPlanningHelp") }}
+				</div>
+
 				<h6>
 					{{ $t("config.loadpoint.electricalTitle") }}
 					<small class="text-muted">{{
@@ -588,6 +603,7 @@ const defaultValues = {
 	minCurrent: 6,
 	maxCurrent: 16,
 	priority: 0,
+	optimizedplanning: false,
 	defaultMode: "",
 	thresholds: {
 		enable: { delay: 1 * nsPerMin, threshold: 0 },

@@ -11,9 +11,10 @@ import (
 
 // Planner plans a series of charging slots for a given (variable) tariff
 type Planner struct {
-	log    *util.Logger
-	clock  clock.Clock // mockable time
-	tariff api.Tariff
+	log                  *util.Logger
+	clock                clock.Clock // mockable time
+	tariff               api.Tariff
+	slotBundlingEnabled bool // use slot bundling to minimize interruptions
 }
 
 // New creates a price planner
@@ -29,6 +30,13 @@ func New(log *util.Logger, tariff api.Tariff, opt ...func(t *Planner)) *Planner 
 	}
 
 	return p
+}
+
+// WithSlotBundling enables charge bundling to minimize interruptions
+func WithSlotBundling(enabled bool) func(*Planner) {
+	return func(p *Planner) {
+		p.slotBundlingEnabled = enabled
+	}
 }
 
 // plan creates a lowest-cost plan or required duration.
@@ -174,6 +182,44 @@ func (t *Planner) Plan(requiredDuration, precondition time.Duration, targetTime 
 
 	// rates are by default sorted by date, oldest to newest
 	last := rates[len(rates)-1].End
+
+	// Use slot bundling if enabled
+	if t.slotBundlingEnabled {
+		t.log.DEBUG.Println("using charge bundling to minimize interruptions")
+
+		// for late start ensure that the last slot is the cheapest
+		rates, adjusted := splitPreconditionSlots(rates, precondition, targetTime)
+
+		// reduce planning horizon to available rates
+		if targetTime.After(last) {
+			// there is enough time for charging after end of current rates
+			durationAfterRates := targetTime.Sub(last)
+			if durationAfterRates >= requiredDuration {
+				return nil
+			}
+
+			// need to use some of the available slots
+			t.log.DEBUG.Printf("target time beyond available slots- reducing plan horizon from %v to %v",
+				requiredDuration.Round(time.Second), durationAfterRates.Round(time.Second))
+
+			targetTime = last
+			requiredDuration -= durationAfterRates
+		}
+
+		plan := t.planSlotBundled(rates, requiredDuration, targetTime)
+
+		// correct plan slots to show original, non-adjusted prices
+		for i, r := range plan {
+			if rr, err := adjusted.At(r.Start); err == nil {
+				plan[i].Value = rr.Value
+			}
+		}
+
+		// sort plan by time
+		plan.Sort()
+
+		return plan
+	}
 
 	// sort rates by price and time
 	slices.SortStableFunc(rates, sortByCost)

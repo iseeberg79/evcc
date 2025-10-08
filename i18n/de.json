@@ -279,6 +279,8 @@
       "pollModeLabel": "Update-Verhalten",
       "priorityHelp": "Höherer Prioritäten haben Vorrang beim PV-Überschuss.",
       "priorityLabel": "Priorität",
+      "optimizedPlanningHelp": "Bündelt Ladezeitfenster, um Unterbrechungen zu minimieren und gleichzeitig kosteneffizient zu bleiben. Empfohlen für Tarife mit 15-Minuten-Intervallen.",
+      "optimizedPlanningLabel": "Ladungsbündelung",
       "save": "Speichern",
       "showAllSettings": "Alle Einstellungen anzeigen",
       "solarBehaviorCustomHelp": "Definiere eigene Ein- und Ausschaltschwellen und Verzögerungen.",
