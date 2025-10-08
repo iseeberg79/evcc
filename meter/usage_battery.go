@@ -47,6 +47,10 @@ type batterySocLimits struct {
         // dynamic plugin configuration (optional, if not filled by mapstructure)
         MinSocSource *plugin.Config `mapstructure:"-"`
         MaxSocSource *plugin.Config `mapstructure:"-"`
+
+        // cached getter functions (initialized once)
+        minSocGetter func() (float64, error)
+        maxSocGetter func() (float64, error)
 }
 
 // Decorator returns an api.BatterySocLimiter decorator
@@ -57,6 +61,27 @@ func (m *batterySocLimits) Decorator() func() (float64, float64) {
 	return func() (float64, float64) {
 		return m.MinSoc, m.MaxSoc
 	}
+}
+
+// Init initializes the dynamic getter functions (call once during setup)
+func (m *batterySocLimits) Init(ctx context.Context) error {
+	if m.MinSocSource != nil {
+		getter, err := m.MinSocSource.FloatGetter(ctx)
+		if err != nil {
+			return err
+		}
+		m.minSocGetter = getter
+	}
+
+	if m.MaxSocSource != nil {
+		getter, err := m.MaxSocSource.FloatGetter(ctx)
+		if err != nil {
+			return err
+		}
+		m.maxSocGetter = getter
+	}
+
+	return nil
 }
 
 // LimitController returns an api.BatteryController decorator with support for dynamic SoC limits
@@ -70,22 +95,16 @@ func (m *batterySocLimits) LimitController(
 		minSoc := m.MinSoc
 		maxSoc := m.MaxSoc
 
-		// Prefer dynamic sources if available
-		ctx := context.Background()
-
-		if m.MinSocSource != nil {
-			if getter, err := m.MinSocSource.FloatGetter(ctx); err == nil {
-				if val, err := getter(); err == nil {
-					minSoc = val
-				}
+		// Prefer dynamic sources if available (use cached getters)
+		if m.minSocGetter != nil {
+			if val, err := m.minSocGetter(); err == nil {
+				minSoc = val
 			}
 		}
 
-		if m.MaxSocSource != nil {
-			if getter, err := m.MaxSocSource.FloatGetter(ctx); err == nil {
-				if val, err := getter(); err == nil {
-					maxSoc = val
-				}
+		if m.maxSocGetter != nil {
+			if val, err := m.maxSocGetter(); err == nil {
+				maxSoc = val
 			}
 		}
 
@@ -118,21 +137,17 @@ func (m *batterySocLimits) LimitController(
 // If dynamic sources are configured, it will read them; otherwise static defaults are returned.
 func (b *batterySocLimits) GetSocLimits() (float64, float64) {
 	min, max := b.MinSoc, b.MaxSoc
-	ctx := context.Background()
 
-	if b.MinSocSource != nil {
-		if getter, err := b.MinSocSource.FloatGetter(ctx); err == nil {
-			if val, err := getter(); err == nil {
-				min = val
-			}
+	// Use cached getters (already initialized)
+	if b.minSocGetter != nil {
+		if val, err := b.minSocGetter(); err == nil {
+			min = val
 		}
 	}
 
-	if b.MaxSocSource != nil {
-		if getter, err := b.MaxSocSource.FloatGetter(ctx); err == nil {
-			if val, err := getter(); err == nil {
-				max = val
-			}
+	if b.maxSocGetter != nil {
+		if val, err := b.maxSocGetter(); err == nil {
+			max = val
 		}
 	}
 

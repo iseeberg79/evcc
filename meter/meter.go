@@ -77,6 +77,11 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]interface{}
 		cc.batterySocLimits.MaxSocSource = &cfg
 	}
 
+	// initialize dynamic SoC limit getters (once)
+	if err := cc.batterySocLimits.Init(ctx); err != nil {
+		return nil, fmt.Errorf("initializing battery soc limits: %w", err)
+	}
+
 	powerG, energyG, err := cc.Energy.Configure(ctx)
 	if err != nil {
 		return nil, err
@@ -115,36 +120,9 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]interface{}
 		}
 	}
 
-	// create dynamic SoC limits (plugin oder static)
-	var minSocGetter func() (float64, error)
-	if cc.batterySocLimits.MinSocSource != nil {
-		g, err := cc.batterySocLimits.MinSocSource.FloatGetter(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("minsoc: create float getter: %w", err)
-		}
-		minSocGetter = g
-	} else {
-		static := cc.batterySocLimits.MinSoc
-		minSocGetter = func() (float64, error) { return static, nil }
-	}
-
-	var maxSocGetter func() (float64, error)
-	if cc.batterySocLimits.MaxSocSource != nil {
-		g, err := cc.batterySocLimits.MaxSocSource.FloatGetter(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("maxsoc: create float getter: %w", err)
-		}
-		maxSocGetter = g
-	} else {
-		static := cc.batterySocLimits.MaxSoc
-		maxSocGetter = func() (float64, error) { return static, nil }
-	}
-
-	// combined getter for decorator
+	// create combined getter for decorator using GetSocLimits
 	socLimitsG := func() (float64, float64) {
-		min, _ := minSocGetter()
-		max, _ := maxSocGetter()
-		return min, max
+		return cc.batterySocLimits.GetSocLimits()
 	}
 
 	res := m.Decorate(
