@@ -632,7 +632,7 @@ func (lp *Loadpoint) Prepare(site site.API, uiChan chan<- util.Param, pushChan c
 	lp.publish(keys.Title, lp.GetTitle())
 	lp.publish(keys.Mode, lp.GetMode())
 	lp.publish(keys.Priority, lp.GetPriority())
-	lp.publish(keys.SlotBundling, lp.SlotBundling)
+	lp.publish(keys.SlotBundling, lp.GetSlotBundling())
 	lp.publish(keys.MinCurrent, lp.GetMinCurrent())
 	lp.publish(keys.MaxCurrent, lp.GetMaxCurrent())
 
