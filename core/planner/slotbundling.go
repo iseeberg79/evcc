@@ -135,71 +135,97 @@ func (t *Planner) generateChargingWindows(slots api.Rates, targetTime time.Time)
 	return windows
 }
 
-// findBestWindowCombination finds the optimal combination of windows
+// findBestWindowCombination finds the optimal combination of windows using a greedy approach
 func (t *Planner) findBestWindowCombination(windows []chargingWindow, requiredDuration time.Duration) *planCandidate {
-	var bestCandidate *planCandidate
+	if len(windows) == 0 {
+		return nil
+	}
 
-	// Try to find valid combinations using recursive backtracking
-	t.findWindowCombinations(windows, requiredDuration, []chargingWindow{}, 0, func(combination []chargingWindow) {
-		candidate := t.evaluateWindowCombination(combination, requiredDuration)
-		if candidate == nil {
-			return
+	// First, try to find a single window that matches exactly or is close to required duration
+	// This avoids disruptions when possible
+	var bestSingle *chargingWindow
+	for i := range windows {
+		w := &windows[i]
+		// Look for windows that cover at least the required duration
+		if w.duration >= requiredDuration {
+			if bestSingle == nil || w.avgCost < bestSingle.avgCost {
+				bestSingle = w
+			}
 		}
+	}
 
-		// Keep the best candidate (lowest score)
-		if bestCandidate == nil || candidate.score < bestCandidate.score {
-			bestCandidate = candidate
+	// If we found a single window solution, use it
+	if bestSingle != nil {
+		return t.evaluateWindowCombination([]chargingWindow{*bestSingle}, requiredDuration)
+	}
+
+	// Otherwise, use greedy selection with multiple windows
+	// Calculate score for each window (lower is better)
+	type scoredWindow struct {
+		window chargingWindow
+		score  float64 // cost with potential disruption penalty
+	}
+
+	scored := make([]scoredWindow, len(windows))
+	for i, w := range windows {
+		// Score is primarily based on average cost
+		// Add a small penalty inversely proportional to duration to favor longer windows
+		// when costs are similar (reduces disruptions)
+		disruptionPenalty := DisruptionPenalty / (float64(w.duration) / float64(time.Hour))
+		score := w.avgCost + disruptionPenalty*0.5 // reduced weight for disruption penalty
+		scored[i] = scoredWindow{window: w, score: score}
+	}
+
+	// Sort windows by score (best first)
+	slices.SortFunc(scored, func(a, b scoredWindow) int {
+		if a.score < b.score {
+			return -1
 		}
+		if a.score > b.score {
+			return 1
+		}
+		return 0
 	})
 
-	return bestCandidate
-}
+	// Greedy selection: pick best non-overlapping windows
+	var selected []chargingWindow
+	var totalDuration time.Duration
 
-// findWindowCombinations recursively finds all valid window combinations
-func (t *Planner) findWindowCombinations(
-	windows []chargingWindow,
-	remainingDuration time.Duration,
-	current []chargingWindow,
-	startIdx int,
-	callback func([]chargingWindow),
-) {
-	// If we've met the duration requirement, evaluate this combination
-	if remainingDuration <= 0 {
-		callback(slices.Clone(current))
-		return
-	}
+	for _, sw := range scored {
+		// Check if this window overlaps with already selected ones
+		overlaps := false
+		for _, sel := range selected {
+			if sw.window.start.Before(sel.end) && sw.window.end.After(sel.start) {
+				overlaps = true
+				break
+			}
+		}
 
-	// Try adding each remaining window
-	for i := startIdx; i < len(windows); i++ {
-		window := windows[i]
-
-		// Skip if window overlaps with already selected windows
-		if t.hasOverlap(current, window) {
+		if overlaps {
 			continue
 		}
 
-		// Skip if adding this window would exceed max disruptions
-		if len(current) >= MaxDisruptions+1 {
-			continue
+		// Don't exceed max disruptions
+		if len(selected) >= MaxDisruptions+1 {
+			break
 		}
 
-		// Add window and recurse
-		newCurrent := append(current, window)
-		newRemaining := remainingDuration - window.duration
+		// Add this window
+		selected = append(selected, sw.window)
+		totalDuration += sw.window.duration
 
-		t.findWindowCombinations(windows, newRemaining, newCurrent, i+1, callback)
-	}
-}
-
-// hasOverlap checks if a window overlaps with any in the current selection
-func (t *Planner) hasOverlap(current []chargingWindow, window chargingWindow) bool {
-	for _, w := range current {
-		// Check for time overlap
-		if window.start.Before(w.end) && window.end.After(w.start) {
-			return true
+		// Stop if we have enough duration
+		if totalDuration >= requiredDuration {
+			break
 		}
 	}
-	return false
+
+	// Evaluate the selected combination
+	if len(selected) == 0 {
+		return nil
+	}
+
+	return t.evaluateWindowCombination(selected, requiredDuration)
 }
 
 // evaluateWindowCombination calculates the score for a window combination
