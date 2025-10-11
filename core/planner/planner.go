@@ -59,13 +59,14 @@ type chargingWindow struct {
 // - rates are sorted in ascending order by cost and descending order by start time (prefer late slots)
 // - target time and required duration are before end of rates
 func (t *Planner) plan(rates api.Rates, requiredDuration time.Duration, targetTime time.Time) api.Rates {
-	// When penalty is 0, use pure cost optimization without window limits
-	//if InterruptionPenaltyPercent == 0 {
+	// Use pure cost optimization without window limits when MaxChargingWindows is disabled
+	// Note: InterruptionPenaltyPercent is applied within window optimization logic
 	if MaxChargingWindows == 0 {
 		return t.planOriginal(rates, requiredDuration, targetTime)
 	}
 
-	// Use window-optimized planning
+	// Use window-optimized planning with interruption penalty
+	// Higher InterruptionPenaltyPercent values result in less fragmentation
 	return t.planWithWindowOptimization(rates, requiredDuration, targetTime)
 }
 
@@ -419,6 +420,17 @@ func (t *Planner) evaluateWindowMerge(w1, w2 *chargingWindow, allRates api.Rates
 	newAvgCost := totalNewCost / totalNewDuration
 
 	costIncreasePerHour := (newAvgCost - currentAvgCost) * 3600
+
+	// Apply interruption penalty: only allow merge if cost increase is acceptable
+	// InterruptionPenaltyPercent = 0 means no penalty (always merge)
+	// Higher values mean stricter threshold (less merging, more fragmentation)
+	if InterruptionPenaltyPercent > 0 {
+		threshold := currentAvgCost * 3600 * InterruptionPenaltyPercent
+		if costIncreasePerHour > threshold {
+			// Cost increase too high, reject this merge
+			return nil
+		}
+	}
 
 	return &consolidationOption{
 		costIncrease: costIncreasePerHour,
