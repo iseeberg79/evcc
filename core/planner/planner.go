@@ -10,14 +10,12 @@ import (
 	"github.com/evcc-io/evcc/util"
 )
 
-var (
-	// MaxChargingWindows limits the number of separate charging windows
-	// - 0: Unlimited windows, pure cost optimization (default)
-	// - 1: Single continuous charging window
-	// - 2-10: At most N separate charging windows
-	// Higher values allow more cost optimization, lower values prefer continuous charging
-	MaxChargingWindows = 0
-)
+// DefaultMaxChargingWindows is the default limit for charging windows
+// - 0: Unlimited windows, pure cost optimization (default)
+// - 1: Single continuous charging window
+// - 2-10: At most N separate charging windows
+// Higher values allow more cost optimization, lower values prefer continuous charging
+const DefaultMaxChargingWindows = 0
 
 // Planner plans a series of charging slots for a given (variable) tariff
 type Planner struct {
@@ -52,15 +50,21 @@ type chargingWindow struct {
 // It MUST already established that
 // - rates are sorted in ascending order by cost and descending order by start time (prefer late slots)
 // - target time and required duration are before end of rates
-func (t *Planner) plan(rates api.Rates, requiredDuration time.Duration, targetTime time.Time) api.Rates {
-	// Use pure cost optimization when MaxChargingWindows is 0 (unlimited)
-	if MaxChargingWindows == 0 {
+func (t *Planner) plan(rates api.Rates, requiredDuration time.Duration, targetTime time.Time, maxChargingWindows ...int) api.Rates {
+	// Extract optional maxChargingWindows parameter, default to 0 (unlimited)
+	maxWindows := DefaultMaxChargingWindows
+	if len(maxChargingWindows) > 0 {
+		maxWindows = maxChargingWindows[0]
+	}
+
+	// Use pure cost optimization when maxWindows is 0 (unlimited)
+	if maxWindows == 0 {
 		return t.planOriginal(rates, requiredDuration, targetTime)
 	}
 
 	// Use window-limited planning
-	// Lower MaxChargingWindows values result in less fragmentation
-	return t.planWithWindowOptimization(rates, requiredDuration, targetTime)
+	// Lower maxWindows values result in less fragmentation
+	return t.planWithWindowOptimization(rates, requiredDuration, targetTime, maxWindows)
 }
 
 // planOriginal is the original plan implementation for pure cost optimization
@@ -143,7 +147,7 @@ func (idx *rateIndex) findOverlapping(start, end time.Time) api.Rates {
 }
 
 // planWithWindowOptimization creates a plan that limits charging interruptions
-func (t *Planner) planWithWindowOptimization(rates api.Rates, requiredDuration time.Duration, targetTime time.Time) api.Rates {
+func (t *Planner) planWithWindowOptimization(rates api.Rates, requiredDuration time.Duration, targetTime time.Time, maxChargingWindows int) api.Rates {
 	// Step 1: Get base plan with cheapest slots (unlimited windows)
 	basePlan := t.planOriginal(rates, requiredDuration, targetTime)
 	if len(basePlan) == 0 {
@@ -164,9 +168,9 @@ func (t *Planner) planWithWindowOptimization(rates api.Rates, requiredDuration t
 		initialWindowCount, requiredDuration)
 
 	// Step 3: If we have too many windows, need to reduce them
-	if len(windows) > MaxChargingWindows {
+	if len(windows) > maxChargingWindows {
 		// Strategy: Remove the smallest/most expensive windows and redistribute
-		windows = t.reduceToMaxWindows(windows, rateIdx, requiredDuration, targetTime)
+		windows = t.reduceToMaxWindows(windows, rateIdx, requiredDuration, targetTime, maxChargingWindows)
 		t.log.DEBUG.Printf("window optimization: reduced from %d to %d windows",
 			initialWindowCount, len(windows))
 	}
@@ -234,11 +238,11 @@ func (t *Planner) adjustPlanDuration(plan api.Rates, requiredDuration time.Durat
 
 // reduceToMaxWindows reduces window count by removing smallest windows
 // and extending remaining ones to meet duration
-func (t *Planner) reduceToMaxWindows(windows []*chargingWindow, rateIdx *rateIndex, requiredDuration time.Duration, targetTime time.Time) []*chargingWindow {
+func (t *Planner) reduceToMaxWindows(windows []*chargingWindow, rateIdx *rateIndex, requiredDuration time.Duration, targetTime time.Time, maxChargingWindows int) []*chargingWindow {
 	// Strategy: Keep the largest/cheapest windows, drop the rest
 	// Then extend remaining windows to meet required duration
 
-	for len(windows) > MaxChargingWindows {
+	for len(windows) > maxChargingWindows {
 		// Find best consolidation: either merge adjacent windows or drop smallest
 		bestMergeOption := t.findBestWindowMerge(windows, rateIdx, targetTime)
 		bestDropOption := t.findBestWindowToDrop(windows)
@@ -645,9 +649,15 @@ func (t *Planner) continuousPlan(rates api.Rates, start, end time.Time) api.Rate
 	return res
 }
 
-func (t *Planner) Plan(requiredDuration, precondition time.Duration, targetTime time.Time) api.Rates {
+func (t *Planner) Plan(requiredDuration, precondition time.Duration, targetTime time.Time, maxChargingWindows ...int) api.Rates {
 	if t == nil || requiredDuration <= 0 {
 		return nil
+	}
+
+	// Apply default if not specified
+	maxWindows := DefaultMaxChargingWindows
+	if len(maxChargingWindows) > 0 {
+		maxWindows = maxChargingWindows[0]
 	}
 
 	latestStart := targetTime.Add(-requiredDuration)
@@ -709,7 +719,7 @@ func (t *Planner) Plan(requiredDuration, precondition time.Duration, targetTime 
 	// sort rates by price and time
 	slices.SortStableFunc(rates, sortByCost)
 
-	plan := t.plan(rates, requiredDuration, targetTime)
+	plan := t.plan(rates, requiredDuration, targetTime, maxWindows)
 
 	// correct plan slots to show original, non-adjusted prices
 	for i, r := range plan {
