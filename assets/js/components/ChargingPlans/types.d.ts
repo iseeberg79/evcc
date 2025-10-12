@@ -7,6 +7,7 @@ export interface RepeatingPlan {
   soc: number;
   active: boolean;
   precondition: number;
+  maxChargingWindows?: number;
 }
 
 export interface PlanWrapper {
@@ -28,10 +29,12 @@ export interface StaticSocPlan {
   soc: number;
   time: Date;
   precondition: number;
+  maxChargingWindows?: number;
 }
 
 export interface StaticEnergyPlan {
   energy: number;
   time: Date;
   precondition: number;
+  maxChargingWindows?: number;
 }

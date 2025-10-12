@@ -173,6 +173,12 @@
 				testid="static-plan-precondition"
 				description-lg-only
 			/>
+			<MaxChargingWindowsSlider
+				:id="formId('maxwindows')"
+				v-model="selectedMaxWindows"
+				testid="static-plan-maxwindows"
+				description-lg-only
+			/>
 		</div>
 		<p class="mb-0" data-testid="plan-entry-warnings">
 			<span v-if="timeInThePast" class="d-block text-danger my-2">
@@ -190,6 +196,7 @@ import formatter from "@/mixins/formatter";
 import { energyOptions } from "@/utils/energyOptions.ts";
 import { defineComponent } from "vue";
 import PreconditionSelect from "./PreconditionSelect.vue";
+import MaxChargingWindowsSlider from "./MaxChargingWindowsSlider.vue";
 
 const LAST_TARGET_TIME_KEY = "last_target_time";
 const LAST_SOC_GOAL_KEY = "last_soc_goal";
@@ -198,7 +205,7 @@ const DEFAULT_TARGET_TIME = "7:00";
 
 export default defineComponent({
 	name: "ChargingPlanStaticSettings",
-	components: { PreconditionSelect },
+	components: { PreconditionSelect, MaxChargingWindowsSlider },
 	mixins: [formatter],
 	props: {
 		id: [String, Number],
@@ -212,6 +219,7 @@ export default defineComponent({
 		multiplePlans: Boolean,
 		precondition: Number,
 		showPrecondition: Boolean,
+		maxChargingWindows: Number,
 	},
 	emits: ["static-plan-updated", "static-plan-removed", "plan-preview"],
 	data() {
@@ -222,6 +230,7 @@ export default defineComponent({
 			selectedEnergy: this.energy,
 			active: false,
 			selectedPrecondition: this.precondition,
+			selectedMaxWindows: this.maxChargingWindows || 0,
 		};
 	},
 	computed: {
@@ -266,6 +275,7 @@ export default defineComponent({
 				day: this.fmtDayString(t),
 				time: this.fmtTimeString(t),
 				precondition: this.precondition,
+				maxChargingWindows: this.maxChargingWindows,
 			};
 		},
 		dataChanged() {
@@ -276,7 +286,8 @@ export default defineComponent({
 				? this.originalData.soc != this.selectedSoc
 				: this.originalData.energy != this.selectedEnergy;
 			const preconditionChanged = this.originalData.precondition != this.selectedPrecondition;
-			return dateChanged || goalChanged || preconditionChanged;
+			const maxWindowsChanged = this.originalData.maxChargingWindows != this.selectedMaxWindows;
+			return dateChanged || goalChanged || preconditionChanged || maxWindowsChanged;
 		},
 		isNew() {
 			return !this.time && (!this.soc || !this.energy);
@@ -307,6 +318,12 @@ export default defineComponent({
 			this.selectedPrecondition = value;
 		},
 		selectedPrecondition() {
+			this.preview();
+		},
+		maxChargingWindows(value) {
+			this.selectedMaxWindows = value || 0;
+		},
+		selectedMaxWindows() {
 			this.preview();
 		},
 	},
@@ -384,6 +401,7 @@ export default defineComponent({
 				soc: this.selectedSoc,
 				energy: this.selectedEnergy,
 				precondition: this.selectedPrecondition,
+				maxChargingWindows: this.selectedMaxWindows,
 			});
 		},
 		preview(force = false) {
@@ -395,6 +413,7 @@ export default defineComponent({
 				soc: this.selectedSoc,
 				energy: this.selectedEnergy,
 				precondition: this.selectedPrecondition,
+				maxChargingWindows: this.selectedMaxWindows,
 			});
 		},
 		toggle(e: Event) {
