@@ -134,6 +134,15 @@ func (t *Planner) planWithWindowOptimization(rates api.Rates, requiredDuration t
 	t.log.DEBUG.Printf("window optimization: base plan has %d windows for %v duration",
 		initialWindowCount, requiredDuration)
 
+	// Step 2.5: Fill gaps that are cheaper than current plan average (prefer continuous cheap blocks)
+	// Then apply penalty threshold for remaining small gaps
+	if len(windows) > 1 {
+		windows = t.fillAffordableGaps(windows, rates, targetTime)
+		if len(windows) < initialWindowCount {
+			t.log.DEBUG.Printf("window optimization: filled affordable gaps, reduced to %d windows", len(windows))
+		}
+	}
+
 	// Step 3: If we have too many windows, need to reduce them
 	if len(windows) > MaxChargingWindows {
 		// Strategy: Remove the smallest/most expensive windows and redistribute
@@ -298,6 +307,64 @@ func (t *Planner) findBestWindowToDrop(windows []*chargingWindow) *consolidation
 	return bestOption
 }
 
+// fillAffordableGaps fills gaps between windows that don't increase average cost significantly
+// Only applies merges that create an equal or better cost plan
+func (t *Planner) fillAffordableGaps(windows []*chargingWindow, allRates api.Rates, targetTime time.Time) []*chargingWindow {
+	if len(windows) < 2 {
+		return windows
+	}
+
+	// Calculate current total cost
+	currentTotalCost := 0.0
+	for _, w := range windows {
+		currentTotalCost += w.totalCost
+	}
+
+	// Try to merge adjacent windows
+	merged := true
+	for merged && len(windows) > 1 {
+		merged = false
+
+		for i := 0; i < len(windows)-1; i++ {
+			option := t.evaluateWindowMerge(windows[i], windows[i+1], allRates, targetTime)
+			if option != nil {
+				// evaluateWindowMerge already checked penalty threshold
+				// Now check if merge creates a better or equal-cost plan
+				newWindow := &chargingWindow{slots: option.newSlots}
+				t.updateWindowStats(newWindow)
+
+				// Calculate new total cost after this merge
+				newTotalCost := 0.0
+				for j, w := range windows {
+					if j == i {
+						newTotalCost += newWindow.totalCost
+					} else if j != i+1 {
+						newTotalCost += w.totalCost
+					}
+				}
+
+				// Only merge if it doesn't increase total cost
+				if newTotalCost <= currentTotalCost {
+					result := make([]*chargingWindow, 0, len(windows)-1)
+					result = append(result, windows[:i]...)
+					result = append(result, newWindow)
+					result = append(result, windows[i+2:]...)
+					windows = result
+
+					t.log.DEBUG.Printf("gap filling: merged windows %d+%d (cost: %.2f → %.2f)",
+						i, i+1, currentTotalCost, newTotalCost)
+
+					currentTotalCost = newTotalCost
+					merged = true
+					break // Restart from beginning
+				}
+			}
+		}
+	}
+
+	return windows
+}
+
 // groupIntoWindows groups consecutive slots into charging windows
 func (t *Planner) groupIntoWindows(plan api.Rates) []*chargingWindow {
 	if len(plan) == 0 {
@@ -419,21 +486,29 @@ func (t *Planner) evaluateWindowMerge(w1, w2 *chargingWindow, allRates api.Rates
 	currentAvgCost := (w1.totalCost + w2.totalCost) / (w1.totalSeconds + w2.totalSeconds)
 	newAvgCost := totalNewCost / totalNewDuration
 
-	costIncreasePerHour := (newAvgCost - currentAvgCost) * 3600
+	costIncrease := newAvgCost - currentAvgCost
 
 	// Apply interruption penalty: only allow merge if cost increase is acceptable
 	// InterruptionPenaltyPercent = 0 means no penalty (always merge)
 	// Higher values mean stricter threshold (less merging, more fragmentation)
+	//
+	// Example with 6% penalty:
+	// - Current avg: 22.6 ct/kWh, gap slot: 23.9 ct/kWh (5.75% more expensive)
+	// - After merge: 23.03 ct/kWh (increase: 0.43 ct, which is 1.92%)
+	// - Threshold: 22.6 * 0.06 = 1.356 ct
+	// - Decision: 0.43 < 1.356 → merge allowed (diluted impact below threshold)
 	if InterruptionPenaltyPercent > 0 {
-		threshold := currentAvgCost * 3600 * InterruptionPenaltyPercent
-		if costIncreasePerHour > threshold {
+		threshold := currentAvgCost * InterruptionPenaltyPercent
+		if costIncrease > threshold {
 			// Cost increase too high, reject this merge
 			return nil
 		}
 	}
 
+	// costIncrease is returned scaled by 3600 for backward compatibility with existing code
+	// that expects cost differences in this format (though the scaling is redundant)
 	return &consolidationOption{
-		costIncrease: costIncreasePerHour,
+		costIncrease: costIncrease * 3600,
 		newSlots:     mergedSlots,
 	}
 }
