@@ -244,8 +244,8 @@ export default defineComponent({
 			if (plan.precondition) {
 				params.precondition = plan.precondition;
 			}
-			if (plan.maxChargingWindows) {
-				params.maxchargingwindows = plan.maxChargingWindows;
+			if (plan.maxSlots) {
+				params.maxSlots = plan.maxSlots;
 			}
 			return await this.apiFetchPlan(
 				`loadpoints/${this.id}/plan/static/preview/soc/${plan.soc}/${timeISO}`,
@@ -265,8 +265,8 @@ export default defineComponent({
 			if (plan.precondition) {
 				params.precondition = plan.precondition;
 			}
-			if (plan.maxChargingWindows) {
-				params.maxchargingwindows = plan.maxChargingWindows;
+			if (plan.maxSlots) {
+				params.maxSlots = plan.maxSlots;
 			}
 			return await this.apiFetchPlan(
 				`loadpoints/${this.id}/plan/static/preview/energy/${plan.energy}/${timeISO}`,
@@ -307,7 +307,7 @@ export default defineComponent({
 							soc: plan.soc,
 							time: plan.time,
 							precondition: plan.precondition,
-							maxChargingWindows: plan.maxChargingWindows,
+							maxSlots: plan.maxSlots,
 						});
 					} else {
 						plan = plan as StaticEnergyPlan;
@@ -315,7 +315,7 @@ export default defineComponent({
 							energy: plan.energy,
 							time: plan.time,
 							precondition: plan.precondition,
-							maxChargingWindows: plan.maxChargingWindows,
+							maxSlots: plan.maxSlots,
 						});
 					}
 				} else {

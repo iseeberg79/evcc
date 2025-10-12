@@ -81,11 +81,11 @@ func staticPlanPreviewHandler(lp loadpoint.API) http.HandlerFunc {
 			return
 		}
 
-		maxChargingWindows := 0
-		if maxWindowsStr := query.Get("maxchargingwindows"); maxWindowsStr != "" {
-			maxChargingWindows, err = strconv.Atoi(maxWindowsStr)
+		maxSlots := 0
+		if maxWindowsStr := query.Get("maxSlots"); maxWindowsStr != "" {
+			maxSlots, err = strconv.Atoi(maxWindowsStr)
 			if err != nil {
-				jsonError(w, http.StatusBadRequest, fmt.Errorf("invalid maxchargingwindows: %w", err))
+				jsonError(w, http.StatusBadRequest, fmt.Errorf("invalid maxSlots: %w", err))
 				return
 			}
 		}
@@ -109,12 +109,7 @@ func staticPlanPreviewHandler(lp loadpoint.API) http.HandlerFunc {
 		maxPower := lp.EffectiveMaxPower()
 		requiredDuration := lp.GetPlanRequiredDuration(goal, maxPower)
 
-		var plan api.Rates
-		if maxChargingWindows > 0 {
-			plan = lp.GetPlan(planTime, requiredDuration, precondition, maxChargingWindows)
-		} else {
-			plan = lp.GetPlan(planTime, requiredDuration, precondition)
-		}
+		plan := lp.GetPlan(planTime, requiredDuration, precondition, maxSlots)
 
 		res := PlanPreviewResponse{
 			PlanTime:     planTime,
