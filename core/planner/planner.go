@@ -11,18 +11,12 @@ import (
 )
 
 var (
-	// InterruptionPenaltyPercent is the cost penalty threshold for fragmenting charging sessions
-	// Applied as percentage of average cost - fragmentation only occurs if it saves more than this
-	//
-	// Special values:
-	// - 0.00: No penalty, pure cost optimization (maximum fragmentation, not recommended)
-	// - 0.06: 6% penalty, optimal balance - filters micro-fluctuations while capturing real savings
-	// - 0.10: 10% penalty, strong preference for continuous charging (conservative)
-	InterruptionPenaltyPercent = 0.06
-
 	// MaxChargingWindows limits the number of separate charging windows
-	// This prevents excessive start-stop cycles which might stress the battery/loader
-	MaxChargingWindows = 3
+	// - 0: Unlimited windows, pure cost optimization (default)
+	// - 1: Single continuous charging window
+	// - 2-10: At most N separate charging windows
+	// Higher values allow more cost optimization, lower values prefer continuous charging
+	MaxChargingWindows = 0
 )
 
 // Planner plans a series of charging slots for a given (variable) tariff
@@ -59,14 +53,13 @@ type chargingWindow struct {
 // - rates are sorted in ascending order by cost and descending order by start time (prefer late slots)
 // - target time and required duration are before end of rates
 func (t *Planner) plan(rates api.Rates, requiredDuration time.Duration, targetTime time.Time) api.Rates {
-	// Use pure cost optimization without window limits when MaxChargingWindows is disabled
-	// Note: InterruptionPenaltyPercent is applied within window optimization logic
+	// Use pure cost optimization when MaxChargingWindows is 0 (unlimited)
 	if MaxChargingWindows == 0 {
 		return t.planOriginal(rates, requiredDuration, targetTime)
 	}
 
-	// Use window-optimized planning with interruption penalty
-	// Higher InterruptionPenaltyPercent values result in less fragmentation
+	// Use window-limited planning
+	// Lower MaxChargingWindows values result in less fragmentation
 	return t.planWithWindowOptimization(rates, requiredDuration, targetTime)
 }
 
@@ -118,6 +111,37 @@ func (t *Planner) planOriginal(rates api.Rates, requiredDuration time.Duration, 
 	return plan
 }
 
+// rateIndex provides fast time-based lookups for rates
+type rateIndex struct {
+	byTime api.Rates // sorted by start time
+}
+
+// findOverlapping returns rates that overlap with [start, end) using binary search
+func (idx *rateIndex) findOverlapping(start, end time.Time) api.Rates {
+	if len(idx.byTime) == 0 {
+		return nil
+	}
+
+	// Binary search for first potentially overlapping rate
+	left := 0
+	right := len(idx.byTime)
+	for left < right {
+		mid := (left + right) / 2
+		if idx.byTime[mid].End.After(start) {
+			right = mid
+		} else {
+			left = mid + 1
+		}
+	}
+
+	// Collect all overlapping rates
+	var result api.Rates
+	for i := left; i < len(idx.byTime) && idx.byTime[i].Start.Before(end); i++ {
+		result = append(result, idx.byTime[i])
+	}
+	return result
+}
+
 // planWithWindowOptimization creates a plan that limits charging interruptions
 func (t *Planner) planWithWindowOptimization(rates api.Rates, requiredDuration time.Duration, targetTime time.Time) api.Rates {
 	// Step 1: Get base plan with cheapest slots (unlimited windows)
@@ -125,6 +149,11 @@ func (t *Planner) planWithWindowOptimization(rates api.Rates, requiredDuration t
 	if len(basePlan) == 0 {
 		return basePlan
 	}
+
+	// Step 1.5: Build time-indexed lookup for fast gap/extension queries
+	timeSorted := slices.Clone(rates)
+	timeSorted.Sort() // Sorts by time
+	rateIdx := &rateIndex{byTime: timeSorted}
 
 	// Step 2: Group consecutive slots into windows
 	basePlan.Sort()
@@ -134,19 +163,10 @@ func (t *Planner) planWithWindowOptimization(rates api.Rates, requiredDuration t
 	t.log.DEBUG.Printf("window optimization: base plan has %d windows for %v duration",
 		initialWindowCount, requiredDuration)
 
-	// Step 2.5: Fill gaps that are cheaper than current plan average (prefer continuous cheap blocks)
-	// Then apply penalty threshold for remaining small gaps
-	if len(windows) > 1 {
-		windows = t.fillAffordableGaps(windows, rates, targetTime)
-		if len(windows) < initialWindowCount {
-			t.log.DEBUG.Printf("window optimization: filled affordable gaps, reduced to %d windows", len(windows))
-		}
-	}
-
 	// Step 3: If we have too many windows, need to reduce them
 	if len(windows) > MaxChargingWindows {
 		// Strategy: Remove the smallest/most expensive windows and redistribute
-		windows = t.reduceToMaxWindows(windows, rates, requiredDuration, targetTime)
+		windows = t.reduceToMaxWindows(windows, rateIdx, requiredDuration, targetTime)
 		t.log.DEBUG.Printf("window optimization: reduced from %d to %d windows",
 			initialWindowCount, len(windows))
 	}
@@ -214,13 +234,13 @@ func (t *Planner) adjustPlanDuration(plan api.Rates, requiredDuration time.Durat
 
 // reduceToMaxWindows reduces window count by removing smallest windows
 // and extending remaining ones to meet duration
-func (t *Planner) reduceToMaxWindows(windows []*chargingWindow, allRates api.Rates, requiredDuration time.Duration, targetTime time.Time) []*chargingWindow {
+func (t *Planner) reduceToMaxWindows(windows []*chargingWindow, rateIdx *rateIndex, requiredDuration time.Duration, targetTime time.Time) []*chargingWindow {
 	// Strategy: Keep the largest/cheapest windows, drop the rest
 	// Then extend remaining windows to meet required duration
 
 	for len(windows) > MaxChargingWindows {
 		// Find best consolidation: either merge adjacent windows or drop smallest
-		bestMergeOption := t.findBestWindowMerge(windows, allRates, targetTime)
+		bestMergeOption := t.findBestWindowMerge(windows, rateIdx, targetTime)
 		bestDropOption := t.findBestWindowToDrop(windows)
 
 		// Compare options
@@ -254,19 +274,19 @@ func (t *Planner) reduceToMaxWindows(windows []*chargingWindow, allRates api.Rat
 	if currentDuration < requiredDuration {
 		t.log.DEBUG.Printf("window optimization: extending to meet duration (%v → %v)",
 			currentDuration, requiredDuration)
-		windows = t.extendToMeetDuration(windows, allRates, requiredDuration, targetTime)
+		windows = t.extendToMeetDuration(windows, rateIdx, requiredDuration, targetTime)
 	}
 
 	return windows
 }
 
 // findBestWindowMerge finds the cheapest adjacent window pair to merge
-func (t *Planner) findBestWindowMerge(windows []*chargingWindow, allRates api.Rates, targetTime time.Time) *consolidationOption {
+func (t *Planner) findBestWindowMerge(windows []*chargingWindow, rateIdx *rateIndex, targetTime time.Time) *consolidationOption {
 	var bestOption *consolidationOption
 	minCostIncrease := math.MaxFloat64
 
 	for i := 0; i < len(windows)-1; i++ {
-		option := t.evaluateWindowMerge(windows[i], windows[i+1], allRates, targetTime)
+		option := t.evaluateWindowMerge(windows[i], windows[i+1], rateIdx, targetTime)
 		if option != nil && option.costIncrease < minCostIncrease {
 			option.windowIndex1 = i
 			option.windowIndex2 = i + 1
@@ -305,64 +325,6 @@ func (t *Planner) findBestWindowToDrop(windows []*chargingWindow) *consolidation
 	}
 
 	return bestOption
-}
-
-// fillAffordableGaps fills gaps between windows that don't increase average cost significantly
-// Only applies merges that create an equal or better cost plan
-func (t *Planner) fillAffordableGaps(windows []*chargingWindow, allRates api.Rates, targetTime time.Time) []*chargingWindow {
-	if len(windows) < 2 {
-		return windows
-	}
-
-	// Calculate current total cost
-	currentTotalCost := 0.0
-	for _, w := range windows {
-		currentTotalCost += w.totalCost
-	}
-
-	// Try to merge adjacent windows
-	merged := true
-	for merged && len(windows) > 1 {
-		merged = false
-
-		for i := 0; i < len(windows)-1; i++ {
-			option := t.evaluateWindowMerge(windows[i], windows[i+1], allRates, targetTime)
-			if option != nil {
-				// evaluateWindowMerge already checked penalty threshold
-				// Now check if merge creates a better or equal-cost plan
-				newWindow := &chargingWindow{slots: option.newSlots}
-				t.updateWindowStats(newWindow)
-
-				// Calculate new total cost after this merge
-				newTotalCost := 0.0
-				for j, w := range windows {
-					if j == i {
-						newTotalCost += newWindow.totalCost
-					} else if j != i+1 {
-						newTotalCost += w.totalCost
-					}
-				}
-
-				// Only merge if it doesn't increase total cost
-				if newTotalCost <= currentTotalCost {
-					result := make([]*chargingWindow, 0, len(windows)-1)
-					result = append(result, windows[:i]...)
-					result = append(result, newWindow)
-					result = append(result, windows[i+2:]...)
-					windows = result
-
-					t.log.DEBUG.Printf("gap filling: merged windows %d+%d (cost: %.2f → %.2f)",
-						i, i+1, currentTotalCost, newTotalCost)
-
-					currentTotalCost = newTotalCost
-					merged = true
-					break // Restart from beginning
-				}
-			}
-		}
-	}
-
-	return windows
 }
 
 // groupIntoWindows groups consecutive slots into charging windows
@@ -418,7 +380,8 @@ type consolidationOption struct {
 }
 
 // evaluateWindowMerge calculates cost of merging two adjacent windows
-func (t *Planner) evaluateWindowMerge(w1, w2 *chargingWindow, allRates api.Rates, targetTime time.Time) *consolidationOption {
+// Uses binary search via rateIndex for O(log n) gap lookup instead of O(n) scan
+func (t *Planner) evaluateWindowMerge(w1, w2 *chargingWindow, rateIdx *rateIndex, targetTime time.Time) *consolidationOption {
 	gapStart := w1.slots[len(w1.slots)-1].End
 	gapEnd := w2.slots[0].Start
 
@@ -427,18 +390,16 @@ func (t *Planner) evaluateWindowMerge(w1, w2 *chargingWindow, allRates api.Rates
 		return nil
 	}
 
+	// Use binary search to find only overlapping rates - O(log n + k) instead of O(n)
+	overlappingRates := rateIdx.findOverlapping(gapStart, gapEnd)
+
 	var gapSlots api.Rates
 	gapCost := 0.0
 	gapDuration := 0.0
 
-	// Only scan rates that could possibly overlap the gap
-	for i := range allRates {
-		rate := &allRates[i]
-
-		// Quick boundary check
-		if !rate.End.After(gapStart) || !rate.Start.Before(gapEnd) {
-			continue
-		}
+	// Process only the overlapping rates found by binary search
+	for i := range overlappingRates {
+		rate := &overlappingRates[i]
 
 		slot := *rate
 
@@ -488,25 +449,8 @@ func (t *Planner) evaluateWindowMerge(w1, w2 *chargingWindow, allRates api.Rates
 
 	costIncrease := newAvgCost - currentAvgCost
 
-	// Apply interruption penalty: only allow merge if cost increase is acceptable
-	// InterruptionPenaltyPercent = 0 means no penalty (always merge)
-	// Higher values mean stricter threshold (less merging, more fragmentation)
-	//
-	// Example with 6% penalty:
-	// - Current avg: 22.6 ct/kWh, gap slot: 23.9 ct/kWh (5.75% more expensive)
-	// - After merge: 23.03 ct/kWh (increase: 0.43 ct, which is 1.92%)
-	// - Threshold: 22.6 * 0.06 = 1.356 ct
-	// - Decision: 0.43 < 1.356 → merge allowed (diluted impact below threshold)
-	if InterruptionPenaltyPercent > 0 {
-		threshold := currentAvgCost * InterruptionPenaltyPercent
-		if costIncrease > threshold {
-			// Cost increase too high, reject this merge
-			return nil
-		}
-	}
-
-	// costIncrease is returned scaled by 3600 for backward compatibility with existing code
-	// that expects cost differences in this format (though the scaling is redundant)
+	// Return the merge option with cost increase
+	// Caller decides whether to apply this merge based on strategy
 	return &consolidationOption{
 		costIncrease: costIncrease * 3600,
 		newSlots:     mergedSlots,
@@ -514,7 +458,8 @@ func (t *Planner) evaluateWindowMerge(w1, w2 *chargingWindow, allRates api.Rates
 }
 
 // evaluateWindowExtension calculates cost of extending a window
-func (t *Planner) evaluateWindowExtension(w *chargingWindow, allRates api.Rates, targetTime time.Time, extendAtStart bool) *consolidationOption {
+// Uses binary search via rateIndex for O(log n) lookup
+func (t *Planner) evaluateWindowExtension(w *chargingWindow, rateIdx *rateIndex, targetTime time.Time, extendAtStart bool) *consolidationOption {
 	var extensionPoint time.Time
 
 	if extendAtStart {
@@ -523,10 +468,16 @@ func (t *Planner) evaluateWindowExtension(w *chargingWindow, allRates api.Rates,
 		extensionPoint = w.slots[len(w.slots)-1].End
 	}
 
+	// Use binary search to find adjacent slot
+	// Look for rates that contain or touch the extension point
+	searchStart := extensionPoint.Add(-time.Nanosecond)
+	searchEnd := extensionPoint.Add(time.Nanosecond)
+	nearbyRates := rateIdx.findOverlapping(searchStart, searchEnd)
+
 	// Find the adjacent rate slot
 	var extensionSlot *api.Rate
-	for i := range allRates {
-		rate := &allRates[i]
+	for i := range nearbyRates {
+		rate := &nearbyRates[i]
 
 		if extendAtStart {
 			// Look for slot ending at window start
@@ -592,7 +543,7 @@ func (t *Planner) evaluateWindowExtension(w *chargingWindow, allRates api.Rates,
 }
 
 // extendToMeetDuration extends windows to meet required duration
-func (t *Planner) extendToMeetDuration(windows []*chargingWindow, allRates api.Rates, requiredDuration time.Duration, targetTime time.Time) []*chargingWindow {
+func (t *Planner) extendToMeetDuration(windows []*chargingWindow, rateIdx *rateIndex, requiredDuration time.Duration, targetTime time.Time) []*chargingWindow {
 	currentDuration := t.totalWindowDuration(windows)
 	remaining := requiredDuration - currentDuration
 
@@ -603,7 +554,7 @@ func (t *Planner) extendToMeetDuration(windows []*chargingWindow, allRates api.R
 
 		// Try extending each window
 		for i, w := range windows {
-			option := t.evaluateWindowExtension(w, allRates, targetTime, false)
+			option := t.evaluateWindowExtension(w, rateIdx, targetTime, false)
 			if option != nil && option.costIncrease < minCost {
 				bestExtension = option
 				bestWindowIdx = i

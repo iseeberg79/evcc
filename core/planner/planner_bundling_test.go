@@ -12,10 +12,9 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-const (
-	interruptionPenaltyPercent = 0.06
-	maxChargingWindows         = 3
-)
+// Tests in this file verify both:
+// - Pure cost optimization (MaxChargingWindows = 0)
+// - Window-limited optimization (MaxChargingWindows = 1-10)
 
 // TestSlotBundling tests the window bundling optimization feature that groups
 // charging slots together to minimize switching cycles while optimizing costs
@@ -89,9 +88,15 @@ func TestSlotBundling(t *testing.T) {
 
 	for _, tc := range tc {
 		t.Run(tc.desc, func(t *testing.T) {
-			// Skip tests that depend on MaxChargingWindows/InterruptionPenaltyPercent (unlimited windows)
-			if maxChargingWindows != 3 || interruptionPenaltyPercent == 0 {
-				t.Skip("Test expects MaxChargingWindows limiting, but InterruptionPenaltyPercent=0 or MaxChargingWindows=0 disables this for pure cost optimization")
+			// Some tests need window limiting, others test pure cost optimization
+			needsWindowLimiting := tc.desc == "4 hours grouped in three separate windows, to reach target at latest slots" ||
+				tc.desc == "4 hours grouped in three separate windows, not choosing the last expensive slot"
+
+			if needsWindowLimiting {
+				// Set MaxChargingWindows for tests that need window limiting
+				oldMax := MaxChargingWindows
+				MaxChargingWindows = 3
+				defer func() { MaxChargingWindows = oldMax }()
 			}
 
 			testRates := rates(tc.rates, clock.Now(), time.Hour)
@@ -343,6 +348,11 @@ func TestPreconditionLimiting(t *testing.T) {
 
 // TestMaxChargingWindows tests the MaxChargingWindows=3 constraint and related logic
 func TestMaxChargingWindows(t *testing.T) {
+	// Set MaxChargingWindows=3 for all tests in this function
+	oldMax := MaxChargingWindows
+	MaxChargingWindows = 3
+	defer func() { MaxChargingWindows = oldMax }()
+
 	clock := clock.NewMock()
 
 	p := &Planner{
@@ -373,7 +383,7 @@ func TestMaxChargingWindows(t *testing.T) {
 
 		assert.Equal(t, 3*time.Hour, Duration(plan))
 		windows := countChargingWindows(plan)
-		assert.LessOrEqual(t, windows, maxChargingWindows, "should not exceed MaxChargingWindows")
+		assert.LessOrEqual(t, windows, 3, "should not exceed MaxChargingWindows")
 
 		// Should prefer later slots
 		firstSlotStart := Start(plan)
@@ -383,11 +393,6 @@ func TestMaxChargingWindows(t *testing.T) {
 	})
 
 	t.Run("replacement chooses lowest cost increase", func(t *testing.T) {
-		// Skip tests that depend on MaxChargingWindows/InterruptionPenaltyPercent (unlimited windows)
-		if maxChargingWindows != 3 || interruptionPenaltyPercent == 0 {
-			t.Skip("Test expects MaxChargingWindows limiting, but InterruptionPenaltyPercent=0 or MaxChargingWindows=0 disables this for pure cost optimization")
-		}
-
 		// Test that when replacing a window to meet duration requirement,
 		// the algorithm picks the replacement with lowest cost increase
 		// Windows: 0-1h@10, 2-3h@10, 4-5h@10, 6-7h@10 (4 cheap windows)
@@ -401,7 +406,7 @@ func TestMaxChargingWindows(t *testing.T) {
 
 		assert.Equal(t, 4*time.Hour, Duration(plan))
 		windows := countChargingWindows(plan)
-		assert.LessOrEqual(t, windows, maxChargingWindows, "should not exceed MaxChargingWindows")
+		assert.LessOrEqual(t, windows, 3, "should not exceed MaxChargingWindows")
 
 		// Cost should be optimal: 3x10 + 1x15 = 45
 		totalCost := AverageCost(plan) * float64(Duration(plan)) / float64(time.Hour)
@@ -418,7 +423,7 @@ func TestMaxChargingWindows(t *testing.T) {
 
 		assert.Equal(t, 4*time.Hour, Duration(plan), "should still meet duration requirement")
 		windows := countChargingWindows(plan)
-		assert.LessOrEqual(t, windows, maxChargingWindows, "should not exceed MaxChargingWindows")
+		assert.LessOrEqual(t, windows, 3, "should not exceed MaxChargingWindows")
 
 		// Should use continuous 0-3 @ 10 each = 40
 		totalCost := AverageCost(plan) * float64(Duration(plan)) / float64(time.Hour)
@@ -443,11 +448,6 @@ func TestMaxChargingWindows(t *testing.T) {
 	})
 
 	t.Run("mixed duration windows", func(t *testing.T) {
-		// Skip tests that depend on MaxChargingWindows/InterruptionPenaltyPercent (unlimited windows)
-		if maxChargingWindows != 3 || interruptionPenaltyPercent == 0 {
-			t.Skip("Test expects MaxChargingWindows limiting, but InterruptionPenaltyPercent=0 or MaxChargingWindows=0 disables this for pure cost optimization")
-		}
-
 		// Different slot durations: 15min, 30min, 1h
 		// Tests replacement of short window with longer mixed-duration window
 		testRates := rates([]float64{10, 50, 50, 50}, clock.Now(), 15*time.Minute)
@@ -468,11 +468,6 @@ func TestMaxChargingWindows(t *testing.T) {
 	})
 
 	t.Run("replacement considers all window types", func(t *testing.T) {
-		// Skip tests that depend on MaxChargingWindows/InterruptionPenaltyPercent (unlimited windows)
-		if maxChargingWindows != 3 || interruptionPenaltyPercent == 0 {
-			t.Skip("Test expects MaxChargingWindows limiting, but InterruptionPenaltyPercent=0 or MaxChargingWindows=0 disables this for pure cost optimization")
-		}
-
 		// Ensures replacement logic considers windows that don't start at same time
 		// 5 single slots @10 (hours 0,2,4,6,8), need 5h with max 3 windows
 		// Should select 3 latest windows and extend one to 2h
@@ -483,7 +478,7 @@ func TestMaxChargingWindows(t *testing.T) {
 
 		assert.Equal(t, 5*time.Hour, Duration(plan))
 		windows := countChargingWindows(plan)
-		assert.LessOrEqual(t, windows, maxChargingWindows, "should not exceed MaxChargingWindows")
+		assert.LessOrEqual(t, windows, 3, "should not exceed MaxChargingWindows")
 
 		// With 3 windows limit and 5h need: expects hours 4,6,8-9 = 10+10+10+100 = 130
 		// Or similar combination with some expensive slots
@@ -515,7 +510,7 @@ func TestMaxChargingWindows(t *testing.T) {
 
 		assert.Equal(t, 3*time.Hour+30*time.Minute, Duration(plan))
 		windows := countChargingWindows(plan)
-		assert.LessOrEqual(t, windows, maxChargingWindows, "should not exceed MaxChargingWindows")
+		assert.LessOrEqual(t, windows, 3, "should not exceed MaxChargingWindows")
 
 		// Should extend Window 1 (cheapest extension @15) not Window 3 (expensive @26)
 		// Expected: 0-2h window (late start → 0:30-2h), 3-4h window, 6-7h window - corrected: early start
