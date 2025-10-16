@@ -10,6 +10,12 @@ import (
 	"github.com/evcc-io/evcc/util"
 )
 
+const (
+	// making unvisible constraints from loadpoint_plan.go available
+	smallSlotDuration = 15 * time.Minute // minimum slot duration to keep
+	smallGapDuration  = 30 * time.Minute // maximum gap duration to merge
+)
+
 // Planner plans a series of charging slots for a given (variable) tariff
 type Planner struct {
 	log    *util.Logger
@@ -141,11 +147,12 @@ func (t *Planner) continuousPlan(rates api.Rates, start, end time.Time) api.Rate
 func (t *Planner) findOptimalContinuousWindow(rates api.Rates, effectiveDuration time.Duration, targetTime time.Time) (api.Rates, float64) {
 	now := t.clock.Now()
 	if len(rates) == 0 || effectiveDuration <= 0 {
+		//t.log.DEBUG.Printf("findOptimalContinuousWindow: early return - rates=%d, effectiveDuration=%v", len(rates), effectiveDuration)
 		return nil, 0
 	}
 
 	rates.Sort() // sort slots by start time
-	//t.log.DEBUG.Printf("findOptimalContinuousWindow: now=%v, targetTime=%v, effectiveDuration=%v", now, targetTime, effectiveDuration)
+	//t.log.DEBUG.Printf("findOptimalContinuousWindow: now=%v, targetTime=%v, effectiveDuration=%v, rates=%d", now, targetTime, effectiveDuration, len(rates))
 
 	// prepare all relevant points (start/end of all slots)
 	points := make([]time.Time, 0, 2*len(rates))
@@ -157,9 +164,6 @@ func (t *Planner) findOptimalContinuousWindow(rates api.Rates, effectiveDuration
 	points = slices.Compact(points)
 
 	//t.log.DEBUG.Printf("findOptimalContinuousWindow: evaluated points: %v", len(points))
-	for i, p := range points {
-		t.log.DEBUG.Printf("  point[%d]: %v", i, p)
-	}
 
 	type windowSlot struct {
 		Start, End time.Time
@@ -231,8 +235,9 @@ func (t *Planner) findOptimalContinuousWindow(rates api.Rates, effectiveDuration
 		}
 
 		// check if this window has the minimal cost
+		// only consider windows with actual slots (not empty)
 		//t.log.DEBUG.Printf("    window cost: %.4f (current min: %.4f), activeSlots: %d", currentCost, minCost, len(activeSlots))
-		if currentCost < minCost {
+		if len(activeSlots) > 0 && currentCost < minCost {
 			minCost = currentCost
 			bestPlan = make(api.Rates, len(activeSlots))
 			for i, s := range activeSlots {
@@ -249,12 +254,12 @@ func (t *Planner) findOptimalContinuousWindow(rates api.Rates, effectiveDuration
 		left++
 	}
 
-	//	t.log.DEBUG.Printf("findOptimalContinuousWindow result: bestPlan length=%d, minCost=%.4f", len(bestPlan), minCost)
-	//	if bestPlan != nil {
-	//		for i, slot := range bestPlan {
-	//			t.log.DEBUG.Printf("  slot[%d]: [%v, %v] value=%.2f", i, slot.Start, slot.End, slot.Value)
-	//		}
-	//	}
+	//t.log.DEBUG.Printf("findOptimalContinuousWindow result: bestPlan length=%d, minCost=%.4f", len(bestPlan), minCost)
+	if bestPlan != nil {
+		for i, slot := range bestPlan {
+			//t.log.DEBUG.Printf("  slot[%d]: [%v, %v] value=%.2f", i, slot.Start, slot.End, slot.Value)
+		}
+	}
 
 	// Merge individual slots into a single continuous slot with weighted average price
 	if len(bestPlan) > 0 {
@@ -319,6 +324,7 @@ func (t *Planner) Plan(requiredDuration, precondition time.Duration, targetTime 
 
 	// consume remaining time
 	if t.clock.Until(targetTime) <= requiredDuration {
+		//t.log.DEBUG.Printf("consuming remaining time: until=%v, required=%v", t.clock.Until(targetTime), requiredDuration)
 		return t.continuousPlan(rates, latestStart, targetTime)
 	}
 
@@ -333,33 +339,44 @@ func (t *Planner) Plan(requiredDuration, precondition time.Duration, targetTime 
 		}
 
 		// need to use some of the available slots
-		t.log.DEBUG.Printf("target time beyond available slots- reducing plan horizon from %v to %v",
+		//t.log.DEBUG.Printf("target time beyond available slots- reducing plan horizon from %v to %v",
 			requiredDuration.Round(time.Second), durationAfterRates.Round(time.Second))
 
 		targetTime = last
 		requiredDuration -= durationAfterRates
+
+		// recalculate latestStart after adjusting targetTime and requiredDuration
+		latestStart = targetTime.Add(-requiredDuration)
+		if latestStart.Before(t.clock.Now()) {
+			latestStart = t.clock.Now()
+		}
+	}
+	
+	// Calculate effective duration (excluding preconditioning)
+	effectiveDuration := requiredDuration
+	if precondition > 0 {
+		effectiveDuration -= precondition
+	}
+
+	// Plan for effective duration (without preconditioning window)
+	preCondWindow := targetTime
+	if precondition > 0 {
+		preCondWindow = targetTime.Add(-precondition)
 	}
 
 	// use continuous window mode if selected
 	if useContinuous {
-		effectiveDuration := requiredDuration
-		if precondition > 0 {
-			effectiveDuration -= precondition
-		}
-
-		preCondWindow := targetTime.Add(-precondition)
+		//t.log.DEBUG.Printf("continuous mode: calling findOptimalContinuousWindow with effectiveDuration=%v, preCondWindow=%v", effectiveDuration, preCondWindow)
 		plan, _ := t.findOptimalContinuousWindow(rates, effectiveDuration, preCondWindow)
 
 		if plan == nil {
+			//t.log.DEBUG.Printf("continuous mode: findOptimalContinuousWindow returned nil, using fallback continuousPlan")
 			return t.continuousPlan(rates, latestStart, targetTime)
 		}
 
+		//t.log.DEBUG.Printf("continuous mode: found plan with %d slots", len(plan))
 		// add preconditioning at the end
-		if precondition > 0 {
-			preCondStart := targetTime.Add(-precondition)
-			preCondPlan := t.continuousPlan(rates, preCondStart, targetTime)
-			plan = append(plan, preCondPlan...)
-		}
+		plan = t.addPreconditioningWindow(plan, rates, precondition, targetTime)
 
 		// sort plan by time
 		plan.Sort()
@@ -368,21 +385,43 @@ func (t *Planner) Plan(requiredDuration, precondition time.Duration, targetTime 
 	}
 
 	// default mode: cheapest combination of slots
+
 	slices.SortStableFunc(rates, sortByCost)
+	plan := t.plan(rates, effectiveDuration, preCondWindow)
 
-	rates, adjusted := splitPreconditionSlots(rates, precondition, targetTime)
+	// If we have a single slot with preconditioning, shift it to the end of its rate slot
+	// to minimize the gap before preconditioning
+	if len(plan) == 1 && precondition > 0 {
+		slot := plan[0]
+		slotDuration := slot.End.Sub(slot.Start)
 
-	// sort rates by price and time
-	slices.SortStableFunc(rates, sortByCost)
-
-	plan := t.plan(rates, requiredDuration, targetTime)
-
-	// correct plan slots to show original, non-adjusted prices
-	for i, r := range plan {
-		if rr, err := adjusted.At(r.Start); err == nil {
-			plan[i].Value = rr.Value
+		// Find the original rate slot that contains this plan slot
+		for _, rate := range rates {
+			if !rate.Start.After(slot.Start) && rate.End.After(slot.Start) {
+				// Shift slot to end at the rate's end (or preCondWindow, whichever is earlier)
+				newEnd := rate.End
+				if newEnd.After(preCondWindow) {
+					newEnd = preCondWindow
+				}
+				slot.End = newEnd
+				slot.Start = slot.End.Add(-slotDuration)
+				plan[0] = slot
+				break
+			}
 		}
 	}
+
+	// sort plan by time
+	plan.Sort()
+
+	// Apply gap constraints
+	plan = t.applyGapConstraints(plan, smallSlotDuration, smallGapDuration)
+
+	// Trim excess duration from window edges
+	plan = t.trimExcessDuration(plan, effectiveDuration, smallSlotDuration)
+
+	// Add preconditioning at the end
+	plan = t.addPreconditioningWindow(plan, rates, precondition, targetTime)
 
 	// sort plan by time
 	plan.Sort()
@@ -390,44 +429,212 @@ func (t *Planner) Plan(requiredDuration, precondition time.Duration, targetTime 
 	return plan
 }
 
-func splitPreconditionSlots(rates api.Rates, precondition time.Duration, targetTime time.Time) (api.Rates, api.Rates) {
-	var res, adjusted api.Rates
+// addPreconditioningWindow appends a preconditioning window to the plan
+func (t *Planner) addPreconditioningWindow(plan api.Rates, rates api.Rates, precondition time.Duration, targetTime time.Time) api.Rates {
+	if precondition <= 0 {
+		return plan
+	}
 
-	for _, r := range slices.Clone(rates) {
-		preCondStart := targetTime.Add(-precondition)
+	preCondStart := targetTime.Add(-precondition)
+	preCondPlan := t.continuousPlan(rates, preCondStart, targetTime)
+	return append(plan, preCondPlan...)
+}
 
-		if !r.End.After(preCondStart) {
-			res = append(res, r)
-			continue
+// applyGapConstraints applies gap and slot duration constraints to a plan
+// smallSlotDuration: minimum slot duration to keep (e.g., 15 minutes)
+// smallGapDuration: maximum gap to merge (e.g., 30 minutes)
+// Returns the adjusted plan with updated costs
+func (t *Planner) applyGapConstraints(plan api.Rates, smallSlotDuration, smallGapDuration time.Duration) api.Rates {
+	if len(plan) == 0 {
+		return plan
+	}
+
+	// Step 1: Remove slots that are too short
+	filtered := make(api.Rates, 0, len(plan))
+	for _, slot := range plan {
+		duration := slot.End.Sub(slot.Start)
+		if duration >= smallSlotDuration {
+			filtered = append(filtered, slot)
+		} else {
+			//t.log.DEBUG.Printf("gap constraint: removing short slot %v (duration: %v < %v)",
+				slot.Start.Round(time.Second), duration.Round(time.Second), smallSlotDuration.Round(time.Second))
+		}
+	}
+
+	if len(filtered) == 0 {
+		return nil
+	}
+
+	// Step 2: Merge slots with small gaps between them
+	merged := make(api.Rates, 0, len(filtered))
+	current := filtered[0]
+
+	for i := 1; i < len(filtered); i++ {
+		gap := filtered[i].Start.Sub(current.End)
+		
+		if gap <= smallGapDuration {
+			// Merge slots by filling the gap
+			//t.log.DEBUG.Printf("gap constraint: merging slots across gap of %v (< %v)",
+				gap.Round(time.Second), smallGapDuration.Round(time.Second))
+			
+			// Calculate weighted average cost for the merged slot
+			duration1 := current.End.Sub(current.Start).Hours()
+			duration2 := filtered[i].End.Sub(filtered[i].Start).Hours()
+			gapDuration := gap.Hours()
+			
+			// For the gap, use the higher cost of the two adjacent slots (conservative approach)
+			gapCost := math.Max(current.Value, filtered[i].Value)
+			
+			totalCost := current.Value*duration1 + gapCost*gapDuration + filtered[i].Value*duration2
+			totalDuration := duration1 + gapDuration + duration2
+			
+			current = api.Rate{
+				Start: current.Start,
+				End:   filtered[i].End,
+				Value: totalCost / totalDuration,
+			}
+		} else {
+			// Gap is too large, finalize current slot and start a new one
+			merged = append(merged, current)
+			current = filtered[i]
+		}
+	}
+	
+	// Add the last slot
+	merged = append(merged, current)
+
+	return merged
+}
+
+// trimExcessDuration removes excess duration from window edges, preferring to trim from the highest-cost edge
+// A window is a group of consecutive slots (no gaps between them)
+// requiredDuration: the actual charging duration needed
+// smallSlotDuration: minimum slot duration (e.g., 15 minutes) - slots below this will be removed entirely
+func (t *Planner) trimExcessDuration(plan api.Rates, requiredDuration, smallSlotDuration time.Duration) api.Rates {
+	if len(plan) == 0 || requiredDuration <= 0 {
+		return plan
+	}
+
+	// Calculate total duration in the plan
+	totalDuration := time.Duration(0)
+	for _, slot := range plan {
+		totalDuration += slot.End.Sub(slot.Start)
+	}
+
+	// If plan duration matches or is less than required, no trimming needed
+	excessDuration := totalDuration - requiredDuration
+	if excessDuration <= 0 {
+		return plan
+	}
+
+	//t.log.DEBUG.Printf("trim excess: plan has %v excess duration (total: %v, required: %v)",
+		excessDuration.Round(time.Second), totalDuration.Round(time.Second), requiredDuration.Round(time.Second))
+
+	// Clone the plan to avoid modifying the original
+	result := make(api.Rates, len(plan))
+	copy(result, plan)
+
+	// Recursively trim until we've removed all excess
+	for excessDuration > 0 && len(result) > 0 {
+		// Find all window edges (slots at the start or end of each charging window)
+		type edge struct {
+			slotIdx    int
+			isStart    bool // true if this is the start of a window
+			cost       float64
+			duration   time.Duration
 		}
 
-		// split slot
-		if !r.Start.After(preCondStart) {
-			// keep the first part of the slot
-			res = append(res, api.Rate{
-				Start: r.Start,
-				End:   preCondStart,
-				Value: r.Value,
-			})
+		var edges []edge
 
-			// adjust the second part of the slot
-			r = api.Rate{
-				Start: preCondStart,
-				End:   r.End,
-				Value: r.Value,
+		for i := 0; i < len(result); i++ {
+			slot := result[i]
+			slotDuration := slot.End.Sub(slot.Start)
+
+			// Check if this is the start of a window (no previous slot or gap before it)
+			isWindowStart := i == 0
+			if i > 0 {
+				prevSlot := result[i-1]
+				if !prevSlot.End.Equal(slot.Start) {
+					isWindowStart = true
+				}
+			}
+			
+			// Check if this is the end of a window (no next slot or gap after it)
+			isWindowEnd := i == len(result)-1
+			if i < len(result)-1 {
+				nextSlot := result[i+1]
+				if !slot.End.Equal(nextSlot.Start) {
+					isWindowEnd = true
+				}
+			}
+
+			if isWindowStart {
+				edges = append(edges, edge{
+					slotIdx:  i,
+					isStart:  true,
+					cost:     slot.Value,
+					duration: slotDuration,
+				})
+			}
+			if isWindowEnd {
+				edges = append(edges, edge{
+					slotIdx:  i,
+					isStart:  false,
+					cost:     slot.Value,
+					duration: slotDuration,
+				})
 			}
 		}
 
-		// set the value to 0 to include slot in the plan
-		res = append(res, api.Rate{
-			Start: r.Start,
-			End:   r.End,
-			Value: 0,
-		})
+		if len(edges) == 0 {
+			break
+		}
 
-		// keep a copy of the adjusted slot
-		adjusted = append(adjusted, r)
+		// Find the edge with the highest cost
+		maxCostIdx := 0
+		for i := 1; i < len(edges); i++ {
+			if edges[i].cost > edges[maxCostIdx].cost {
+				maxCostIdx = i
+			}
+		}
+
+		selectedEdge := edges[maxCostIdx]
+		slot := result[selectedEdge.slotIdx]
+		currentSlotDuration := slot.End.Sub(slot.Start)
+
+		//t.log.DEBUG.Printf("trim excess: trimming from window edge at slot %d (isWindowStart=%v, cost=%.3f, currentDuration=%v)",
+			selectedEdge.slotIdx, selectedEdge.isStart, selectedEdge.cost, currentSlotDuration.Round(time.Second))
+
+		// Calculate what would remain after trimming
+		remainingSlotDuration := currentSlotDuration - excessDuration
+
+		// If trimming would leave a slot smaller than the minimum constraint, remove it entirely
+		if remainingSlotDuration > 0 && remainingSlotDuration < smallSlotDuration {
+			//t.log.DEBUG.Printf("trim excess: remaining slot duration %v < minimum %v, removing entire slot instead",
+				remainingSlotDuration.Round(time.Second), smallSlotDuration.Round(time.Second))
+			result = append(result[:selectedEdge.slotIdx], result[selectedEdge.slotIdx+1:]...)
+			excessDuration -= currentSlotDuration
+		} else if currentSlotDuration > excessDuration {
+			// Shorten the slot (remaining duration will be >= smallSlotDuration)
+			if selectedEdge.isStart {
+				// At window START: trim from the beginning (start later)
+				result[selectedEdge.slotIdx].Start = slot.Start.Add(excessDuration)
+				//t.log.DEBUG.Printf("trim excess: window start - moved start later by %v (remaining: %v >= minimum %v)",
+					excessDuration.Round(time.Second), remainingSlotDuration.Round(time.Second), smallSlotDuration.Round(time.Second))
+			} else {
+				// At window END: trim from the end (end earlier)
+				result[selectedEdge.slotIdx].End = slot.End.Add(-excessDuration)
+				//t.log.DEBUG.Printf("trim excess: window end - moved end earlier by %v (remaining: %v >= minimum %v)",
+					excessDuration.Round(time.Second), remainingSlotDuration.Round(time.Second), smallSlotDuration.Round(time.Second))
+			}
+			excessDuration = 0
+		} else {
+			// Remove the entire slot
+			//t.log.DEBUG.Printf("trim excess: removed entire edge slot (duration: %v)", currentSlotDuration.Round(time.Second))
+			result = append(result[:selectedEdge.slotIdx], result[selectedEdge.slotIdx+1:]...)
+			excessDuration -= currentSlotDuration
+		}
 	}
 
-	return res, adjusted
+	return result
 }
