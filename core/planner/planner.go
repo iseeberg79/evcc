@@ -161,85 +161,57 @@ func (t *Planner) findOptimalContinuousWindow(rates api.Rates, effectiveDuration
 	slices.SortFunc(points, func(a, b time.Time) int { return int(a.Sub(b)) })
 	points = slices.Compact(points)
 
-
-	type windowSlot struct {
-		Start, End time.Time
-		Value      float64
-	}
-
 	var bestPlan api.Rates
 	minCost := math.Inf(1)
 
-	left := 0
-	right := 0
-	currentCost := 0.0
-	activeSlots := []windowSlot{}
-
-	// sliding-window over all relevant time points
-	for left < len(points) {
-		windowStart := points[left]
+	// Try each possible window start position
+	for _, windowStart := range points {
 		windowEnd := windowStart.Add(effectiveDuration)
-
 
 		// Allow windowEnd == targetTime
 		if windowEnd.After(targetTime) {
 			break
 		}
 
-		// remove slots that fall out on the left of the window
-		newActive := activeSlots[:0]
-		for _, s := range activeSlots {
-			if s.End.After(windowStart) {
-				newActive = append(newActive, s)
-			} else {
-				duration := s.End.Sub(s.Start).Hours()
-				currentCost -= s.Value * duration
-			}
-		}
-		activeSlots = newActive
+		// Calculate cost for this window by examining all rates
+		totalCost := 0.0
+		windowPlan := make(api.Rates, 0)
 
-		// add slots that come into the window on the right
-		for right < len(rates) && rates[right].Start.Before(windowEnd) {
-			s := rates[right]
-
-			trimStart := s.Start
-			if windowStart.After(trimStart) {
-				trimStart = windowStart
-			}
-			trimEnd := s.End
-			if windowEnd.Before(trimEnd) {
-				trimEnd = windowEnd
+		for _, rate := range rates {
+			// Skip rates that don't overlap with this window
+			if rate.End.Before(windowStart) || rate.Start.After(windowEnd) {
+				continue
 			}
 
-			if trimStart.Before(trimEnd) {
-				slotDuration := trimEnd.Sub(trimStart).Hours()
-				slotCost := s.Value * slotDuration
-				activeSlots = append(activeSlots, windowSlot{
-					Start: trimStart,
-					End:   trimEnd,
-					Value: s.Value,
+			// Calculate the overlapping portion
+			overlapStart := rate.Start
+			if windowStart.After(overlapStart) {
+				overlapStart = windowStart
+			}
+			overlapEnd := rate.End
+			if windowEnd.Before(overlapEnd) {
+				overlapEnd = windowEnd
+			}
+
+			if overlapStart.Before(overlapEnd) {
+				duration := overlapEnd.Sub(overlapStart).Hours()
+				totalCost += rate.Value * duration
+
+				windowPlan = append(windowPlan, api.Rate{
+					Start: overlapStart,
+					End:   overlapEnd,
+					Value: rate.Value,
 				})
-				currentCost += slotCost
 			}
-			right++
 		}
 
-		// check if this window has the minimal cost
-		// only consider windows with actual slots (not empty)
-		if len(activeSlots) > 0 && currentCost < minCost {
-			minCost = currentCost
-			bestPlan = make(api.Rates, len(activeSlots))
-			for i, s := range activeSlots {
-				bestPlan[i] = api.Rate{
-					Start: s.Start,
-					End:   s.End,
-					Value: s.Value,
-				}
-			}
+		// Check if this window has the minimal cost
+		if len(windowPlan) > 0 && totalCost < minCost {
+			minCost = totalCost
+			bestPlan = make(api.Rates, len(windowPlan))
+			copy(bestPlan, windowPlan)
 			bestPlan.Sort()
 		}
-
-		left++
 	}
 
 	// Merge individual slots into a single continuous slot with weighted average price
@@ -498,7 +470,6 @@ func (t *Planner) trimExcessDuration(plan api.Rates, requiredDuration time.Durat
 	if excessDuration <= 0 {
 		return plan
 	}
-
 
 	// Clone the plan to avoid modifying the original
 	result := make(api.Rates, len(plan))
