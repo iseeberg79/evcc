@@ -428,7 +428,7 @@ func (t *Planner) applyGapConstraints(plan api.Rates, smallSlotDuration, smallGa
 	for i := 1; i < len(filtered); i++ {
 		gap := filtered[i].Start.Sub(current.End)
 
-		if gap <= smallGapDuration {
+		if gap < smallGapDuration {
 			// Merge slots by filling the gap
 
 			// Calculate weighted average cost for the merged slot
