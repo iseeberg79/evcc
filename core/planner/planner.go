@@ -361,14 +361,15 @@ func (t *Planner) Plan(requiredDuration, precondition time.Duration, targetTime 
 	// sort plan by time
 	plan.Sort()
 
-	// Apply gap constraints
-	plan = t.applyGapConstraints(plan, smallSlotDuration, smallGapDuration)
+	// Apply loadpoint constraints to show effective charging pattern
+	// This simulates how loadpoint_plan.go will interpret the plan:
+	// - Removes too-short slots without successors (will be ignored)
+	// - Bridges small gaps (will continue charging)
+	// - Trims excess at the end
+	plan = t.applyLoadpointConstraints(plan, effectiveDuration)
 
-	// Trim excess duration from window edges
-	plan = t.trimExcessDuration(plan, effectiveDuration, smallSlotDuration)
-
-	// Recalculate prices after gap merging and trimming
-	// This ensures prices reflect the actual tariff composition after slot modifications
+	// Recalculate prices after applying constraints
+	// This ensures prices reflect the actual tariff composition
 	plan = t.recalculatePrices(plan, rates)
 
 	// Add preconditioning at the end
@@ -624,4 +625,116 @@ func (t *Planner) recalculatePrices(plan api.Rates, rates api.Rates) api.Rates {
 	}
 
 	return plan
+}
+
+// applyLoadpointConstraints simulates the loadpoint_plan.go behavior
+// Shows which slots will actually be active and which gaps will be bridged
+// This creates the "effective charging pattern" that loadpoint will execute
+func (t *Planner) applyLoadpointConstraints(plan api.Rates, requiredDuration time.Duration) api.Rates {
+	if len(plan) == 0 {
+		return plan
+	}
+
+	// Step 1: Remove too-short slots without successors (loadpoint_plan.go:191-194)
+	// "ignore short plans if not already active and no successor"
+	filtered := make(api.Rates, 0, len(plan))
+	for i, slot := range plan {
+		slotDuration := slot.End.Sub(slot.Start)
+		hasSuccessor := SlotHasSuccessor(slot, plan)
+
+		// Keep slot if: duration >= smallSlotDuration OR has successor
+		if slotDuration >= smallSlotDuration || hasSuccessor {
+			filtered = append(filtered, slot)
+		}
+		// else: slot too short and no successor -> will be ignored by loadpoint
+		_ = i // avoid unused warning
+	}
+
+	if len(filtered) == 0 {
+		return nil
+	}
+
+	// Step 2: Bridge small gaps (loadpoint_plan.go:213-216)
+	// "avoid re-start within smallGapDuration, continuing"
+	merged := make(api.Rates, 0, len(filtered))
+	current := filtered[0]
+
+	for i := 1; i < len(filtered); i++ {
+		gap := filtered[i].Start.Sub(current.End)
+
+		if gap < smallGapDuration {
+			// Gap will be bridged - loadpoint continues charging
+			// Merge slots by extending current to cover gap
+			current.End = filtered[i].End
+			// Keep the lower price (optimistic for cost calculation)
+			if filtered[i].Value < current.Value {
+				current.Value = filtered[i].Value
+			}
+		} else {
+			// Gap too large - loadpoint will stop and restart
+			merged = append(merged, current)
+			current = filtered[i]
+		}
+	}
+
+	// Add the last slot
+	merged = append(merged, current)
+
+	// Step 3: Trim excess at the end
+	return t.simpleTrimEnd(merged, requiredDuration)
+}
+
+// simpleTrimEnd removes excess duration by shortening the last slot only
+// Does not perform any gap merging, slot optimization, or constraint handling
+// This is a simplified version to let loadpoint_plan.go handle constraint violations
+func (t *Planner) simpleTrimEnd(plan api.Rates, requiredDuration time.Duration) api.Rates {
+	if len(plan) == 0 || requiredDuration <= 0 {
+		return plan
+	}
+
+	// Calculate total duration
+	totalDuration := time.Duration(0)
+	for _, slot := range plan {
+		totalDuration += slot.End.Sub(slot.Start)
+	}
+
+	// Check if we have excess
+	excessDuration := totalDuration - requiredDuration
+	if excessDuration <= 0 {
+		return plan
+	}
+
+	// Clone to avoid modifying original
+	result := make(api.Rates, len(plan))
+	copy(result, plan)
+
+	// Trim excess from the end of the last slot
+	if len(result) > 0 {
+		lastIdx := len(result) - 1
+		lastSlot := &result[lastIdx]
+		newEnd := lastSlot.End.Add(-excessDuration)
+
+		// If trimming would make slot invalid or empty, remove slots from the end
+		for newEnd.Before(lastSlot.Start) || newEnd.Equal(lastSlot.Start) {
+			if lastIdx == 0 {
+				// Last slot, can't remove more
+				return nil
+			}
+			// Remove this slot and continue with previous
+			excessDuration -= lastSlot.End.Sub(lastSlot.Start)
+			result = result[:lastIdx]
+			lastIdx--
+			if lastIdx >= 0 {
+				lastSlot = &result[lastIdx]
+				newEnd = lastSlot.End.Add(-excessDuration)
+			}
+		}
+
+		// Apply the trim
+		if lastIdx >= 0 && len(result) > 0 {
+			result[lastIdx].End = newEnd
+		}
+	}
+
+	return result
 }
