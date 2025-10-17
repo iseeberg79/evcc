@@ -367,6 +367,10 @@ func (t *Planner) Plan(requiredDuration, precondition time.Duration, targetTime 
 	// Trim excess duration from window edges
 	plan = t.trimExcessDuration(plan, effectiveDuration, smallSlotDuration)
 
+	// Recalculate prices after gap merging and trimming
+	// This ensures prices reflect the actual tariff composition after slot modifications
+	plan = t.recalculatePrices(plan, rates)
+
 	// Add preconditioning at the end
 	plan = t.addPreconditioningWindow(plan, rates, precondition, targetTime)
 
@@ -570,4 +574,54 @@ func (t *Planner) trimExcessDuration(plan api.Rates, requiredDuration time.Durat
 	}
 
 	return result
+}
+
+// recalculatePrices recalculates slot prices based on original tariff rates
+// This is necessary after operations that modify slot boundaries (like merging or trimming)
+// because those operations use weighted averages that may no longer reflect the actual tariff composition
+func (t *Planner) recalculatePrices(plan api.Rates, rates api.Rates) api.Rates {
+	if len(plan) == 0 || len(rates) == 0 {
+		return plan
+	}
+
+	for i := range plan {
+		slot := &plan[i]
+		totalCost := 0.0
+		totalDuration := 0.0
+
+		// Find overlapping rates and calculate weighted average
+		for _, rate := range rates {
+			// Skip rates that don't overlap with this slot
+			if rate.End.Before(slot.Start) || rate.End.Equal(slot.Start) {
+				continue
+			}
+			if rate.Start.After(slot.End) || rate.Start.Equal(slot.End) {
+				continue
+			}
+
+			// Calculate overlap boundaries
+			overlapStart := rate.Start
+			if slot.Start.After(overlapStart) {
+				overlapStart = slot.Start
+			}
+			overlapEnd := rate.End
+			if slot.End.Before(overlapEnd) {
+				overlapEnd = slot.End
+			}
+
+			// Add to weighted calculation
+			if overlapStart.Before(overlapEnd) {
+				duration := overlapEnd.Sub(overlapStart).Hours()
+				totalCost += rate.Value * duration
+				totalDuration += duration
+			}
+		}
+
+		// Update slot price with recalculated weighted average
+		if totalDuration > 0 {
+			slot.Value = totalCost / totalDuration
+		}
+	}
+
+	return plan
 }
