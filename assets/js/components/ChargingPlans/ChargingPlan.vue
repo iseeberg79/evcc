@@ -187,7 +187,11 @@ export default defineComponent({
 			return null;
 		},
 		repeatingPlans(): RepeatingPlan[] {
-			if (this.vehicle?.repeatingPlans && this.vehicle.repeatingPlans.length > 0) {
+			if (
+				this.vehicle &&
+				this.vehicle?.repeatingPlans &&
+				this.vehicle.repeatingPlans.length > 0
+			) {
 				return [...this.vehicle.repeatingPlans];
 			}
 			return [];
@@ -305,6 +309,13 @@ export default defineComponent({
 		},
 		updateRepeatingPlans(plans: RepeatingPlan[]): void {
 			api.post(`${this.apiVehicle}plan/repeating`, { plans });
+		},
+		updatePlanStrategy(strategy: PlanStrategy): void {
+			if (this.socBasedPlanning) {
+				api.post(`${this.apiVehicle}plan/strategy`, strategy);
+			} else {
+				api.post(`${this.apiLoadpoint}plan/strategy`, strategy);
+			}
 		},
 		updatePlanStrategy(strategy: PlanStrategy): void {
 			if (this.socBasedPlanning) {
