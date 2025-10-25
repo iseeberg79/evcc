@@ -317,13 +317,6 @@ export default defineComponent({
 				api.post(`${this.apiLoadpoint}plan/strategy`, strategy);
 			}
 		},
-		updatePlanStrategy(strategy: PlanStrategy): void {
-			if (this.socBasedPlanning) {
-				api.post(`${this.apiVehicle}plan/strategy`, strategy);
-			} else {
-				api.post(`${this.apiLoadpoint}plan/strategy`, strategy);
-			}
-		},
 		setMinSoc(soc: number): void {
 			api.post(`${this.apiVehicle}minsoc/${soc}`);
 		},

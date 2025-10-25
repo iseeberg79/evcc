@@ -267,7 +267,7 @@ func TestPrecondition(t *testing.T) {
 	clock := clock.NewMock()
 	ctrl := gomock.NewController(t)
 	trf := api.NewMockTariff(ctrl)
-	trf.EXPECT().Rates().AnyTimes().Return(rates([]float64{0, 1, 2, 3}, clock.Now(), tariff.SlotDuration), nil)
+	trf.EXPECT().Rates().AnyTimes().Return(rates([]float64{1, 2, 3, 4}, clock.Now(), tariff.SlotDuration), nil)
 
 	p := &Planner{
 		log:    util.NewLogger("foo"),
