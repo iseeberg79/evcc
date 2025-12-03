@@ -12,7 +12,7 @@ func init() {
 }
 
 func NewChargerFromTemplateConfig(ctx context.Context, other map[string]any) (api.Charger, error) {
-	instance, err := templates.RenderInstance(templates.Charger, other)
+	instance, err := templates.RenderInstanceWithContext(ctx, templates.Charger, other)
 	if err != nil {
 		return nil, err
 	}

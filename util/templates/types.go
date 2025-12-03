@@ -208,6 +208,9 @@ type Param struct {
 	Comset   string `json:",omitempty"` // device specific default for modbus RS485 comset
 	Port     int    `json:",omitempty"` // device specific default for modbus TCPIP port
 	ID       int    `json:",omitempty"` // device specific default for modbus ID
+
+	// Init defines how to read the parameter value from a device during initialization
+	Init map[string]any `json:"init,omitempty" yaml:"init,omitempty"`
 }
 
 // DefaultValue returns a default or example value depending on the renderMode

@@ -12,7 +12,7 @@ func init() {
 }
 
 func NewTariffFromTemplateConfig(ctx context.Context, other map[string]any) (api.Tariff, error) {
-	instance, err := templates.RenderInstance(templates.Tariff, other)
+	instance, err := templates.RenderInstanceWithContext(ctx, templates.Tariff, other)
 	if err != nil {
 		return nil, err
 	}

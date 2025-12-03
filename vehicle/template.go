@@ -12,7 +12,7 @@ func init() {
 }
 
 func NewVehicleFromTemplateConfig(ctx context.Context, other map[string]any) (api.Vehicle, error) {
-	instance, err := templates.RenderInstance(templates.Vehicle, other)
+	instance, err := templates.RenderInstanceWithContext(ctx, templates.Vehicle, other)
 	if err != nil {
 		return nil, err
 	}
