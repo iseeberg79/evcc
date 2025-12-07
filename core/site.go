@@ -50,16 +50,20 @@ type updater interface {
 
 // measurement is used as slice element for publishing structured data
 type measurement struct {
-	Title         string    `json:"title,omitempty"`
-	Icon          string    `json:"icon,omitempty"`
-	Power         float64   `json:"power"`
-	Energy        float64   `json:"energy,omitempty"`
-	Powers        []float64 `json:"powers,omitempty"`
-	Currents      []float64 `json:"currents,omitempty"`
-	ExcessDCPower float64   `json:"excessdcpower,omitempty"`
-	Capacity      *float64  `json:"capacity,omitempty"`
-	Soc           *float64  `json:"soc,omitempty"`
-	Controllable  *bool     `json:"controllable,omitempty"`
+	Title            string    `json:"title,omitempty"`
+	Icon             string    `json:"icon,omitempty"`
+	Power            float64   `json:"power"`
+	Energy           float64   `json:"energy,omitempty"`
+	Powers           []float64 `json:"powers,omitempty"`
+	Currents         []float64 `json:"currents,omitempty"`
+	ExcessDCPower    float64   `json:"excessdcpower,omitempty"`
+	Capacity         *float64  `json:"capacity,omitempty"`
+	Soc              *float64  `json:"soc,omitempty"`
+	Controllable     *bool     `json:"controllable,omitempty"`
+	MinSoc           *float64  `json:"minSoc,omitempty"`
+	MaxSoc           *float64  `json:"maxSoc,omitempty"`
+	MaxChargePower   *float64  `json:"maxChargePower,omitempty"`
+	MaxDischargePower *float64 `json:"maxDischargePower,omitempty"`
 }
 
 var _ api.TitleDescriber = (*measurement)(nil)
@@ -649,6 +653,26 @@ func (site *Site) updateBatteryMeters() []measurement {
 		}
 
 		_, controllable := meter.(api.BatteryController)
+
+		// battery soc limits
+		if m, ok := meter.(api.BatterySocLimiter); ok {
+			minSoc, maxSoc := m.GetSocLimits()
+			if minSoc > 0 || maxSoc > 0 {
+				mm[i].MinSoc = lo.ToPtr(minSoc)
+				mm[i].MaxSoc = lo.ToPtr(maxSoc)
+				site.log.DEBUG.Printf("battery %d soc limits: min=%.0f%% max=%.0f%%", i+1, minSoc, maxSoc)
+			}
+		}
+
+		// battery power limits
+		if m, ok := meter.(api.BatteryPowerLimiter); ok {
+			chargePower, dischargePower := m.GetPowerLimits()
+			if chargePower > 0 || dischargePower > 0 {
+				mm[i].MaxChargePower = lo.ToPtr(chargePower)
+				mm[i].MaxDischargePower = lo.ToPtr(dischargePower)
+				site.log.DEBUG.Printf("battery %d power limits: charge=%.0fW discharge=%.0fW", i+1, chargePower, dischargePower)
+			}
+		}
 
 		mm[i].Soc = lo.ToPtr(batSoc)
 		mm[i].Capacity = lo.ToPtr(capacity)

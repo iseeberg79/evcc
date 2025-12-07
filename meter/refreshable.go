@@ -97,22 +97,28 @@ var _ api.BatterySocLimiter = (*RefreshableMeter)(nil)
 
 func (m *RefreshableMeter) GetSocLimits() (min, max float64) {
 	// Try to get refreshed values first
+	var hasRefreshedMin, hasRefreshedMax bool
 	if val, ok := m.refreshParams.Get("minsoc"); ok {
 		min = toFloat64(val)
+		hasRefreshedMin = true
 	}
 	if val, ok := m.refreshParams.Get("maxsoc"); ok {
 		max = toFloat64(val)
+		hasRefreshedMax = true
 	}
 
 	// If we got both values from refresh, return them
 	if min > 0 || max > 0 {
-		m.log.TRACE.Printf("Using refreshed soc limits: min=%.0f%% max=%.0f%%", min, max)
+		m.log.DEBUG.Printf("Using refreshed soc limits: min=%.0f%% (refreshed: %v) max=%.0f%% (refreshed: %v)",
+			min, hasRefreshedMin, max, hasRefreshedMax)
 		return min, max
 	}
 
 	// Fallback to base implementation if available
 	if limiter, ok := m.Meter.(api.BatterySocLimiter); ok {
-		return limiter.GetSocLimits()
+		min, max = limiter.GetSocLimits()
+		m.log.DEBUG.Printf("Using base meter soc limits: min=%.0f%% max=%.0f%%", min, max)
+		return min, max
 	}
 
 	return 0, 0
