@@ -329,14 +329,6 @@ export default defineComponent({
 		modbusCapabilities() {
 			return (this.modbus?.Choice || []) as ModbusCapability[];
 		},
-		modbusDefaults() {
-			return {
-				id: this.modbus?.ID,
-				comset: this.modbus?.Comset,
-				baudrate: this.modbus?.Baudrate,
-				port: this.modbus?.Port,
-			};
-		},
 		description() {
 			return this.template?.Requirements?.Description;
 		},
@@ -748,11 +740,12 @@ export default defineComponent({
 			}, 500);
 		},
 		applyServiceDefault(paramName: string) {
-			// Auto-apply single service value when field is empty and required
+			// Auto-apply single service value when field is empty
+			// Apply for both required AND optional fields with service values
 			const values = this.serviceValues[paramName];
 			const param = this.templateParams.find((p) => p.Name === paramName);
-			// Only auto-apply if exactly one value is returned, field is empty, and field is required
-			if (values?.length === 1 && !this.values[paramName] && param?.Required) {
+			// Only auto-apply if exactly one value is returned and field is empty
+			if (values?.length === 1 && !this.values[paramName]) {
 				this.values[paramName] = values[0];
 			}
 		},
