@@ -92,6 +92,53 @@ func (m *RefreshableMeter) Capacity() float64 {
 	return 0
 }
 
+// BatterySocLimiter implementation with dynamic values
+var _ api.BatterySocLimiter = (*RefreshableMeter)(nil)
+
+func (m *RefreshableMeter) GetSocLimits() (min, max float64) {
+	// Try to get refreshed values first
+	if val, ok := m.refreshParams.Get("minsoc"); ok {
+		min = toFloat64(val)
+	}
+	if val, ok := m.refreshParams.Get("maxsoc"); ok {
+		max = toFloat64(val)
+	}
+
+	// If we got both values from refresh, return them
+	if min > 0 || max > 0 {
+		m.log.TRACE.Printf("Using refreshed soc limits: min=%.0f%% max=%.0f%%", min, max)
+		return min, max
+	}
+
+	// Fallback to base implementation if available
+	if limiter, ok := m.Meter.(api.BatterySocLimiter); ok {
+		return limiter.GetSocLimits()
+	}
+
+	return 0, 0
+}
+
+// MaxACPowerGetter implementation with dynamic value
+var _ api.MaxACPowerGetter = (*RefreshableMeter)(nil)
+
+func (m *RefreshableMeter) MaxACPower() float64 {
+	// Try to get refreshed value first
+	if val, ok := m.refreshParams.Get("maxacpower"); ok {
+		power := toFloat64(val)
+		if power > 0 {
+			m.log.TRACE.Printf("Using refreshed max AC power: %.0fW", power)
+			return power
+		}
+	}
+
+	// Fallback to base implementation if available
+	if powerGetter, ok := m.Meter.(api.MaxACPowerGetter); ok {
+		return powerGetter.MaxACPower()
+	}
+
+	return 0
+}
+
 // Helper to convert any numeric type to float64
 func toFloat64(val any) float64 {
 	switch v := val.(type) {

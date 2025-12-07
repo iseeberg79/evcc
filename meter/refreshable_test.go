@@ -99,6 +99,88 @@ func TestRefreshableMeter_PowerLimitsFallback(t *testing.T) {
 	assert.Equal(t, 5000.0, discharge)
 }
 
+// MockMeterWithSocLimits implements api.Meter and api.BatterySocLimiter
+type MockMeterWithSocLimits struct {
+	minSoc float64
+	maxSoc float64
+}
+
+func (m *MockMeterWithSocLimits) CurrentPower() (float64, error) {
+	return 1000, nil
+}
+
+func (m *MockMeterWithSocLimits) GetSocLimits() (min, max float64) {
+	return m.minSoc, m.maxSoc
+}
+
+// MockMeterWithMaxACPower implements api.Meter and api.MaxACPowerGetter
+type MockMeterWithMaxACPower struct {
+	maxACPower float64
+}
+
+func (m *MockMeterWithMaxACPower) CurrentPower() (float64, error) {
+	return 1000, nil
+}
+
+func (m *MockMeterWithMaxACPower) MaxACPower() float64 {
+	return m.maxACPower
+}
+
+func TestRefreshableMeter_SocLimits(t *testing.T) {
+	baseMeter := &MockMeterWithSocLimits{minSoc: 10, maxSoc: 90}
+	refreshParams := templates.NewRefreshableParams()
+
+	rpMinSoc := &templates.RefreshableParam{Name: "minsoc"}
+	rpMinSoc.SetValue(15.0)
+	rpMaxSoc := &templates.RefreshableParam{Name: "maxsoc"}
+	rpMaxSoc.SetValue(95.0)
+
+	refreshParams.Add(rpMinSoc)
+	refreshParams.Add(rpMaxSoc)
+
+	rm := newTestRefreshableMeter(baseMeter, refreshParams)
+
+	min, max := rm.GetSocLimits()
+	assert.Equal(t, 15.0, min, "Should use refreshed min soc")
+	assert.Equal(t, 95.0, max, "Should use refreshed max soc")
+}
+
+func TestRefreshableMeter_SocLimitsFallback(t *testing.T) {
+	baseMeter := &MockMeterWithSocLimits{minSoc: 10, maxSoc: 90}
+	refreshParams := templates.NewRefreshableParams()
+
+	rm := newTestRefreshableMeter(baseMeter, refreshParams)
+
+	min, max := rm.GetSocLimits()
+	assert.Equal(t, 10.0, min, "Should fall back to base meter min soc")
+	assert.Equal(t, 90.0, max, "Should fall back to base meter max soc")
+}
+
+func TestRefreshableMeter_MaxACPower(t *testing.T) {
+	baseMeter := &MockMeterWithMaxACPower{maxACPower: 10000}
+	refreshParams := templates.NewRefreshableParams()
+
+	rpMaxACPower := &templates.RefreshableParam{Name: "maxacpower"}
+	rpMaxACPower.SetValue(12000.0)
+
+	refreshParams.Add(rpMaxACPower)
+
+	rm := newTestRefreshableMeter(baseMeter, refreshParams)
+
+	maxACPower := rm.MaxACPower()
+	assert.Equal(t, 12000.0, maxACPower, "Should use refreshed max AC power")
+}
+
+func TestRefreshableMeter_MaxACPowerFallback(t *testing.T) {
+	baseMeter := &MockMeterWithMaxACPower{maxACPower: 10000}
+	refreshParams := templates.NewRefreshableParams()
+
+	rm := newTestRefreshableMeter(baseMeter, refreshParams)
+
+	maxACPower := rm.MaxACPower()
+	assert.Equal(t, 10000.0, maxACPower, "Should fall back to base meter max AC power")
+}
+
 func TestToFloat64(t *testing.T) {
 	assert.Equal(t, 42.5, toFloat64(42.5))
 	assert.Equal(t, 42.0, toFloat64(42))

@@ -73,7 +73,7 @@ params:
         address: 1042 # 0x412 - Minimum SOC [%]
         type: holding
         encoding: float32s # little-endian (Kostal default)
-      interval: 30m # Refresh every 30 minutes
+      interval: 1m # Refresh every 30 minutes
   - name: maxsoc
     required: false # Optional - auto-read from device
     advanced: true
@@ -84,7 +84,7 @@ params:
         address: 1044 # 0x414 - Maximum SOC [%]
         type: holding
         encoding: float32s # little-endian (Kostal default)
-      interval: 30m # Refresh every 30 minutes
+      interval: 1m # Refresh every 30 minutes
   - name: maxchargepower
     required: false # Optional - auto-read from device
     usages: ["battery"]
