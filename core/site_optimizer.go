@@ -259,8 +259,9 @@ func (site *Site) optimizerUpdate(battery []measurement) error {
 			minSoc, maxSoc := m.GetSocLimits()
 			bat.SMin = min(bat.SInitial, float32(*b.Capacity*minSoc*10)) // Wh
 			bat.SMax = max(bat.SInitial, float32(*b.Capacity*maxSoc*10)) // Wh
-			site.log.DEBUG.Printf("optimizer: battery %s using soc limits (min: %.0f%% = %.0fWh, max: %.0f%% = %.0fWh)",
-				deviceProperties(dev).Title, minSoc, bat.SMin, maxSoc, bat.SMax)
+			if minSoc > 0 || maxSoc > 0 {
+				site.log.TRACE.Printf("optimizer: battery %s soc limits min: %.0f%% max: %.0f%%", deviceProperties(dev).Title, minSoc, maxSoc)
+			}
 		}
 
 		req.Batteries = append(req.Batteries, bat)

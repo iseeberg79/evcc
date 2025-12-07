@@ -57,7 +57,10 @@ func NewRefreshableParam(name string, initCfg map[string]any, modbusSettings mod
 }
 
 // Start begins periodic refresh (if interval is set)
-func (r *RefreshableParam) Start(ctx context.Context) error {
+func (r *RefreshableParam) Start(ctx context.Context, loggerName string) error {
+	// Update logger to use meter name
+	r.log = util.NewLogger(loggerName)
+
 	// Read initial value
 	val, err := readInitValue(ctx, r.InitCfg, r.Modbus, r.log)
 	if err != nil {
@@ -69,7 +72,7 @@ func (r *RefreshableParam) Start(ctx context.Context) error {
 	r.lastUpdated = time.Now()
 	r.mu.Unlock()
 
-	r.log.DEBUG.Printf("Initial value: %v", val)
+	r.log.DEBUG.Printf("%s initial value: %v", r.Name, val)
 
 	// Start periodic refresh if interval is configured
 	if r.Interval > 0 {
@@ -77,7 +80,7 @@ func (r *RefreshableParam) Start(ctx context.Context) error {
 		r.cancel = cancel
 
 		go r.refreshLoop(ctx)
-		r.log.DEBUG.Printf("Started periodic refresh every %v", r.Interval)
+		r.log.TRACE.Printf("%s refresh started (interval: %v)", r.Name, r.Interval)
 	}
 
 	return nil
@@ -124,7 +127,7 @@ func (r *RefreshableParam) refreshLoop(ctx context.Context) {
 func (r *RefreshableParam) refresh(ctx context.Context) {
 	val, err := readInitValue(ctx, r.InitCfg, r.Modbus, r.log)
 	if err != nil {
-		r.log.WARN.Printf("Refresh failed: %v (keeping previous value)", err)
+		r.log.WARN.Printf("%s refresh failed: %v (keeping previous value)", r.Name, err)
 		return
 	}
 
@@ -135,9 +138,9 @@ func (r *RefreshableParam) refresh(ctx context.Context) {
 	r.mu.Unlock()
 
 	if oldValue != val {
-		r.log.INFO.Printf("Value changed: %v -> %v", oldValue, val)
+		r.log.INFO.Printf("%s changed: %v -> %v", r.Name, oldValue, val)
 	} else {
-		r.log.TRACE.Printf("Value refreshed: %v (unchanged)", val)
+		r.log.TRACE.Printf("%s: %v (unchanged)", r.Name, val)
 	}
 }
 
@@ -169,12 +172,12 @@ func (rp *RefreshableParams) Add(param *RefreshableParam) {
 }
 
 // StartAll starts all refreshable parameters
-func (rp *RefreshableParams) StartAll(ctx context.Context) error {
+func (rp *RefreshableParams) StartAll(ctx context.Context, loggerName string) error {
 	rp.mu.RLock()
 	defer rp.mu.RUnlock()
 
 	for _, param := range rp.params {
-		if err := param.Start(ctx); err != nil {
+		if err := param.Start(ctx, loggerName); err != nil {
 			return fmt.Errorf("failed to start %s: %w", param.Name, err)
 		}
 	}

@@ -31,7 +31,12 @@ func NewMeterFromTemplateConfig(ctx context.Context, other map[string]any) (api.
 
 	// If there are refreshable params, wrap the meter with lifecycle management
 	if refreshParams != nil {
-		return NewRefreshableMeter(ctx, meter, refreshParams)
+		// Get meter name from config for logging
+		name := "meter"
+		if n, ok := other["name"].(string); ok {
+			name = n
+		}
+		return NewRefreshableMeter(ctx, meter, refreshParams, name)
 	}
 
 	return meter, nil

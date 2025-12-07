@@ -17,19 +17,19 @@ type RefreshableMeter struct {
 }
 
 // NewRefreshableMeter creates a meter wrapper with refreshable parameters
-func NewRefreshableMeter(ctx context.Context, base api.Meter, refreshParams *templates.RefreshableParams) (*RefreshableMeter, error) {
+func NewRefreshableMeter(ctx context.Context, base api.Meter, refreshParams *templates.RefreshableParams, name string) (*RefreshableMeter, error) {
 	m := &RefreshableMeter{
 		Meter:         base,
 		refreshParams: refreshParams,
-		log:           util.NewLogger("refreshable"),
+		log:           util.NewLogger(name),
 	}
 
-	// Start all refreshable parameters
-	if err := refreshParams.StartAll(ctx); err != nil {
+	// Start all refreshable parameters with the meter name
+	if err := refreshParams.StartAll(ctx, name); err != nil {
 		return nil, err
 	}
 
-	m.log.DEBUG.Printf("Started refreshable meter with %d params", refreshParams.Count())
+	m.log.DEBUG.Printf("started with %d refreshable params", refreshParams.Count())
 
 	// Register shutdown hook to stop refresh loops
 	shutdown.Register(m.Shutdown)
@@ -97,28 +97,22 @@ var _ api.BatterySocLimiter = (*RefreshableMeter)(nil)
 
 func (m *RefreshableMeter) GetSocLimits() (min, max float64) {
 	// Try to get refreshed values first
-	var hasRefreshedMin, hasRefreshedMax bool
 	if val, ok := m.refreshParams.Get("minsoc"); ok {
 		min = toFloat64(val)
-		hasRefreshedMin = true
 	}
 	if val, ok := m.refreshParams.Get("maxsoc"); ok {
 		max = toFloat64(val)
-		hasRefreshedMax = true
 	}
 
 	// If we got both values from refresh, return them
 	if min > 0 || max > 0 {
-		m.log.DEBUG.Printf("Using refreshed soc limits: min=%.0f%% (refreshed: %v) max=%.0f%% (refreshed: %v)",
-			min, hasRefreshedMin, max, hasRefreshedMax)
+		m.log.TRACE.Printf("soc limits: min=%.0f%% max=%.0f%%", min, max)
 		return min, max
 	}
 
 	// Fallback to base implementation if available
 	if limiter, ok := m.Meter.(api.BatterySocLimiter); ok {
-		min, max = limiter.GetSocLimits()
-		m.log.DEBUG.Printf("Using base meter soc limits: min=%.0f%% max=%.0f%%", min, max)
-		return min, max
+		return limiter.GetSocLimits()
 	}
 
 	return 0, 0

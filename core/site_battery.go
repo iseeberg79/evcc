@@ -132,11 +132,10 @@ func (site *Site) batteryMaxSocReached(dev config.Device[api.Meter]) (bool, erro
 		return false, err
 	}
 
-	min, max := batLimiter.GetSocLimits()
-	site.log.TRACE.Printf("battery %s: checking soc limits (current: %.0f%%, min: %.0f%%, max: %.0f%%)", deviceTitleOrName(dev), soc, min, max)
+	_, max := batLimiter.GetSocLimits()
 
 	if max > 0 && max < 100 && soc >= max {
-		site.log.DEBUG.Printf("battery %s: limit soc reached (%.0f >= %.0f)", deviceTitleOrName(dev), soc, max)
+		site.log.DEBUG.Printf("battery %s: max soc reached (%.0f%% >= %.0f%%)", deviceTitleOrName(dev), soc, max)
 		return true, nil
 	}
 

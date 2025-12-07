@@ -41,7 +41,7 @@ func newTestRefreshableMeter(baseMeter api.Meter, refreshParams *templates.Refre
 	return &RefreshableMeter{
 		Meter:         baseMeter,
 		refreshParams: refreshParams,
-		log:           util.NewLogger("test"),
+		log:           util.NewLogger("test-meter"),
 	}
 }
 
