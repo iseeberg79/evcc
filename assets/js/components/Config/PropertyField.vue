@@ -1,7 +1,7 @@
 <template>
 	<div v-if="unitValue" :class="sizeClass">
 		<div class="d-flex">
-			<div class="position-relative flex-grow-1">
+			<div class="flex-grow-1 position-relative">
 				<input
 					:id="id"
 					v-model="value"
@@ -11,20 +11,15 @@
 					:placeholder="placeholder"
 					:required="required"
 					:aria-describedby="id + '_unit'"
-					:class="`${datalistId && serviceValues.length > 0 ? 'form-select' : 'form-control'} ${showClearButton ? 'has-clear-button' : ''} ${invalid ? 'is-invalid' : ''}`"
-					class="text-end"
-					style="border-top-right-radius: 0; border-bottom-right-radius: 0"
-					:autocomplete="masked || datalistId ? 'off' : null"
+					:class="showDatalist ? 'form-select' : 'form-control'"
+					class="text-end w-100"
+					:style="{
+						borderTopRightRadius: 0,
+						borderBottomRightRadius: 0,
+						...(invalid && { borderColor: 'var(--bs-form-invalid-border-color)' })
+					}"
+					:autocomplete="masked || showDatalist ? 'off' : null"
 				/>
-				<button
-					v-if="showClearButton"
-					type="button"
-					class="form-control-clear"
-					:aria-label="$t('config.general.clear')"
-					@click="value = ''"
-				>
-					&times;
-				</button>
 				<datalist v-if="showDatalist" :id="datalistId">
 					<option v-for="v in serviceValues" :key="v" :value="v">
 						{{ v }}
@@ -103,45 +98,26 @@
 		:required="required"
 		rows="4"
 	/>
-	<div v-else class="d-flex" :class="sizeClass">
-		<div class="position-relative flex-grow-1">
-			<input
-				:id="id"
-				v-model="value"
-				:list="datalistId"
-				:type="inputType"
-				:step="step"
-				:placeholder="placeholder"
-				:required="required"
-				:aria-describedby="unitValue ? id + '_unit' : null"
-				:class="`${datalistId && serviceValues.length > 0 ? 'form-select' : 'form-control'} ${showClearButton ? 'has-clear-button' : ''} ${invalid ? 'is-invalid' : ''} ${endAlign ? 'text-end' : ''}`"
-				:style="
-					unitValue ? 'border-top-right-radius: 0; border-bottom-right-radius: 0' : null
-				"
-				:autocomplete="masked || datalistId ? 'off' : null"
-			/>
-			<button
-				v-if="showClearButton"
-				type="button"
-				class="form-control-clear"
-				:aria-label="$t('config.general.clear')"
-				@click="value = ''"
-			>
-				&times;
-			</button>
-			<datalist v-if="showDatalist" :id="datalistId">
-				<option v-for="v in serviceValues" :key="v" :value="v">
-					{{ v }}
-				</option>
-			</datalist>
-		</div>
-		<span
-			v-if="unitValue"
-			:id="id + '_unit'"
-			class="input-group-text"
-			style="border-top-left-radius: 0; border-bottom-left-radius: 0"
-			>{{ unitValue }}</span
-		>
+	<div v-else>
+		<input
+			:id="id"
+			v-model="value"
+			:list="datalistId"
+			:class="[
+				showDatalist ? 'form-select' : 'form-control',
+				inputClasses
+			]"
+			:type="inputType"
+			:step="step"
+			:placeholder="placeholder"
+			:required="required"
+			:autocomplete="masked || showDatalist ? 'off' : null"
+		/>
+		<datalist v-if="showDatalist" :id="datalistId">
+			<option v-for="v in serviceValues" :key="v" :value="v">
+				{{ v }}
+			</option>
+		</datalist>
 	</div>
 </template>
 
@@ -183,23 +159,13 @@ export default {
 		},
 		showDatalist() {
 			if (!this.datalistId) return false;
-			const length = this.serviceValues.length;
-			// no values
-			if (length === 0) return false;
-			// value selected, dont offer single same option again
-			// Convert both to strings for comparison to handle number/string type mismatches
+			if (this.serviceValues.length === 0) return false;
+			// Hide datalist if value is already selected from service values
+			// Convert both to strings for comparison to handle number/string mismatch
 			const valueStr = String(this.value ?? "");
-			if (
-				this.value != null &&
-				valueStr !== "" &&
-				this.serviceValues.some((v) => String(v) === valueStr)
-			) {
-				return false;
-			}
+			const hasMatch = this.serviceValues.some((v) => String(v) === valueStr);
+			if (this.value != null && valueStr !== "" && hasMatch) return false;
 			return true;
-		},
-		showClearButton() {
-			return this.datalistId && this.value;
 		},
 		inputType() {
 			if (this.masked) {
@@ -223,9 +189,6 @@ export default {
 			let result = this.sizeClass;
 			if (this.invalid) {
 				result += " is-invalid";
-			}
-			if (this.showClearButton) {
-				result += " has-clear-button";
 			}
 			return result;
 		},
@@ -360,35 +323,18 @@ input[type="number"]::-webkit-inner-spin-button {
 	min-width: min(200px, 100%);
 }
 
-/* Clear button styling */
-.form-control-clear {
-	position: absolute;
-	right: 0.75rem;
-	top: 50%;
-	transform: translateY(-50%);
-	z-index: 5;
-	background: none;
-	border: none;
-	color: #6c757d;
-	font-size: 1.5rem;
-	line-height: 1;
-	cursor: pointer;
-	padding: 0;
-	width: 1.5rem;
-	height: 1.5rem;
+/* Ensure datalist container helps with positioning */
+.d-flex > .position-relative {
+	display: block;
 }
 
-/* Adjust input padding when clear button is visible */
-.form-control.has-clear-button {
-	padding-right: 2.5rem;
+/* Fix text alignment when using form-select with number input */
+input.form-select[type="number"] {
+	padding-right: 2.25rem; /* Space for dropdown arrow */
 }
 
-/* For form-select with datalist, we need more space for both dropdown arrow and clear button */
-.form-select.has-clear-button {
-	padding-right: 3.5rem;
-}
-
-.form-select.has-clear-button + .form-control-clear {
-	right: 2rem;
+/* Ensure input takes full width of container */
+input[list].w-100 {
+	width: 100% !important;
 }
 </style>
