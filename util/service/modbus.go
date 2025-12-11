@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	"github.com/evcc-io/evcc/server/service"
 	"github.com/evcc-io/evcc/util"
 	"github.com/evcc-io/evcc/util/modbus"
-	"github.com/fatih/structs"
 	"github.com/spf13/cast"
 )
 
@@ -38,14 +38,14 @@ type Query struct {
 
 func init() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /read", modbusRead)
+	mux.HandleFunc("GET /params", getParams)
 
 	service.Register("modbus", mux)
 }
 
-// modbusRead reads a parameter value from a device based on URL parameters
+// getParams reads a parameter value from a device based on URL parameters
 // Returns single value as array (for UI compatibility)
-func modbusRead(w http.ResponseWriter, req *http.Request) {
+func getParams(w http.ResponseWriter, req *http.Request) {
 	// Convert URL query parameters to map for decoding
 	cc := make(map[string]any)
 	for k := range req.URL.Query() {
@@ -63,13 +63,13 @@ func modbusRead(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Validate required parameters
-	if (query.URI == "" && query.Device == "") || cc["address"] == nil {
-		jsonError(w, http.StatusBadRequest, fmt.Errorf("uri or device and address parameters are required"))
+	if query.URI == "" || query.Address == 0 {
+		jsonError(w, http.StatusBadRequest, fmt.Errorf("uri and address parameters are required"))
 		return
 	}
 
-	// Create cache key from connection string and register address
-	cacheKey := fmt.Sprintf("%s:%s:%d", query.URI, query.Device, query.Address)
+	// Create cache key from URI and register address
+	cacheKey := fmt.Sprintf("%s:%d", query.URI, query.Address)
 
 	// Check cache first
 	mu.RLock()
@@ -84,7 +84,7 @@ func modbusRead(w http.ResponseWriter, req *http.Request) {
 	// Use background context so connection isn't tied to HTTP request lifecycle
 	value, err := readRegisterValue(context.TODO(), query)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err)
+		jsonWrite(w, []string{}) // Return empty array on error
 		return
 	}
 
@@ -106,12 +106,24 @@ func modbusRead(w http.ResponseWriter, req *http.Request) {
 
 // readRegisterValue reads a modbus register value by reusing the modbus plugin
 func readRegisterValue(ctx context.Context, query Query) (res any, err error) {
-	// Convert Settings to map (plugin expects Settings fields at top level)
-	cfg := structs.Map(query.Settings)
+	// Build config map for plugin - need to flatten embedded structs manually
+	cfg := map[string]any{
+		"uri":      query.URI,
+		"id":       query.ID,
+		"register": query.Register,
+		"scale":    query.Scale,
+	}
 
-	// Plugin expects Register as nested object, not flattened
-	cfg["register"] = query.Register
-	cfg["scale"] = query.Scale
+	// Add optional settings
+	if query.Device != "" {
+		cfg["device"] = query.Device
+	}
+	if query.Comset != "" {
+		cfg["comset"] = query.Comset
+	}
+	if query.Baudrate != 0 {
+		cfg["baudrate"] = query.Baudrate
+	}
 
 	p, err := plugin.NewModbusFromConfig(ctx, cfg)
 	if err != nil {
@@ -120,6 +132,7 @@ func readRegisterValue(ctx context.Context, query Query) (res any, err error) {
 
 	defer func() {
 		if r := recover(); r != nil {
+			res = nil
 			err = fmt.Errorf("read failed: %v", r)
 		}
 	}()
@@ -129,17 +142,44 @@ func readRegisterValue(ctx context.Context, query Query) (res any, err error) {
 
 	// String encodings need special handling
 	if encoding == "string" || encoding == "bytes" {
-		g, err := p.(plugin.StringGetter).StringGetter()
-		if err != nil {
-			return nil, err
-		}
-		return g()
+		return callGetter(p.(plugin.StringGetter).StringGetter())
 	}
 
-	// For all numeric encodings (int*, float*, bool*), use FloatGetter
-	g, err := p.(plugin.FloatGetter).FloatGetter()
+	// For all numeric encodings (int*, uint*, float*, bool*), use FloatGetter
+	// This is the base implementation in modbus plugin
+	return callGetter(p.(plugin.FloatGetter).FloatGetter())
+}
+
+// callGetter calls a getter function and returns the result
+func callGetter[T any](getterFn func() (T, error), err error) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return g()
+	return getterFn()
+}
+
+// applyCast applies optional type casting
+func applyCast(value any, castType string) any {
+	switch strings.ToLower(castType) {
+	case "int":
+		return cast.ToInt64(value)
+	case "float":
+		return cast.ToFloat64(value)
+	case "string":
+		return cast.ToString(value)
+	default:
+		return value
+	}
+}
+
+// jsonWrite writes a JSON response
+func jsonWrite(w http.ResponseWriter, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+// jsonError writes an error response
+func jsonError(w http.ResponseWriter, status int, err error) {
+	w.WriteHeader(status)
+	jsonWrite(w, util.ErrorAsJson(err))
 }
