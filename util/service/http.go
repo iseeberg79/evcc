@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -61,13 +60,13 @@ func getHTTPParams(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := util.DecodeOther(cc, &query); err != nil {
-		httpJSONError(w, http.StatusBadRequest, err)
+		jsonError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	// Validate required parameters
 	if query.URI == "" {
-		httpJSONError(w, http.StatusBadRequest, fmt.Errorf("uri parameter is required"))
+		jsonError(w, http.StatusBadRequest, fmt.Errorf("uri parameter is required"))
 		return
 	}
 
@@ -75,18 +74,18 @@ func getHTTPParams(w http.ResponseWriter, req *http.Request) {
 	value, err := executeHTTPRequest(context.TODO(), query)
 	if err != nil {
 		httpLog.TRACE.Printf("failed to execute request to %s: %v", query.URI, err)
-		httpJSONError(w, http.StatusInternalServerError, err)
+		jsonError(w, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Apply optional type cast
 	if query.ResultType != "" {
-		value = httpApplyCast(value, query.ResultType)
+		value = applyCast(value, query.ResultType)
 	}
 
 	httpLog.TRACE.Printf("executed request to %s: %v", query.URI, value)
 
-	httpJSONWrite(w, []string{cast.ToString(value)})
+	jsonWrite(w, []string{cast.ToString(value)})
 }
 
 // executeHTTPRequest executes an HTTP request by reusing the HTTP plugin
@@ -189,30 +188,4 @@ func parseHTTPHeaders(s string) (map[string]string, error) {
 		headers[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
 	}
 	return headers, nil
-}
-
-// httpApplyCast applies optional type casting
-func httpApplyCast(value any, castType string) any {
-	switch strings.ToLower(castType) {
-	case "int":
-		return cast.ToInt64(value)
-	case "float":
-		return cast.ToFloat64(value)
-	case "string":
-		return cast.ToString(value)
-	default:
-		return value
-	}
-}
-
-// httpJSONWrite writes a JSON response
-func httpJSONWrite(w http.ResponseWriter, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
-}
-
-// httpJSONError writes an error response
-func httpJSONError(w http.ResponseWriter, status int, err error) {
-	w.WriteHeader(status)
-	httpJSONWrite(w, util.ErrorAsJson(err))
 }

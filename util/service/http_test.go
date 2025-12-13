@@ -133,7 +133,7 @@ func TestHTTPApplyCast(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := httpApplyCast(tt.value, tt.castType)
+			got := applyCast(tt.value, tt.castType)
 			assert.Equal(t, tt.expected, got)
 		})
 	}
