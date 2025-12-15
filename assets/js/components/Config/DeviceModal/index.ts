@@ -30,12 +30,14 @@ export type TemplateParam = {
   Default?: string | number | boolean;
   Choice?: string[];
   Service?: string;
+  ServiceDependencies?: string[][];
   Usages?: TemplateParamUsage[];
 };
 
 export type ParamService = {
   name: string;
   dependencies: string[];
+  dependencyGroups?: string[][];
   url: (values: Record<string, any>) => string;
 };
 
@@ -155,6 +157,7 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
       return {
         name: param.Name,
         dependencies: extractPlaceholders(param.Service),
+        dependencyGroups: param.ServiceDependencies || undefined,
         url: (values: Record<string, any>) =>
           replacePlaceholders(param.Service!, stringValues(values)),
       } as ParamService;
@@ -171,16 +174,46 @@ export const fetchServiceValues = async (
 
   await Promise.all(
     endpoints.map(async (endpoint) => {
-      const params: Record<string, any> = {};
-      endpoint.dependencies.forEach((dependency) => {
-        if (values[dependency]) {
-          params[dependency] = values[dependency];
+      // Helper function to check if a dependency group is satisfied
+      const isGroupSatisfied = (group: string[]): boolean => {
+        return group.every(
+          (dep) => values[dep] !== undefined && values[dep] !== null && values[dep] !== ""
+        );
+      };
+
+      let params: Record<string, any> = {};
+      let shouldFetch = false;
+
+      // Check dependency groups with OR logic
+      if (endpoint.dependencyGroups && endpoint.dependencyGroups.length > 0) {
+        // Find first satisfied group
+        for (const group of endpoint.dependencyGroups) {
+          if (isGroupSatisfied(group)) {
+            shouldFetch = true;
+            // Collect all values from this group
+            group.forEach((dep) => {
+              if (values[dep]) {
+                params[dep] = values[dep];
+              }
+            });
+            break; // First satisfied group wins
+          }
         }
-      });
-      if (Object.keys(params).length !== endpoint.dependencies.length) {
+      } else {
+        // Fallback: Old logic for backward compatibility
+        endpoint.dependencies.forEach((dependency) => {
+          if (values[dependency]) {
+            params[dependency] = values[dependency];
+          }
+        });
+        shouldFetch = Object.keys(params).length === endpoint.dependencies.length;
+      }
+
+      if (!shouldFetch) {
         // missing dependency values, skip
         return;
       }
+
       const url = endpoint.url(params);
       const data = await loadServiceValues(url);
       if (data) {
