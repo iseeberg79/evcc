@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { createServiceEndpoints, type TemplateParam } from "./index";
+import { describe, expect, it, vi } from "vitest";
+import { createServiceEndpoints, fetchServiceValues, type TemplateParam, type DeviceValues } from "./index";
 
 const buildParam = (name: string, service?: string, serviceDependencies?: string[][]): TemplateParam => ({
   Name: name,
@@ -96,5 +96,125 @@ describe("createServiceEndpoints", () => {
 
     const url = capacity.url({ id: 0 });
     expect(url).toContain("id=0");
+  });
+});
+
+describe("fetchServiceValues with dependency groups", () => {
+  it("calls service when first dependency group is satisfied (TCP/IP)", async () => {
+    const mockLoader = vi.fn().mockResolvedValue(["5000"]);
+
+    const params = [
+      buildParam("capacity", "modbus/params?uri={host}:{port}&device={device}&id={id}&address=1068", [
+        ["host", "port", "id"],
+        ["device", "id"],
+      ]),
+    ];
+
+    const values: DeviceValues = {
+      type: "meter",
+      template: "growatt",
+      host: "192.168.1.1",
+      port: "502",
+      id: "1",
+    };
+
+    const result = await fetchServiceValues(params, values, mockLoader);
+
+    expect(result["capacity"]).toEqual(["5000"]);
+    expect(mockLoader).toHaveBeenCalledTimes(1);
+
+    // Verify URL cleanup worked - no {device} in URL
+    const callArg = mockLoader.mock.calls[0]![0];
+    expect(callArg).not.toContain("{device}");
+    expect(callArg).toContain("uri=192.168.1.1:502");
+  });
+
+  it("calls service when second dependency group is satisfied (RS485)", async () => {
+    const mockLoader = vi.fn().mockResolvedValue(["5000"]);
+
+    const params = [
+      buildParam("capacity", "modbus/params?uri={host}:{port}&device={device}&baudrate={baudrate}&id={id}&address=1068", [
+        ["host", "port", "id"],
+        ["device", "baudrate", "id"],
+      ]),
+    ];
+
+    const values: DeviceValues = {
+      type: "meter",
+      template: "growatt",
+      device: "/dev/ttyUSB0",
+      baudrate: "9600",
+      id: "1",
+    };
+
+    const result = await fetchServiceValues(params, values, mockLoader);
+
+    expect(result["capacity"]).toEqual(["5000"]);
+
+    // Verify URL cleanup worked - no {host} or {port} in URL
+    const callArg = mockLoader.mock.calls[0]![0];
+    expect(callArg).not.toContain("{host}");
+    expect(callArg).toContain("device=%2Fdev%2FttyUSB0");
+  });
+
+  it("skips service call when no dependency group is satisfied", async () => {
+    const mockLoader = vi.fn().mockResolvedValue(["5000"]);
+
+    const params = [
+      buildParam("capacity", "modbus/params?uri={host}:{port}&device={device}&id={id}&address=1068", [
+        ["host", "port", "id"],
+        ["device", "id"],
+      ]),
+    ];
+
+    const values: DeviceValues = {
+      type: "meter",
+      template: "growatt",
+      // Missing all required params
+    };
+
+    const result = await fetchServiceValues(params, values, mockLoader);
+
+    expect(result["capacity"]).toBeUndefined();
+    expect(mockLoader).not.toHaveBeenCalled();
+  });
+
+  it("handles falsy values like id=0 correctly", async () => {
+    const mockLoader = vi.fn().mockResolvedValue(["5000"]);
+
+    const params = [
+      buildParam("capacity", "modbus/params?uri={host}:{port}&id={id}&address=1068", [
+        ["host", "port", "id"],
+      ]),
+    ];
+
+    const values: DeviceValues = {
+      type: "meter",
+      template: "growatt",
+      host: "192.168.1.1",
+      port: "502",
+      id: 0,  // Falsy but valid
+    };
+
+    const result = await fetchServiceValues(params, values, mockLoader);
+
+    expect(result["capacity"]).toEqual(["5000"]);
+    const callArg = mockLoader.mock.calls[0]![0];
+    expect(callArg).toContain("id=0");
+  });
+
+  it("falls back to single dependency logic when no groups defined", async () => {
+    const mockLoader = vi.fn().mockResolvedValue(["5000"]);
+
+    const params = [buildParam("power", "homes/{home}/sensors")];
+
+    const values: DeviceValues = {
+      type: "meter",
+      template: "test",
+      home: "main",
+    };
+
+    const result = await fetchServiceValues(params, values, mockLoader);
+    expect(result["power"]).toEqual(["5000"]);
   });
 });
