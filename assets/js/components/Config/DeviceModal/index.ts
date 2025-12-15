@@ -190,7 +190,7 @@ export const fetchServiceValues = async (
             shouldFetch = true;
             // Collect all values from this group
             group.forEach((dep) => {
-              if (values[dep]) {
+              if (values[dep] != null && values[dep] !== "") {
                 params[dep] = values[dep];
               }
             });
@@ -212,7 +212,16 @@ export const fetchServiceValues = async (
         return;
       }
 
-      const url = endpoint.url(params);
+      // Build URL and remove query params with unresolved {placeholders}
+      const rawUrl = endpoint.url(params);
+      const [base, query] = rawUrl.split("?");
+      const url = query
+        ? `${base}?${query
+            .split("&")
+            .filter((param) => !param.includes("{"))
+            .join("&")}`
+        : base;
+
       const data = await loadServiceValues(url);
       if (data) {
         result[endpoint.name] = data;
