@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createServiceEndpoints, type TemplateParam } from "./index";
 
-const buildParam = (name: string, service?: string): TemplateParam => ({
+const buildParam = (name: string, service?: string, serviceDependencies?: string[][]): TemplateParam => ({
   Name: name,
   Required: false,
   Advanced: false,
   Deprecated: false,
   Service: service,
+  ServiceDependencies: serviceDependencies,
 });
 
 describe("createServiceEndpoints", () => {
@@ -50,5 +51,50 @@ describe("createServiceEndpoints", () => {
     expect(tokenEndpoint.url({} as Record<string, string>)).toBe(
       "homes/{home}/sensors/{sensor}?token={token}"
     );
+  });
+
+  it("extracts dependency groups", () => {
+    const params = [
+      buildParam("capacity", "modbus/params?uri={host}:{port}&device={device}&id={id}&address=1068", [
+        ["host", "port", "id"],
+        ["device", "id"],
+      ]),
+    ];
+    const endpoints = createServiceEndpoints(params);
+    expect(endpoints[0]!.dependencyGroups).toEqual([
+      ["host", "port", "id"],
+      ["device", "id"],
+    ]);
+  });
+
+  it("builds correct URLs with partial placeholders (TCP/IP mode)", () => {
+    const params = [
+      buildParam("capacity", "modbus/params?uri={host}:{port}&device={device}&baudrate={baudrate}&id={id}&address=1068", [
+        ["host", "port", "id"],
+        ["device", "baudrate", "id"],
+      ]),
+    ];
+    const endpoints = createServiceEndpoints(params);
+    const capacity = endpoints.find((e) => e.name === "capacity")!;
+
+    // TCP/IP only - device and baudrate remain as {placeholder}
+    const url = capacity.url({
+      host: "192.168.1.1",
+      port: "502",
+      id: "1",
+    });
+
+    expect(url).toContain("uri=192.168.1.1:502");
+    expect(url).toContain("{device}");
+    expect(url).toContain("{baudrate}");
+  });
+
+  it("preserves falsy values like id=0 in URL parameters", () => {
+    const params = [buildParam("capacity", "modbus/params?id={id}&address=1068")];
+    const endpoints = createServiceEndpoints(params);
+    const capacity = endpoints.find((e) => e.name === "capacity")!;
+
+    const url = capacity.url({ id: 0 });
+    expect(url).toContain("id=0");
   });
 });
