@@ -167,7 +167,8 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
 
 export const fetchServiceValues = async (
   templateParams: TemplateParam[],
-  values: DeviceValues
+  values: DeviceValues,
+  loader = loadServiceValues
 ): Promise<Record<string, string[]>> => {
   const endpoints = createServiceEndpoints(templateParams);
   const result: Record<string, string[]> = {};
@@ -202,7 +203,7 @@ export const fetchServiceValues = async (
       } else {
         // Fallback: Old logic for backward compatibility
         endpoint.dependencies.forEach((dependency) => {
-          if (values[dependency]) {
+          if (values[dependency] != null && values[dependency] !== "") {
             params[dependency] = values[dependency];
           }
         });
@@ -224,7 +225,7 @@ export const fetchServiceValues = async (
             .join("&")}`
         : base;
 
-      const data = await loadServiceValues(url);
+      const data = await loader(url);
       if (data) {
         result[endpoint.name] = data;
       }
