@@ -199,10 +199,12 @@ type Param struct {
 	Unit        string       `json:",omitempty"` // unit of the value, e.g. "kW", "kWh", "A", "V"
 	Usages      []string     `json:",omitempty"` // restrict param to these usage types, e.g. "battery" for home battery capacity
 	Type        ParamType    // string representation of the value type, "string" is default
-	Choice              []string   `json:",omitempty"` // defines a set of choices, e.g. "grid", "pv", "battery", "charge" for "usage"
-	Service             string     `json:",omitempty"` // defines a service to provide choices
+	Choice      []string     `json:",omitempty"` // defines a set of choices, e.g. "grid", "pv", "battery", "charge" for "usage"
+	AllInOne    bool         `json:"-"`          // defines if the defined usages can all be present in a single device
+
+	// Service definitions
+	Service             string     `json:",omitempty"`                    // defines a service to provide choices
 	ServiceDependencies [][]string `json:"servicedependencies,omitempty"` // dependency groups for service calls
-	AllInOne            bool       `json:"-"`          // defines if the defined usages can all be present in a single device
 
 	// TODO move somewhere else should not be part of the param definition
 	Baudrate int    `json:",omitempty"` // device specific default for modbus RS485 baudrate
