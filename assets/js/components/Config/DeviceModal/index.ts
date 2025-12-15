@@ -157,7 +157,7 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
       return {
         name: param.Name,
         dependencies: extractPlaceholders(param.Service),
-        dependencyGroups: param.ServiceDependencies || undefined,
+        dependencyGroups: param.ServiceDependencies,
         url: (values: Record<string, any>) =>
           replacePlaceholders(param.Service!, stringValues(values)),
       } as ParamService;
@@ -193,9 +193,7 @@ export const fetchServiceValues = async (
             shouldFetch = true;
             // Collect all values from this group
             group.forEach((dep) => {
-              if (values[dep] != null && values[dep] !== "") {
-                params[dep] = values[dep];
-              }
+              params[dep] = values[dep];
             });
             break; // First satisfied group wins
           }
