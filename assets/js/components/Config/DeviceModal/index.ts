@@ -157,7 +157,7 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
       return {
         name: param.Name,
         dependencies: extractPlaceholders(param.Service),
-        dependencyGroups: param.ServiceDependencies,
+        dependencyGroups: param.ServiceDependencies || param['servicedependencies'],
         url: (values: Record<string, any>) =>
           replacePlaceholders(param.Service!, stringValues(values)),
       } as ParamService;
