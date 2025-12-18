@@ -16,6 +16,8 @@ func applyCast(value any, castType string) any {
 		return cast.ToInt64(value)
 	case "float":
 		return cast.ToFloat64(value)
+	case "bool":
+		return cast.ToBool(value)
 	case "string":
 		return cast.ToString(value)
 	default:
