@@ -23,7 +23,6 @@ type cacheEntry struct {
 }
 
 var (
-	log      = util.NewLogger("modbus")
 	cache    = make(map[string]cacheEntry)
 	mu       sync.RWMutex
 	cacheTTL = 1 * time.Minute // Cache for 1 minute

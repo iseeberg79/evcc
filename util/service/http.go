@@ -12,10 +12,6 @@ import (
 	"github.com/spf13/cast"
 )
 
-var (
-	httpLog = util.NewLogger("http-service")
-)
-
 // Query contains all HTTP request parameters
 type HTTPQuery struct {
 	URI      string `mapstructure:"uri"`
@@ -73,7 +69,7 @@ func getHTTPParams(w http.ResponseWriter, req *http.Request) {
 	// Execute HTTP request via plugin
 	value, err := executeHTTPRequest(context.TODO(), query)
 	if err != nil {
-		httpLog.TRACE.Printf("failed to execute request to %s: %v", query.URI, err)
+		log.TRACE.Printf("failed to execute request to %s: %v", query.URI, err)
 		jsonError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -83,8 +79,7 @@ func getHTTPParams(w http.ResponseWriter, req *http.Request) {
 		value = applyCast(value, query.ResultType)
 	}
 
-	httpLog.TRACE.Printf("executed request to %s: %v", query.URI, value)
-
+	log.TRACE.Printf("executed request to %s: %v", query.URI, value)
 	jsonWrite(w, []string{cast.ToString(value)})
 }
 
@@ -155,7 +150,7 @@ func executeHTTPRequest(ctx context.Context, query HTTPQuery) (res any, err erro
 		return nil, fmt.Errorf("failed to create http plugin: %w", err)
 	}
 
-	// Handle panics from plugin (same pattern as modbus)
+	// Handle panics from plugin
 	defer func() {
 		if r := recover(); r != nil {
 			res = nil
@@ -163,7 +158,7 @@ func executeHTTPRequest(ctx context.Context, query HTTPQuery) (res any, err erro
 		}
 	}()
 
-	// Execute request using StringGetter (gets response after pipeline)
+	// Execute request using StringGetter
 	getter, err := p.(plugin.StringGetter).StringGetter()
 	if err != nil {
 		return nil, err
