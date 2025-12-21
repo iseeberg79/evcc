@@ -35,14 +35,14 @@ type HTTPQuery struct {
 
 func init() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /params", getHTTPParams)
+	mux.HandleFunc("GET /read", httpRead)
 
 	service.Register("http", mux)
 }
 
-// getHTTPParams executes an HTTP request based on URL parameters
+// httpRead executes an HTTP request based on URL parameters
 // Returns single value as array (for UI compatibility)
-func getHTTPParams(w http.ResponseWriter, req *http.Request) {
+func httpRead(w http.ResponseWriter, req *http.Request) {
 	// Convert URL query parameters to map for decoding
 	cc := make(map[string]any)
 	for k := range req.URL.Query() {

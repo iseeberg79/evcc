@@ -75,20 +75,20 @@ func TestParseHTTPHeaders(t *testing.T) {
 }
 
 func TestGetHTTPParams_MissingURI(t *testing.T) {
-	req := httptest.NewRequest("GET", "/params", nil)
+	req := httptest.NewRequest("GET", "/read", nil)
 	w := httptest.NewRecorder()
 
-	getHTTPParams(w, req)
+	httpRead(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Contains(t, w.Body.String(), "uri parameter is required")
 }
 
 func TestGetHTTPParams_InvalidHeaders(t *testing.T) {
-	req := httptest.NewRequest("GET", "/params?uri=https://example.com&headers=invalid", nil)
+	req := httptest.NewRequest("GET", "/read?uri=https://example.com&headers=invalid", nil)
 	w := httptest.NewRecorder()
 
-	getHTTPParams(w, req)
+	httpRead(w, req)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Contains(t, w.Body.String(), "invalid header format")
@@ -102,10 +102,10 @@ func TestGetHTTPParams_SimpleGet(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	req := httptest.NewRequest("GET", "/params?uri="+ts.URL, nil)
+	req := httptest.NewRequest("GET", "/read?uri="+ts.URL, nil)
 	w := httptest.NewRecorder()
 
-	getHTTPParams(w, req)
+	httpRead(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "test-response")
@@ -123,10 +123,10 @@ func TestGetHTTPParams_WithHeaders(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	req := httptest.NewRequest("GET", "/params?uri="+ts.URL+"&headers=X-API-Key:test123", nil)
+	req := httptest.NewRequest("GET", "/read?uri="+ts.URL+"&headers=X-API-Key:test123", nil)
 	w := httptest.NewRecorder()
 
-	getHTTPParams(w, req)
+	httpRead(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "authorized")
@@ -144,10 +144,10 @@ func TestGetHTTPParams_POST(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	req := httptest.NewRequest("GET", "/params?uri="+ts.URL+"&method=POST&body=test-body", nil)
+	req := httptest.NewRequest("GET", "/read?uri="+ts.URL+"&method=POST&body=test-body", nil)
 	w := httptest.NewRecorder()
 
-	getHTTPParams(w, req)
+	httpRead(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "post-response")

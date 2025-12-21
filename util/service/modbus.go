@@ -38,14 +38,14 @@ type Query struct {
 
 func init() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /params", getParams)
+	mux.HandleFunc("GET /read", modbusRead)
 
 	service.Register("modbus", mux)
 }
 
-// getParams reads a parameter value from a device based on URL parameters
+// modbusRead reads a parameter value from a device based on URL parameters
 // Returns single value as array (for UI compatibility)
-func getParams(w http.ResponseWriter, req *http.Request) {
+func modbusRead(w http.ResponseWriter, req *http.Request) {
 	// Convert URL query parameters to map for decoding
 	cc := make(map[string]any)
 	for k := range req.URL.Query() {
