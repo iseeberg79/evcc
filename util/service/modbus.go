@@ -88,7 +88,6 @@ func getParams(w http.ResponseWriter, req *http.Request) {
 	// Use background context so connection isn't tied to HTTP request lifecycle
 	value, err := readRegisterValue(context.TODO(), query)
 	if err != nil {
-		log.TRACE.Printf("failed to read register %d from %s: %v", query.Address, cacheKey, err)
 		jsonError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -97,8 +96,6 @@ func getParams(w http.ResponseWriter, req *http.Request) {
 	if query.ResultType != "" {
 		value = applyCast(value, query.ResultType)
 	}
-
-	log.TRACE.Printf("read register %d from %s: %v", query.Address, cacheKey, value)
 
 	// Store in cache
 	mu.Lock()

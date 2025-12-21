@@ -9,8 +9,6 @@ import (
 	"github.com/spf13/cast"
 )
 
-var log = util.NewLogger("service")
-
 // applyCast applies optional type casting
 func applyCast(value any, castType string) any {
 	switch strings.ToLower(castType) {

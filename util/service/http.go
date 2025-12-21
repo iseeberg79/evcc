@@ -69,7 +69,6 @@ func getHTTPParams(w http.ResponseWriter, req *http.Request) {
 	// Execute HTTP request via plugin
 	value, err := executeHTTPRequest(context.TODO(), query)
 	if err != nil {
-		log.TRACE.Printf("failed to execute request to %s: %v", query.URI, err)
 		jsonError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -79,7 +78,6 @@ func getHTTPParams(w http.ResponseWriter, req *http.Request) {
 		value = applyCast(value, query.ResultType)
 	}
 
-	log.TRACE.Printf("executed request to %s: %v", query.URI, value)
 	jsonWrite(w, []string{cast.ToString(value)})
 }
 
