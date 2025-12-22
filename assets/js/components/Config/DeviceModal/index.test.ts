@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { createServiceEndpoints, fetchServiceValues, type TemplateParam, type ServiceConfig, type DeviceValues } from "./index";
+import {
+  createServiceEndpoints,
+  fetchServiceValues,
+  type TemplateParam,
+  type ServiceConfig,
+  type DeviceValues,
+} from "./index";
+import { ConfigType } from "@/types/evcc";
 
 // Helper for string shorthand format: "service: endpoint?params"
 const buildStringParam = (name: string, service: string): TemplateParam => ({
@@ -84,15 +91,20 @@ describe("createServiceEndpoints", () => {
 
   it("extracts dependency groups from object format", () => {
     const params = [
-      buildServiceParam("capacity", "modbus/read", {
-        uri: "{host}:{port}",
-        device: "{device}",
-        id: "{id}",
-        address: 1068,
-      }, [
-        ["host", "port", "id"],
-        ["device", "id"],
-      ]),
+      buildServiceParam(
+        "capacity",
+        "modbus/read",
+        {
+          uri: "{host}:{port}",
+          device: "{device}",
+          id: "{id}",
+          address: 1068,
+        },
+        [
+          ["host", "port", "id"],
+          ["device", "id"],
+        ]
+      ),
     ];
     const endpoints = createServiceEndpoints(params);
     expect(endpoints[0]!.dependencyGroups).toEqual([
@@ -103,16 +115,21 @@ describe("createServiceEndpoints", () => {
 
   it("builds correct URLs with object format (TCP/IP mode)", () => {
     const params = [
-      buildServiceParam("capacity", "modbus/read", {
-        uri: "{host}:{port}",
-        device: "{device}",
-        baudrate: "{baudrate}",
-        id: "{id}",
-        address: 1068,
-      }, [
-        ["host", "port", "id"],
-        ["device", "baudrate", "id"],
-      ]),
+      buildServiceParam(
+        "capacity",
+        "modbus/read",
+        {
+          uri: "{host}:{port}",
+          device: "{device}",
+          baudrate: "{baudrate}",
+          id: "{id}",
+          address: 1068,
+        },
+        [
+          ["host", "port", "id"],
+          ["device", "baudrate", "id"],
+        ]
+      ),
     ];
     const endpoints = createServiceEndpoints(params);
     const capacity = endpoints.find((e) => e.name === "capacity")!;
@@ -152,19 +169,24 @@ describe("fetchServiceValues with dependency groups", () => {
     const mockLoader = vi.fn().mockResolvedValue(["5000"]);
 
     const params = [
-      buildServiceParam("capacity", "modbus/read", {
-        uri: "{host}:{port}",
-        device: "{device}",
-        id: "{id}",
-        address: "1068",
-      }, [
-        ["host", "port", "id"],
-        ["device", "id"],
-      ]),
+      buildServiceParam(
+        "capacity",
+        "modbus/read",
+        {
+          uri: "{host}:{port}",
+          device: "{device}",
+          id: "{id}",
+          address: "1068",
+        },
+        [
+          ["host", "port", "id"],
+          ["device", "id"],
+        ]
+      ),
     ];
 
     const values: DeviceValues = {
-      type: "meter",
+      type: ConfigType.Template,
       template: "growatt",
       host: "192.168.1.1",
       port: "502",
@@ -186,20 +208,25 @@ describe("fetchServiceValues with dependency groups", () => {
     const mockLoader = vi.fn().mockResolvedValue(["5000"]);
 
     const params = [
-      buildServiceParam("capacity", "modbus/read", {
-        uri: "{host}:{port}",
-        device: "{device}",
-        baudrate: "{baudrate}",
-        id: "{id}",
-        address: "1068",
-      }, [
-        ["host", "port", "id"],
-        ["device", "baudrate", "id"],
-      ]),
+      buildServiceParam(
+        "capacity",
+        "modbus/read",
+        {
+          uri: "{host}:{port}",
+          device: "{device}",
+          baudrate: "{baudrate}",
+          id: "{id}",
+          address: "1068",
+        },
+        [
+          ["host", "port", "id"],
+          ["device", "baudrate", "id"],
+        ]
+      ),
     ];
 
     const values: DeviceValues = {
-      type: "meter",
+      type: ConfigType.Template,
       template: "growatt",
       device: "/dev/ttyUSB0",
       baudrate: "9600",
@@ -220,19 +247,24 @@ describe("fetchServiceValues with dependency groups", () => {
     const mockLoader = vi.fn().mockResolvedValue(["5000"]);
 
     const params = [
-      buildServiceParam("capacity", "modbus/read", {
-        uri: "{host}:{port}",
-        device: "{device}",
-        id: "{id}",
-        address: "1068",
-      }, [
-        ["host", "port", "id"],
-        ["device", "id"],
-      ]),
+      buildServiceParam(
+        "capacity",
+        "modbus/read",
+        {
+          uri: "{host}:{port}",
+          device: "{device}",
+          id: "{id}",
+          address: "1068",
+        },
+        [
+          ["host", "port", "id"],
+          ["device", "id"],
+        ]
+      ),
     ];
 
     const values: DeviceValues = {
-      type: "meter",
+      type: ConfigType.Template,
       template: "growatt",
       // Missing all required params
     };
@@ -247,21 +279,24 @@ describe("fetchServiceValues with dependency groups", () => {
     const mockLoader = vi.fn().mockResolvedValue(["5000"]);
 
     const params = [
-      buildServiceParam("capacity", "modbus/read", {
-        uri: "{host}:{port}",
-        id: "{id}",
-        address: "1068",
-      }, [
-        ["host", "port", "id"],
-      ]),
+      buildServiceParam(
+        "capacity",
+        "modbus/read",
+        {
+          uri: "{host}:{port}",
+          id: "{id}",
+          address: "1068",
+        },
+        [["host", "port", "id"]]
+      ),
     ];
 
     const values: DeviceValues = {
-      type: "meter",
+      type: ConfigType.Template,
       template: "growatt",
       host: "192.168.1.1",
       port: "502",
-      id: 0,  // Falsy but valid
+      id: 0, // Falsy but valid
     };
 
     const result = await fetchServiceValues(params, values, mockLoader);
@@ -277,7 +312,7 @@ describe("fetchServiceValues with dependency groups", () => {
     const params = [buildStringParam("power", "homes/{home}/sensors")];
 
     const values: DeviceValues = {
-      type: "meter",
+      type: ConfigType.Template,
       template: "test",
       home: "main",
     };

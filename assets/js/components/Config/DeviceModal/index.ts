@@ -104,18 +104,15 @@ export function applyDefaultsFromTemplate(template: Template | null, values: Dev
   // Apply modbus defaults from template (for service dependency resolution)
   const modbusParam = params.find((p) => p.Name === "modbus") as ModbusParam | undefined;
   if (modbusParam) {
-    if (!values["id"] && modbusParam.ID) {
-      values["id"] = modbusParam.ID;
-    }
-    if (!values["port"] && modbusParam.Port) {
-      values["port"] = modbusParam.Port;
-    }
-    if (!values["comset"] && modbusParam.Comset) {
-      values["comset"] = modbusParam.Comset;
-    }
-    if (!values["baudrate"] && modbusParam.Baudrate) {
-      values["baudrate"] = modbusParam.Baudrate;
-    }
+    const modbusDefaults: Record<string, any> = {
+      id: modbusParam.ID,
+      port: modbusParam.Port,
+      comset: modbusParam.Comset,
+      baudrate: modbusParam.Baudrate,
+    };
+    Object.entries(modbusDefaults).forEach(([key, val]) => {
+      if (!values[key] && val) values[key] = val;
+    });
   }
 }
 
@@ -142,21 +139,26 @@ export async function loadServiceValues(path: string) {
   }
 }
 
+// Convert values to strings, filtering out null/undefined
+const stringValues = (values: Record<string, any>): Record<string, string> =>
+  Object.entries(values).reduce(
+    (acc, [key, val]) => {
+      if (val !== undefined && val !== null) acc[key] = String(val);
+      return acc;
+    },
+    {} as Record<string, string>
+  );
+
+// Simple placeholder substitution without encoding (URLSearchParams handles encoding)
+const substitutePlaceholders = (template: string, vals: Record<string, string>): string =>
+  template.replace(/\{(\w+)\}/g, (match, key) => vals[key] ?? match);
+
 export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] => {
   return params
     .map((param) => {
       if (!param.Service) {
         return null;
       }
-
-      const stringValues = (values: Record<string, any>): Record<string, string> =>
-        Object.entries(values).reduce(
-          (acc, [key, val]) => {
-            if (val !== undefined && val !== null) acc[key] = String(val);
-            return acc;
-          },
-          {} as Record<string, string>
-        );
 
       // Handle string shorthand: "hardware/serial"
       if (typeof param.Service === "string") {
@@ -171,21 +173,17 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
       // Handle object format with params/dependencies
       const svc = param.Service as Record<string, any>;
       const serviceConfig: ServiceConfig = {
-        endpoint: svc.endpoint || svc.Endpoint,
-        params: svc.params || svc.Params,
-        dependencies: svc.dependencies || svc.Dependencies,
+        endpoint: svc["endpoint"] || svc["Endpoint"],
+        params: svc["params"] || svc["Params"],
+        dependencies: svc["dependencies"] || svc["Dependencies"],
       };
 
       // Collect all unique dependency fields
-      const allDepFields = new Set(
-        (serviceConfig.dependencies || []).flat()
-      );
+      const allDepFields = new Set((serviceConfig.dependencies || []).flat());
 
       // Find which fields are already used as placeholders in explicit params
       const usedPlaceholders = new Set(
-        Object.values(serviceConfig.params || {}).flatMap((v) =>
-          extractPlaceholders(String(v))
-        )
+        Object.values(serviceConfig.params || {}).flatMap((v) => extractPlaceholders(String(v)))
       );
 
       // Auto-add dependency fields not already used in params as "{field}"
@@ -200,13 +198,7 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
       const fullParams = { ...autoParams, ...serviceConfig.params };
 
       // Extract all dependencies (from both explicit and auto params)
-      const extractDeps = Object.values(fullParams).flatMap((v) =>
-        extractPlaceholders(String(v))
-      );
-
-      // Simple placeholder substitution without encoding (URLSearchParams handles encoding)
-      const substitutePlaceholders = (template: string, vals: Record<string, string>): string =>
-        template.replace(/\{(\w+)\}/g, (match, key) => vals[key] ?? match);
+      const extractDeps = Object.values(fullParams).flatMap((v) => extractPlaceholders(String(v)));
 
       return {
         name: param.Name,
@@ -258,7 +250,7 @@ export const fetchServiceValues = async (
         );
       };
 
-      let params: Record<string, any> = {};
+      const params: Record<string, any> = {};
       let shouldFetch = false;
 
       // Check dependency groups with OR logic
@@ -285,22 +277,11 @@ export const fetchServiceValues = async (
       }
 
       if (!shouldFetch) {
-        // missing dependency values, skip
         return;
       }
 
-      // Build URL and remove query params with unresolved {placeholders}
-      const rawUrl = endpoint.url(params);
-      const [base, query] = rawUrl.split("?");
-      const url = query
-        ? `${base}?${query
-            .split("&")
-            .filter((param) => !param.includes("{"))
-            .join("&")}`
-        : base;
-
-      const data = await loader(url);
-      if (data) {
+      const data = await loader(endpoint.url(params));
+      if (data.length) {
         result[endpoint.name] = data;
       }
     })
