@@ -153,6 +153,10 @@ const stringValues = (values: Record<string, any>): Record<string, string> =>
 const substitutePlaceholders = (template: string, vals: Record<string, string>): string =>
   template.replace(/\{(\w+)\}/g, (match, key) => vals[key] ?? match);
 
+// Check if all dependencies in a group have values
+const isGroupSatisfied = (group: string[], values: Record<string, any>): boolean =>
+  group.every((dep) => values[dep] !== undefined && values[dep] !== null && values[dep] !== "");
+
 export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] => {
   return params
     .map((param) => {
@@ -173,9 +177,9 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
       // Handle object format with params/dependencies
       const svc = param.Service as Record<string, any>;
       const serviceConfig: ServiceConfig = {
-        endpoint: svc["endpoint"] || svc["Endpoint"],
-        params: svc["params"] || svc["Params"],
-        dependencies: svc["dependencies"] || svc["Dependencies"],
+        endpoint: svc["endpoint"],
+        params: svc["params"],
+        dependencies: svc["dependencies"],
       };
 
       // Collect all unique dependency fields
@@ -205,16 +209,10 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
         dependencies: extractDeps,
         dependencyGroups: serviceConfig.dependencies,
         url: (values: Record<string, any>) => {
-          if (Object.keys(fullParams).length === 0) {
-            // No params means this is a simple service call with no query parameters
-            return serviceConfig.endpoint || "";
-          }
-          // Substitute placeholders in param values and filter empty ones
+          // Substitute placeholders in param values and filter unresolved ones
           const resolved = Object.entries(fullParams).reduce(
             (acc, [key, val]) => {
-              const valStr = String(val);
-              const substituted = substitutePlaceholders(valStr, stringValues(values));
-              // Only include non-empty params without unresolved placeholders
+              const substituted = substitutePlaceholders(String(val), stringValues(values));
               if (substituted && !substituted.includes("{")) {
                 acc[key] = substituted;
               }
@@ -222,11 +220,8 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
             },
             {} as Record<string, string>
           );
-
-          // Build query string (URLSearchParams handles encoding)
           const query = new URLSearchParams(resolved).toString();
-          const endpoint = serviceConfig.endpoint || "";
-          return query ? `${endpoint}?${query}` : endpoint;
+          return query ? `${serviceConfig.endpoint}?${query}` : serviceConfig.endpoint || "";
         },
       } as ParamService;
     })
@@ -243,40 +238,26 @@ export const fetchServiceValues = async (
 
   await Promise.all(
     endpoints.map(async (endpoint) => {
-      // Helper function to check if a dependency group is satisfied
-      const isGroupSatisfied = (group: string[]): boolean => {
-        return group.every(
-          (dep) => values[dep] !== undefined && values[dep] !== null && values[dep] !== ""
-        );
-      };
-
-      const params: Record<string, any> = {};
-      let shouldFetch = false;
+      let params: Record<string, any> | undefined;
 
       // Check dependency groups with OR logic
-      if (endpoint.dependencyGroups && endpoint.dependencyGroups.length > 0) {
+      if (endpoint.dependencyGroups?.length) {
         // Find first satisfied group
-        for (const group of endpoint.dependencyGroups) {
-          if (isGroupSatisfied(group)) {
-            shouldFetch = true;
-            // Collect all values from this group
-            group.forEach((dep) => {
-              params[dep] = values[dep];
-            });
-            break; // First satisfied group wins
-          }
+        const group = endpoint.dependencyGroups.find((g) => isGroupSatisfied(g, values));
+        if (group) {
+          params = Object.fromEntries(group.map((dep) => [dep, values[dep]]));
         }
       } else {
         // Fallback: Old logic for backward compatibility
-        endpoint.dependencies.forEach((dependency) => {
-          if (values[dependency] != null && values[dependency] !== "") {
-            params[dependency] = values[dependency];
-          }
-        });
-        shouldFetch = Object.keys(params).length === endpoint.dependencies.length;
+        const resolved = endpoint.dependencies.filter(
+          (dep) => values[dep] != null && values[dep] !== ""
+        );
+        if (resolved.length === endpoint.dependencies.length) {
+          params = Object.fromEntries(resolved.map((dep) => [dep, values[dep]]));
+        }
       }
 
-      if (!shouldFetch) {
+      if (!params) {
         return;
       }
 
