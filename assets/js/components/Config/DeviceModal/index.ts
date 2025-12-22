@@ -169,7 +169,12 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
       }
 
       // Handle object format with params/dependencies
-      const serviceConfig = param.Service as ServiceConfig;
+      const svc = param.Service as Record<string, any>;
+      const serviceConfig: ServiceConfig = {
+        endpoint: svc.endpoint || svc.Endpoint,
+        params: svc.params || svc.Params,
+        dependencies: svc.dependencies || svc.Dependencies,
+      };
 
       // Extract placeholders from all param values
       const extractDeps = serviceConfig.params
