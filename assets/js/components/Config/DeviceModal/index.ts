@@ -176,12 +176,33 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
         dependencies: svc.dependencies || svc.Dependencies,
       };
 
-      // Extract placeholders from all param values
-      const extractDeps = serviceConfig.params
-        ? Object.values(serviceConfig.params).flatMap((v) =>
-            extractPlaceholders(String(v))
-          )
-        : [];
+      // Collect all unique dependency fields
+      const allDepFields = new Set(
+        (serviceConfig.dependencies || []).flat()
+      );
+
+      // Find which fields are already used as placeholders in explicit params
+      const usedPlaceholders = new Set(
+        Object.values(serviceConfig.params || {}).flatMap((v) =>
+          extractPlaceholders(String(v))
+        )
+      );
+
+      // Auto-add dependency fields not already used in params as "{field}"
+      const autoParams: Record<string, string> = {};
+      allDepFields.forEach((field) => {
+        if (!usedPlaceholders.has(field)) {
+          autoParams[field] = `{${field}}`;
+        }
+      });
+
+      // Merge explicit params with auto-generated ones (explicit wins)
+      const fullParams = { ...autoParams, ...serviceConfig.params };
+
+      // Extract all dependencies (from both explicit and auto params)
+      const extractDeps = Object.values(fullParams).flatMap((v) =>
+        extractPlaceholders(String(v))
+      );
 
       // Simple placeholder substitution without encoding (URLSearchParams handles encoding)
       const substitutePlaceholders = (template: string, vals: Record<string, string>): string =>
@@ -192,12 +213,12 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
         dependencies: extractDeps,
         dependencyGroups: serviceConfig.dependencies,
         url: (values: Record<string, any>) => {
-          if (!serviceConfig.params) {
+          if (Object.keys(fullParams).length === 0) {
             // No params means this is a simple service call with no query parameters
             return serviceConfig.endpoint || "";
           }
           // Substitute placeholders in param values and filter empty ones
-          const resolved = Object.entries(serviceConfig.params).reduce(
+          const resolved = Object.entries(fullParams).reduce(
             (acc, [key, val]) => {
               const valStr = String(val);
               const substituted = substitutePlaceholders(valStr, stringValues(values));
