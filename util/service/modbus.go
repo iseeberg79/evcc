@@ -69,11 +69,7 @@ func modbusRead(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Create cache key from connection string and register address
-	connStr := query.URI
-	if connStr == "" {
-		connStr = query.Device
-	}
-	cacheKey := fmt.Sprintf("%s:%d", connStr, query.Address)
+	cacheKey := fmt.Sprintf("%s:%s:%d", query.URI, query.Device, query.Address)
 
 	// Check cache first
 	mu.RLock()
