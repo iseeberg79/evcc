@@ -151,7 +151,6 @@ func executeHTTPRequest(ctx context.Context, query HTTPQuery) (res any, err erro
 	// Handle panics from plugin
 	defer func() {
 		if r := recover(); r != nil {
-			res = nil
 			err = fmt.Errorf("request failed: %v", r)
 		}
 	}()
