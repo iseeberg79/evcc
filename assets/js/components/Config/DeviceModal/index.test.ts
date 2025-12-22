@@ -1,24 +1,53 @@
 import { describe, expect, it, vi } from "vitest";
-import { createServiceEndpoints, fetchServiceValues, type TemplateParam, type DeviceValues } from "./index";
+import { createServiceEndpoints, fetchServiceValues, type TemplateParam, type ServiceConfig, type DeviceValues } from "./index";
 
-const buildParam = (name: string, service?: string, serviceDependencies?: string[][]): TemplateParam => ({
+// Helper for string shorthand format: "service: endpoint?params"
+const buildStringParam = (name: string, service: string): TemplateParam => ({
   Name: name,
   Required: false,
   Advanced: false,
   Deprecated: false,
   Service: service,
-  ServiceDependencies: serviceDependencies,
+});
+
+// Helper for object format with params and dependencies
+const buildServiceParam = (
+  name: string,
+  endpoint: string,
+  params?: Record<string, any>,
+  dependencies?: string[][]
+): TemplateParam => ({
+  Name: name,
+  Required: false,
+  Advanced: false,
+  Deprecated: false,
+  Service: { endpoint, params, dependencies } as ServiceConfig,
 });
 
 describe("createServiceEndpoints", () => {
   it("skips params without service", () => {
-    const params = [buildParam("home", "homes"), buildParam("power", "homes/{home}/sensors")];
+    const params = [
+      { Name: "home", Required: false, Advanced: false, Deprecated: false } as TemplateParam,
+      { Name: "power", Required: false, Advanced: false, Deprecated: false } as TemplateParam,
+    ];
+    const endpoints = createServiceEndpoints(params);
+    expect(endpoints.length).toBe(0);
+  });
+
+  it("handles string shorthand format", () => {
+    const params = [
+      buildStringParam("home", "homes"),
+      buildStringParam("power", "homes/{home}/sensors"),
+    ];
     const endpoints = createServiceEndpoints(params);
     expect(endpoints.map((endpoint) => endpoint.name)).toEqual(["home", "power"]);
   });
 
-  it("replaces single placeholder", () => {
-    const params = [buildParam("home", "homes"), buildParam("power", "homes/{home}/sensors")];
+  it("replaces single placeholder in string format", () => {
+    const params = [
+      buildStringParam("home", "homes"),
+      buildStringParam("power", "homes/{home}/sensors"),
+    ];
     const endpoints = createServiceEndpoints(params);
     const homeEndpoint = endpoints.find(({ name }) => name === "home")!;
     const powerEndpoint = endpoints.find(({ name }) => name === "power")!;
@@ -30,10 +59,10 @@ describe("createServiceEndpoints", () => {
     expect(powerEndpoint.url({} as Record<string, string>)).toBe("homes/{home}/sensors");
   });
 
-  it("replaces multiple placeholders", () => {
+  it("replaces multiple placeholders in string format", () => {
     const params = [
-      buildParam("home", "homes"),
-      buildParam("sensor", "homes/{home}/sensors/{sensor}"),
+      buildStringParam("home", "homes"),
+      buildStringParam("sensor", "homes/{home}/sensors/{sensor}"),
     ];
     const endpoints = createServiceEndpoints(params);
     const sensorEndpoint = endpoints.find(({ name }) => name === "sensor")!;
@@ -41,8 +70,8 @@ describe("createServiceEndpoints", () => {
     expect(sensorEndpoint.url({ home: "hq", sensor: "battery" })).toBe("homes/hq/sensors/battery");
   });
 
-  it("encodes replacements", () => {
-    const params = [buildParam("token", "homes/{home}/sensors/{sensor}?token={token}")];
+  it("encodes replacements in string format", () => {
+    const params = [buildStringParam("token", "homes/{home}/sensors/{sensor}?token={token}")];
     const endpoints = createServiceEndpoints(params);
     const tokenEndpoint = endpoints[0]!;
     expect(tokenEndpoint.url({ home: "hq", sensor: "bat/tery", token: "a+b c" })).toBe(
@@ -53,9 +82,14 @@ describe("createServiceEndpoints", () => {
     );
   });
 
-  it("extracts dependency groups", () => {
+  it("extracts dependency groups from object format", () => {
     const params = [
-      buildParam("capacity", "modbus/params?uri={host}:{port}&device={device}&id={id}&address=1068", [
+      buildServiceParam("capacity", "modbus/read", {
+        uri: "{host}:{port}",
+        device: "{device}",
+        id: "{id}",
+        address: 1068,
+      }, [
         ["host", "port", "id"],
         ["device", "id"],
       ]),
@@ -67,9 +101,15 @@ describe("createServiceEndpoints", () => {
     ]);
   });
 
-  it("builds correct URLs with partial placeholders (TCP/IP mode)", () => {
+  it("builds correct URLs with object format (TCP/IP mode)", () => {
     const params = [
-      buildParam("capacity", "modbus/params?uri={host}:{port}&device={device}&baudrate={baudrate}&id={id}&address=1068", [
+      buildServiceParam("capacity", "modbus/read", {
+        uri: "{host}:{port}",
+        device: "{device}",
+        baudrate: "{baudrate}",
+        id: "{id}",
+        address: 1068,
+      }, [
         ["host", "port", "id"],
         ["device", "baudrate", "id"],
       ]),
@@ -77,20 +117,28 @@ describe("createServiceEndpoints", () => {
     const endpoints = createServiceEndpoints(params);
     const capacity = endpoints.find((e) => e.name === "capacity")!;
 
-    // TCP/IP only - device and baudrate remain as {placeholder}
+    // TCP/IP only - device and baudrate are filtered out (unresolved placeholders)
     const url = capacity.url({
       host: "192.168.1.1",
       port: "502",
       id: "1",
     });
 
-    expect(url).toContain("uri=192.168.1.1:502");
-    expect(url).toContain("{device}");
-    expect(url).toContain("{baudrate}");
+    expect(url).toContain("uri=192.168.1.1%3A502");
+    expect(url).toContain("id=1");
+    expect(url).toContain("address=1068");
+    // Unresolved placeholders should be filtered out
+    expect(url).not.toContain("device=");
+    expect(url).not.toContain("baudrate=");
   });
 
   it("preserves falsy values like id=0 in URL parameters", () => {
-    const params = [buildParam("capacity", "modbus/params?id={id}&address=1068")];
+    const params = [
+      buildServiceParam("capacity", "modbus/read", {
+        id: "{id}",
+        address: 1068,
+      }),
+    ];
     const endpoints = createServiceEndpoints(params);
     const capacity = endpoints.find((e) => e.name === "capacity")!;
 
@@ -104,7 +152,12 @@ describe("fetchServiceValues with dependency groups", () => {
     const mockLoader = vi.fn().mockResolvedValue(["5000"]);
 
     const params = [
-      buildParam("capacity", "modbus/params?uri={host}:{port}&device={device}&id={id}&address=1068", [
+      buildServiceParam("capacity", "modbus/read", {
+        uri: "{host}:{port}",
+        device: "{device}",
+        id: "{id}",
+        address: "1068",
+      }, [
         ["host", "port", "id"],
         ["device", "id"],
       ]),
@@ -123,17 +176,23 @@ describe("fetchServiceValues with dependency groups", () => {
     expect(result["capacity"]).toEqual(["5000"]);
     expect(mockLoader).toHaveBeenCalledTimes(1);
 
-    // Verify URL cleanup worked - no {device} in URL
+    // Verify URL cleanup worked - no device in URL
     const callArg = mockLoader.mock.calls[0]![0];
-    expect(callArg).not.toContain("{device}");
-    expect(callArg).toContain("uri=192.168.1.1:502");
+    expect(callArg).not.toContain("device=");
+    expect(callArg).toContain("uri=192.168.1.1%3A502");
   });
 
   it("calls service when second dependency group is satisfied (RS485)", async () => {
     const mockLoader = vi.fn().mockResolvedValue(["5000"]);
 
     const params = [
-      buildParam("capacity", "modbus/params?uri={host}:{port}&device={device}&baudrate={baudrate}&id={id}&address=1068", [
+      buildServiceParam("capacity", "modbus/read", {
+        uri: "{host}:{port}",
+        device: "{device}",
+        baudrate: "{baudrate}",
+        id: "{id}",
+        address: "1068",
+      }, [
         ["host", "port", "id"],
         ["device", "baudrate", "id"],
       ]),
@@ -151,9 +210,9 @@ describe("fetchServiceValues with dependency groups", () => {
 
     expect(result["capacity"]).toEqual(["5000"]);
 
-    // Verify URL cleanup worked - no {host} or {port} in URL
+    // Verify URL cleanup worked - no uri in URL (unresolved placeholder)
     const callArg = mockLoader.mock.calls[0]![0];
-    expect(callArg).not.toContain("{host}");
+    expect(callArg).not.toContain("uri=");
     expect(callArg).toContain("device=%2Fdev%2FttyUSB0");
   });
 
@@ -161,7 +220,12 @@ describe("fetchServiceValues with dependency groups", () => {
     const mockLoader = vi.fn().mockResolvedValue(["5000"]);
 
     const params = [
-      buildParam("capacity", "modbus/params?uri={host}:{port}&device={device}&id={id}&address=1068", [
+      buildServiceParam("capacity", "modbus/read", {
+        uri: "{host}:{port}",
+        device: "{device}",
+        id: "{id}",
+        address: "1068",
+      }, [
         ["host", "port", "id"],
         ["device", "id"],
       ]),
@@ -183,7 +247,11 @@ describe("fetchServiceValues with dependency groups", () => {
     const mockLoader = vi.fn().mockResolvedValue(["5000"]);
 
     const params = [
-      buildParam("capacity", "modbus/params?uri={host}:{port}&id={id}&address=1068", [
+      buildServiceParam("capacity", "modbus/read", {
+        uri: "{host}:{port}",
+        id: "{id}",
+        address: "1068",
+      }, [
         ["host", "port", "id"],
       ]),
     ];
@@ -203,10 +271,10 @@ describe("fetchServiceValues with dependency groups", () => {
     expect(callArg).toContain("id=0");
   });
 
-  it("falls back to single dependency logic when no groups defined", async () => {
+  it("uses string format when only service endpoint is provided", async () => {
     const mockLoader = vi.fn().mockResolvedValue(["5000"]);
 
-    const params = [buildParam("power", "homes/{home}/sensors")];
+    const params = [buildStringParam("power", "homes/{home}/sensors")];
 
     const values: DeviceValues = {
       type: "meter",

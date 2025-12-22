@@ -22,6 +22,12 @@ export type Template = {
 
 export type TemplateParamUsage = "vehicle" | "battery" | "grid" | "pv" | "charger" | "aux" | "ext";
 
+export type ServiceConfig = {
+  endpoint?: string;
+  params?: Record<string, any>;
+  dependencies?: string[][];
+};
+
 export type TemplateParam = {
   Name: string;
   Required: boolean;
@@ -29,8 +35,7 @@ export type TemplateParam = {
   Deprecated: boolean;
   Default?: string | number | boolean;
   Choice?: string[];
-  Service?: string;
-  ServiceDependencies?: string[][];
+  Service?: string | ServiceConfig;
   Usages?: TemplateParamUsage[];
 };
 
@@ -143,6 +148,7 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
       if (!param.Service) {
         return null;
       }
+
       const stringValues = (values: Record<string, any>): Record<string, string> =>
         Object.entries(values).reduce(
           (acc, [key, val]) => {
@@ -152,12 +158,58 @@ export const createServiceEndpoints = (params: TemplateParam[]): ParamService[] 
           {} as Record<string, string>
         );
 
+      // Handle string shorthand: "hardware/serial"
+      if (typeof param.Service === "string") {
+        return {
+          name: param.Name,
+          dependencies: extractPlaceholders(param.Service),
+          url: (values: Record<string, any>) =>
+            replacePlaceholders(param.Service as string, stringValues(values)),
+        } as ParamService;
+      }
+
+      // Handle object format with params/dependencies
+      const serviceConfig = param.Service as ServiceConfig;
+
+      // Extract placeholders from all param values
+      const extractDeps = serviceConfig.params
+        ? Object.values(serviceConfig.params).flatMap((v) =>
+            extractPlaceholders(String(v))
+          )
+        : [];
+
+      // Simple placeholder substitution without encoding (URLSearchParams handles encoding)
+      const substitutePlaceholders = (template: string, vals: Record<string, string>): string =>
+        template.replace(/\{(\w+)\}/g, (match, key) => vals[key] ?? match);
+
       return {
         name: param.Name,
-        dependencies: extractPlaceholders(param.Service),
-        dependencyGroups: param.ServiceDependencies || param['servicedependencies'],
-        url: (values: Record<string, any>) =>
-          replacePlaceholders(param.Service!, stringValues(values)),
+        dependencies: extractDeps,
+        dependencyGroups: serviceConfig.dependencies,
+        url: (values: Record<string, any>) => {
+          if (!serviceConfig.params) {
+            // No params means this is a simple service call with no query parameters
+            return serviceConfig.endpoint || "";
+          }
+          // Substitute placeholders in param values and filter empty ones
+          const resolved = Object.entries(serviceConfig.params).reduce(
+            (acc, [key, val]) => {
+              const valStr = String(val);
+              const substituted = substitutePlaceholders(valStr, stringValues(values));
+              // Only include non-empty params without unresolved placeholders
+              if (substituted && !substituted.includes("{")) {
+                acc[key] = substituted;
+              }
+              return acc;
+            },
+            {} as Record<string, string>
+          );
+
+          // Build query string (URLSearchParams handles encoding)
+          const query = new URLSearchParams(resolved).toString();
+          const endpoint = serviceConfig.endpoint || "";
+          return query ? `${endpoint}?${query}` : endpoint;
+        },
       } as ParamService;
     })
     .filter((endpoint): endpoint is ParamService => endpoint !== null);
