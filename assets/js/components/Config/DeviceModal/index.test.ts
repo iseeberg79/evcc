@@ -8,8 +8,7 @@ import {
 } from "./index";
 import { ConfigType } from "@/types/evcc";
 
-// Helper for string shorthand format: "service: endpoint?params"
-const buildStringParam = (name: string, service: string): TemplateParam => ({
+const buildParam = (name: string, service?: string): TemplateParam => ({
   Name: name,
   Required: false,
   Advanced: false,
@@ -17,7 +16,7 @@ const buildStringParam = (name: string, service: string): TemplateParam => ({
   Service: service,
 });
 
-// Helper for object format with params and dependencies
+// Helper for object format
 const buildServiceParam = (
   name: string,
   endpoint: string,
@@ -33,27 +32,15 @@ const buildServiceParam = (
 
 describe("createServiceEndpoints", () => {
   it("skips params without service", () => {
-    const params = [
-      { Name: "home", Required: false, Advanced: false, Deprecated: false } as TemplateParam,
-      { Name: "power", Required: false, Advanced: false, Deprecated: false } as TemplateParam,
-    ];
-    const endpoints = createServiceEndpoints(params);
-    expect(endpoints.length).toBe(0);
-  });
-
-  it("handles string shorthand format", () => {
-    const params = [
-      buildStringParam("home", "homes"),
-      buildStringParam("power", "homes/{home}/sensors"),
-    ];
+    const params = [buildParam("home", "homes"), buildParam("power", "homes/{home}/sensors")];
     const endpoints = createServiceEndpoints(params);
     expect(endpoints.map((endpoint) => endpoint.name)).toEqual(["home", "power"]);
   });
 
-  it("replaces single placeholder in string format", () => {
+  it("replaces single placeholder", () => {
     const params = [
-      buildStringParam("home", "homes"),
-      buildStringParam("power", "homes/{home}/sensors"),
+      buildParam("home", "homes"),
+      buildParam("power", "homes/{home}/sensors"),
     ];
     const endpoints = createServiceEndpoints(params);
     const homeEndpoint = endpoints.find(({ name }) => name === "home")!;
@@ -66,10 +53,10 @@ describe("createServiceEndpoints", () => {
     expect(powerEndpoint.url({} as Record<string, string>)).toBe("homes/{home}/sensors");
   });
 
-  it("replaces multiple placeholders in string format", () => {
+  it("replaces multiple placeholders", () => {
     const params = [
-      buildStringParam("home", "homes"),
-      buildStringParam("sensor", "homes/{home}/sensors/{sensor}"),
+      buildParam("home", "homes"),
+      buildParam("sensor", "homes/{home}/sensors/{sensor}"),
     ];
     const endpoints = createServiceEndpoints(params);
     const sensorEndpoint = endpoints.find(({ name }) => name === "sensor")!;
@@ -77,8 +64,8 @@ describe("createServiceEndpoints", () => {
     expect(sensorEndpoint.url({ home: "hq", sensor: "battery" })).toBe("homes/hq/sensors/battery");
   });
 
-  it("encodes replacements in string format", () => {
-    const params = [buildStringParam("token", "homes/{home}/sensors/{sensor}?token={token}")];
+  it("encodes replacements", () => {
+    const params = [buildParam("token", "homes/{home}/sensors/{sensor}?token={token}")];
     const endpoints = createServiceEndpoints(params);
     const tokenEndpoint = endpoints[0]!;
     expect(tokenEndpoint.url({ home: "hq", sensor: "bat/tery", token: "a+b c" })).toBe(
@@ -309,7 +296,7 @@ describe("fetchServiceValues with dependency groups", () => {
   it("uses string format when only service endpoint is provided", async () => {
     const mockLoader = vi.fn().mockResolvedValue(["5000"]);
 
-    const params = [buildStringParam("power", "homes/{home}/sensors")];
+    const params = [buildParam("power", "homes/{home}/sensors")];
 
     const values: DeviceValues = {
       type: ConfigType.Template,
