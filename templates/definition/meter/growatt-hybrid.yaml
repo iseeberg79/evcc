@@ -21,21 +21,11 @@ params:
     choice: ["grid", "pv", "battery"]
   - name: modbus
     choice: ["rs485", "tcpip"]
-    port: 502
     baudrate: 9600
-    comset: 8N1
     id: 1
   - name: capacity
     advanced: true
-    service: modbus/params?uri={host}:{port}&device={device}&baudrate={baudrate}&comset={comset}&id={id}&address=1068&type=holding&encoding=float32s&scale=0.001
-    servicedependencies:
-      - [host, port, id]
-      - [device, baudrate, comset, id]
   - name: maxacpower
-    service: modbus/params?uri={host}:{port}&device={device}&baudrate={baudrate}&comset={comset}&id={id}&address=1069&type=holding&encoding=float32s
-    servicedependencies:
-      - [host, port, id]
-      - [device, baudrate, comset, id]
 render: |
   type: custom
   {{- if eq .usage "grid" }}
