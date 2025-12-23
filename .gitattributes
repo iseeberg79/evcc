@@ -1,0 +1,4 @@
+# Mark generated files - GitHub will collapse these in PRs
+**/mock.go linguist-generated=true
+server/mcp/openapi.json linguist-generated=true
+server/mcp/openapi.md linguist-generated=true
