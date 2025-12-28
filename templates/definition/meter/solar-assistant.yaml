@@ -1,0 +1,134 @@
+template: solar-assistant
+products:
+  - brand: Solar Assistant
+    description:
+      generic: Hybrid Inverter
+group: generic
+capabilities: ["battery-control"]
+requirements:
+  description:
+    de: |
+      Für die aktive Batteriesteuerung muss in Solar Assistant "Allow setting changes" aktiviert sein.
+      Der Inverter muss über RS-485 (BMS Port) mit Solar Assistant verbunden sein.
+      Firmware C049+1147 oder neuer wird für Schreibzugriffe empfohlen.
+    en: |
+      For active battery control, "Allow setting changes" must be enabled in Solar Assistant.
+      The inverter must be connected to Solar Assistant via RS-485 (BMS Port).
+      Firmware C049+1147 or newer is recommended for write access.
+params:
+  - name: usage
+    choice: ["grid", "pv", "battery"]
+    allinone: true
+  - preset: mqtt
+  - name: inverter
+    type: int
+    default: 1
+    advanced: true
+    description:
+      de: Inverter Nummer (wenn mehrere Inverter)
+      en: Inverter number (if multiple inverters)
+  - name: capacity
+    advanced: true
+  - name: minsoc
+    advanced: true
+  - name: maxsoc
+    advanced: true
+  - name: maxdischargecurrent
+    required: true
+    default: 100
+    advanced: true
+    description:
+      de: Entladestrom (max.)
+      en: Discharge Current (max.)
+    help:
+      de: |
+        Maximaler Batterieentladestrom in Ampere (A) für Normalmodus. Typischer Bereich 50-350A abhängig von Batteriekapazität.
+        Leistungsberechnung: P(W) = Strom(A) * Spannung(V). Beispiel mit 48V Batterie: 100A * 48V = 4800W (4,8kW).
+      en: |
+        Maximum battery discharge current in Amperes (A) for normal mode. Typical range 50-350A depending on battery capacity.
+        Power calculation: P(W) = Current(A) * Voltage(V). Example with 48V battery: 100A * 48V = 4800W (4.8kW).
+  - name: gridchargecurrent
+    required: true
+    default: 60
+    advanced: true
+    description:
+      de: Netzladestrom
+      en: Grid Charge Current
+    help:
+      de: |
+        Maximaler Batterieladestrom in Ampere (A) aus dem Netz für Lademodus. Typischer Bereich 30-350A abhängig von Batterie- und Wechselrichterkapazität.
+        Leistungsberechnung: P(W) = Strom(A) * Spannung(V). Beispiel mit 48V Batterie: 60A * 48V = 2880W (2,9kW).
+      en: |
+        Maximum battery charging current in Amperes (A) from grid for charge mode. Typical range 30-350A depending on battery and inverter capacity.
+        Power calculation: P(W) = Current(A) * Voltage(V). Example with 48V battery: 60A * 48V = 2880W (2.9kW).
+render: |
+  type: custom
+  {{- if eq .usage "grid" }}
+  power:
+    source: mqtt
+    {{- include "mqtt" . | indent 2 }}
+    topic: solar_assistant/inverter_{{ .inverter }}/grid_power_ct/state
+    timeout: 30s
+  {{- end }}
+  {{- if eq .usage "pv" }}
+  power:
+    source: mqtt
+    {{- include "mqtt" . | indent 2 }}
+    topic: solar_assistant/inverter_{{ .inverter }}/pv_power/state
+    timeout: 30s
+  {{- end }}
+  {{- if eq .usage "battery" }}
+  power:
+    source: mqtt
+    {{- include "mqtt" . | indent 2 }}
+    topic: solar_assistant/total/battery_power/state
+    scale: -1
+    timeout: 30s
+  soc:
+    source: mqtt
+    {{- include "mqtt" . | indent 2 }}
+    topic: solar_assistant/total/battery_state_of_charge/state
+    timeout: 30s
+  batterymode:
+    source: switch
+    switch:
+    - case: 1 # normal - allow discharge
+      set:
+        source: const
+        value: {{ .maxdischargecurrent }}
+        set:
+          source: mqtt
+          {{- include "mqtt" . | indent 8 }}
+          topic: solar_assistant/inverter_{{ .inverter }}/max_discharge_current/set
+          payload: ${value}
+    - case: 2 # hold - prevent discharge
+      set:
+        source: const
+        value: 0
+        set:
+          source: mqtt
+          {{- include "mqtt" . | indent 8 }}
+          topic: solar_assistant/inverter_{{ .inverter }}/max_discharge_current/set
+          payload: ${value}
+    - case: 3 # charge - enable grid charging
+      set:
+        source: sequence
+        set:
+        - source: const
+          value: {{ .maxdischargecurrent }}
+          set:
+            source: mqtt
+            {{- include "mqtt" . | indent 10 }}
+            topic: solar_assistant/inverter_{{ .inverter }}/max_discharge_current/set
+            payload: ${value}
+        - source: const
+          value: {{ .gridchargecurrent }}
+          set:
+            source: mqtt
+            {{- include "mqtt" . | indent 10 }}
+            topic: solar_assistant/inverter_{{ .inverter }}/max_grid_charge_current/set
+            payload: ${value}
+  capacity: {{ .capacity }} # kWh
+  minsoc: {{ .minsoc }} # %
+  maxsoc: {{ .maxsoc }} # %
+  {{- end }}
