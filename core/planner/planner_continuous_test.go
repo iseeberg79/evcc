@@ -251,9 +251,9 @@ func TestContinuous_WindowLateChargingPreference(t *testing.T) {
 	require.NotEmpty(t, plan)
 	require.Len(t, plan, 2)
 
-	// Should select latest cheap window (3h-5h)
+	// Should select the latest window with equal cost (3h-5h)
 	// Windows 0h-2h and 4h-6h are expensive due to 0.15 slots at start and end
-	// We prefer late charging among equal-cost windows
+	// But we prefer late charging, so 3h-5h should be selected
 	assert.Equal(t, now.Add(3*time.Hour), plan[0].Start, "should select latest window with equal cost")
 	assert.Equal(t, now.Add(5*time.Hour), plan[len(plan)-1].End, "end should be 2 hours after start")
 	assert.Equal(t, 0.10, plan[0].Value, "first slot should have actual price")
