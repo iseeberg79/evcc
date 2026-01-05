@@ -1,6 +1,6 @@
 // Theben CONEXA Smart Meter Gateway
-// Implementation based on https://github.com/jannickfahlbusch/ha-ppc-smgw
-// NOTE: Theben CONEXA updates readings every 15-20 minutes, not in real-time
+// Implementation based on https://github.com/jannickfahlbusch/ha-ppc-smgw and https://github.com/klacol/smgw-theben-conexa
+// TAF-1 provides usually real-time data (~5s intervals), TAF-7 historical data (15min intervals)
 package meter
 
 import (
@@ -26,6 +26,7 @@ func init() {
 // Protocol: JSON-RPC over HTTPS (/smgw/m2m/)
 // Standard: BSI TR-03109
 // Note: Readings are updated by the gateway every 15-20 minutes, not in real-time
+// TAF-1 provides better real-time data than TAF-7
 type ThebenConexa struct {
 	*request.Helper
 	uri           string
@@ -83,11 +84,11 @@ func NewThebenConexa(uri, user, password string, refresh time.Duration) (api.Met
 		log:      log,
 	}
 
-	// Build endpoint URL
+	// Build endpoint URL (contains username - don't log)
 	m.uri = fmt.Sprintf("%s/smgw/m2m/%s.sm/json", m.uri, user)
 
 	// Validate connection and get usage point IDs
-	log.DEBUG.Printf("validating connection and discovering usage points...")
+	log.DEBUG.Println("validating connection and discovering usage points...")
 	if err := m.discoverUsagePoints(); err != nil {
 		return nil, fmt.Errorf("failed to discover usage points: %w", err)
 	}
@@ -130,7 +131,7 @@ type readingsResponse struct {
 		Channels []struct {
 			Obis     string `json:"obis"` // Hex format: "0100010800ff"
 			Readings []struct {
-				Value       interface{} `json:"value"` // Can be int or string
+				Value       interface{} `json:"value"`            // Can be int or string
 				Unit        int         `json:"unit,omitempty"`   // 27=W, 30=Wh, 33=A, 35=V
 				Scaler      int         `json:"scaler,omitempty"` // Power of 10 multiplier
 				CaptureTime string      `json:"capture-time"`
@@ -148,7 +149,8 @@ func (m *ThebenConexa) callJSONRPC(req interface{}, resp interface{}) error {
 }
 
 // discoverUsagePoints finds usage point IDs (meters) connected to the gateway
-// TAF-7 usage points typically provide more detailed metering data (including power)
+// TAF-1: Better real-time data, basic metering (energy totals, power)
+// TAF-7: Advanced metering with full phase data (currents, voltages, per-phase power)
 func (m *ThebenConexa) discoverUsagePoints() error {
 	req := jsonRPCRequest{
 		Method: "user-info",
@@ -162,35 +164,42 @@ func (m *ThebenConexa) discoverUsagePoints() error {
 	usagePoints := resp.UserInfo.UsagePoints
 	m.log.DEBUG.Printf("found %d usage point(s)", len(usagePoints))
 
-	// Prefer TAF-7 usage points with state "running"
-	// TAF-7 provides advanced metering data (potentially including power, currents, voltages)
+	// Prefer TAF-1 (better real-time), then TAF-7 (full phase data), all with state "running"
+	var taf1Points []string
 	var taf7Points []string
-	var runningPoints []string
+	var otherRunningPoints []string
 
 	for _, up := range usagePoints {
-		m.log.DEBUG.Printf("usage point: id=%s, taf=%s, state=%s", 
-			up.UsagePointID, up.TafNumber, up.TafState)
+		// Log TAF type and state, but NOT usage point ID (sensitive contract/meter info)
+		m.log.DEBUG.Printf("usage point: taf=%s, state=%s", up.TafNumber, up.TafState)
 
 		if up.TafState == "running" {
-			if up.TafNumber == "7" {
+			switch up.TafNumber {
+			case "1":
+				taf1Points = append(taf1Points, up.UsagePointID)
+			case "7":
 				taf7Points = append(taf7Points, up.UsagePointID)
-			} else {
-				runningPoints = append(runningPoints, up.UsagePointID)
+			default:
+				otherRunningPoints = append(otherRunningPoints, up.UsagePointID)
 			}
 		}
 	}
 
-	// Priority: TAF-7 running > any running > first available
-	if len(taf7Points) > 0 {
+	// Priority: TAF-1 (best real-time) > TAF-7 (full phase data) > other running > first available
+	if len(taf1Points) > 0 {
+		m.usagePointIDs = taf1Points
+		m.log.DEBUG.Printf("using %d TAF-1 usage point(s) (better real-time data)", len(taf1Points))
+	} else if len(taf7Points) > 0 {
 		m.usagePointIDs = taf7Points
-		m.log.DEBUG.Printf("using %d TAF-7 usage point(s) (advanced metering)", len(taf7Points))
-	} else if len(runningPoints) > 0 {
-		m.usagePointIDs = runningPoints
-		m.log.DEBUG.Printf("using %d running usage point(s) (no TAF-7 found)", len(runningPoints))
-		m.log.WARN.Printf("TAF-7 not found - advanced metering data (power, phases) may not be available")
+		m.log.DEBUG.Printf("using %d TAF-7 usage point(s) (advanced metering with full phase data)", len(taf7Points))
+		m.log.WARN.Println("TAF-7 detected - consider TAF-1 for better real-time data")
+	} else if len(otherRunningPoints) > 0 {
+		m.usagePointIDs = otherRunningPoints
+		m.log.DEBUG.Printf("using %d running usage point(s) (unknown TAF type)", len(otherRunningPoints))
+		m.log.WARN.Println("unknown TAF type - metering capabilities may be limited")
 	} else if len(usagePoints) > 0 {
 		m.usagePointIDs = []string{usagePoints[0].UsagePointID}
-		m.log.WARN.Printf("no running usage points found, using first available")
+		m.log.WARN.Println("no running usage points found, using first available")
 	} else {
 		return fmt.Errorf("no usage points found")
 	}
@@ -230,7 +239,8 @@ func (m *ThebenConexa) getMeterValues() (map[string]float64, error) {
 
 		var resp readingsResponse
 		if err := m.callJSONRPC(req, &resp); err != nil {
-			m.log.DEBUG.Printf("failed to get readings for usage point %s: %v", usagePointID, err)
+			// Don't log usage point ID (sensitive)
+			m.log.DEBUG.Printf("failed to get readings: %v", err)
 			continue
 		}
 
@@ -269,26 +279,26 @@ func (m *ThebenConexa) getMeterValues() (map[string]float64, error) {
 				continue
 			}
 
-			// Apply scaler if present (like EMH CASA)
+			// Apply scaler if present
 			if reading.Scaler != 0 {
 				rawValue = rawValue * math.Pow(10, float64(reading.Scaler))
 			}
 
-			// Convert based on unit (like EMH CASA)
+			// Convert based on unit
 			var finalValue float64
 			switch reading.Unit {
 			case 27: // W (Watt) - keep as-is
 				finalValue = rawValue
-				m.log.DEBUG.Printf("parsed %s = %.2f W (raw=%v, unit=27)", obisCode, finalValue, reading.Value)
+				m.log.DEBUG.Printf("parsed %s = %.2f W (unit=27)", obisCode, finalValue)
 			case 30: // Wh (Watthour) - convert to kWh
 				finalValue = rawValue / 1000
-				m.log.DEBUG.Printf("parsed %s = %.3f kWh (raw=%v, unit=30)", obisCode, finalValue, reading.Value)
+				m.log.DEBUG.Printf("parsed %s = %.3f kWh (unit=30)", obisCode, finalValue)
 			case 33: // A (Ampere) - keep as-is
 				finalValue = rawValue
-				m.log.DEBUG.Printf("parsed %s = %.2f A (raw=%v, unit=33)", obisCode, finalValue, reading.Value)
+				m.log.DEBUG.Printf("parsed %s = %.2f A (unit=33)", obisCode, finalValue)
 			case 35: // V (Volt) - keep as-is
 				finalValue = rawValue
-				m.log.DEBUG.Printf("parsed %s = %.2f V (raw=%v, unit=35)", obisCode, finalValue, reading.Value)
+				m.log.DEBUG.Printf("parsed %s = %.2f V (unit=35)", obisCode, finalValue)
 			case 0:
 				// No unit specified - assume HomeAssistant format (deci-Watts / 10000)
 				finalValue = rawValue / 10000.0
@@ -311,7 +321,7 @@ func (m *ThebenConexa) getMeterValues() (map[string]float64, error) {
 }
 
 // CurrentPower implements api.Meter
-// Note: Only available if gateway provides OBIS 16.7.0 (TAF-7 usually does)
+// Available with both TAF-1 and TAF-7
 func (m *ThebenConexa) CurrentPower() (float64, error) {
 	values, err := m.valuesG()
 	if err != nil {
@@ -320,9 +330,9 @@ func (m *ThebenConexa) CurrentPower() (float64, error) {
 
 	power, ok := values["16.7.0"]
 	if !ok {
-		// Try to help with debugging
-		m.log.DEBUG.Printf("available OBIS codes: %v", getKeys(values))
-		return 0, fmt.Errorf("power value (16.7.0) not found - check if TAF-7 usage point is active")
+		// Try to help with debugging (don't log sensitive values)
+		m.log.DEBUG.Printf("power value (16.7.0) not found, available OBIS codes: %d", len(values))
+		return 0, fmt.Errorf("power value (16.7.0) not found")
 	}
 
 	return power, nil
@@ -372,14 +382,14 @@ func (m *ThebenConexa) GridProduction() (float64, error) {
 	return m.getOBISValue("2.8.0")
 }
 
-// Currents implements api.PhaseCurrents (if available from TAF-7)
+// Currents implements api.PhaseCurrents (typically available from TAF-7)
 func (m *ThebenConexa) Currents() (float64, float64, float64, error) {
 	values, err := m.valuesG()
 	if err != nil {
 		return 0, 0, 0, err
 	}
 
-	// Return 0 for missing phases (gateway may not provide all)
+	// Return 0 for missing phases (TAF-1 may not provide these)
 	l1 := values["31.7.0"]
 	l2 := values["51.7.0"]
 	l3 := values["71.7.0"]
@@ -387,14 +397,14 @@ func (m *ThebenConexa) Currents() (float64, float64, float64, error) {
 	return l1, l2, l3, nil
 }
 
-// Voltages implements api.PhaseVoltages (if available from TAF-7)
+// Voltages implements api.PhaseVoltages (typically available from TAF-7)
 func (m *ThebenConexa) Voltages() (float64, float64, float64, error) {
 	values, err := m.valuesG()
 	if err != nil {
 		return 0, 0, 0, err
 	}
 
-	// Return 0 for missing phases
+	// Return 0 for missing phases (TAF-1 may not provide these)
 	l1 := values["32.7.0"]
 	l2 := values["52.7.0"]
 	l3 := values["72.7.0"]
@@ -402,14 +412,14 @@ func (m *ThebenConexa) Voltages() (float64, float64, float64, error) {
 	return l1, l2, l3, nil
 }
 
-// Powers implements api.PhasePowers (if available from TAF-7)
+// Powers implements api.PhasePowers (typically available from TAF-7)
 func (m *ThebenConexa) Powers() (float64, float64, float64, error) {
 	values, err := m.valuesG()
 	if err != nil {
 		return 0, 0, 0, err
 	}
 
-	// Return 0 for missing phases
+	// Return 0 for missing phases (TAF-1 may not provide these)
 	l1 := values["36.7.0"]
 	l2 := values["56.7.0"]
 	l3 := values["76.7.0"]
