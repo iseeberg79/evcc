@@ -185,7 +185,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/influxdata/line-protocol v0.0.0-20210922203350-b1ad95c89adf // indirect
 	github.com/insomniacslk/xjson v0.0.0-20240821125711-1236daaf6808 // indirect
-	github.com/iseeberg79/emh-casa-go v0.0.0-00010101000000-000000000000 // indirect
+	github.com/iseeberg79/emh-casa-go v0.0.1
 	github.com/itchyny/timefmt-go v0.1.7 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
@@ -269,4 +269,3 @@ replace github.com/grid-x/modbus => github.com/evcc-io/modbus v0.0.0-20250501165
 
 replace github.com/lorenzodonini/ocpp-go => github.com/evcc-io/ocpp-go v0.0.0-20251212212612-b7f92ee0443b
 
-replace github.com/iseeberg79/emh-casa-go => ../emh-casa-go
