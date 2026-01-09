@@ -117,8 +117,9 @@ func planStrategyHandlerSetter(r *http.Request, set func(api.PlanStrategy) error
 		return err
 	}
 	return set(api.PlanStrategy{
-		Continuous:   planStrategy.Continuous,
-		Precondition: time.Duration(planStrategy.Precondition) * time.Second,
+		Continuous:           planStrategy.Continuous,
+		Precondition:         time.Duration(planStrategy.Precondition) * time.Second,
+		PreconditionEnforced: planStrategy.PreconditionEnforced,
 	})
 }
 

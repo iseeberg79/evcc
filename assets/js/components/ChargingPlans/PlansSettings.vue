@@ -59,7 +59,8 @@
 			:id="id"
 			:precondition="effectivePlanStrategy?.precondition"
 			:continuous="effectivePlanStrategy?.continuous"
-			:disabled="strategyDisabled"
+			:precondition-enforced="effectivePlanStrategy?.preconditionEnforced"
+			:continuous-disabled="!hasVariableRates"
 			:show="strategyOpen"
 			@update="updatePlanStrategy"
 		/>
@@ -166,12 +167,12 @@ export default defineComponent({
 		nextPlanTitle(): string {
 			return `${this.$t("main.targetCharge.nextPlan")} #${this.nextPlanId}`;
 		},
-		strategyDisabled(): boolean {
+		hasVariableRates(): boolean {
 			// options only make sense if there are variable prices
 			// TODO: make this logic more robust (api fails, missing data)
 			const slots = this.forecast?.planner || [];
 			const values = new Set(slots.map(({ value }) => value));
-			return values.size <= 1;
+			return values.size > 1;
 		},
 	},
 	watch: {
