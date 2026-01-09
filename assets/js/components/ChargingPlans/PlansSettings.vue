@@ -56,8 +56,10 @@
 			</div>
 		</h5>
 		<ChargingPlanStrategy
-			v-bind="chargingPlanStrategyProps"
-			:continuous-disabled="strategyDisabled"
+			:id="id"
+			:precondition="effectivePlanStrategy?.precondition"
+			:continuous="effectivePlanStrategy?.continuous"
+			:disabled="strategyDisabled"
 			:show="strategyOpen"
 			@update="updatePlanStrategy"
 		/>
@@ -157,13 +159,6 @@ export default defineComponent({
 			return rates
 				? { duration, plan, power, rates, targetTime, currency, smartCostType }
 				: null;
-		},
-		chargingPlanStrategyProps(): any {
-			return {
-				id: this.id,
-				precondition: this.effectivePlanStrategy?.precondition,
-				continuous: this.effectivePlanStrategy?.continuous,
-			};
 		},
 		alreadyReached(): boolean {
 			return this.plan.duration === 0;
