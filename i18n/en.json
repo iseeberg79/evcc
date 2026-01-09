@@ -891,7 +891,7 @@
       "planNumber": "Plan {number}",
       "precondition": {
         "description": "Charge {duration} before departure for battery preconditioning.",
-        "enforceLabel": "Enforce preconditioning window",
+        "enforceLabel": "Enforce preconditioning",
         "label": "Late Charging",
         "optionAll": "everything",
         "optionNo": "no"

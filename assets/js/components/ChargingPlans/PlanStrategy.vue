@@ -58,7 +58,7 @@
 					</div>
 				</div>
 			</div>
-			<div v-if="localPrecondition > 0" class="row">
+			<div v-if="localPrecondition > 0 && isOfflineVehicle" class="row">
 				<div class="col-12 col-sm-6 offset-lg-3 mb-3">
 					<div class="form-check form-switch">
 						<input
@@ -94,6 +94,7 @@ export default defineComponent({
 		continuous: { type: Boolean, default: false },
 		continuousDisabled: { type: Boolean, default: false },
 		preconditionEnforced: { type: Boolean, default: false },
+		isOfflineVehicle: { type: Boolean, default: false },
 	},
 	emits: ["update"],
 	data() {

@@ -889,7 +889,7 @@
       "planNumber": "Plan {number}",
       "precondition": {
         "description": "Lade {duration} vor Abfahrt zur Batterie-Vorkonditionierung.",
-        "enforceLabel": "Vorkonditionierungsfenster erzwingen",
+        "enforceLabel": "Vorkonditionierung erzwingen",
         "label": "Spätes Laden",
         "optionAll": "alles",
         "optionNo": "nein"

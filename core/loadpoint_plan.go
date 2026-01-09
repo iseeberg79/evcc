@@ -88,7 +88,19 @@ func (lp *Loadpoint) GetPlan(targetTime time.Time, requiredDuration, preconditio
 	return lp.planner.Plan(requiredDuration, precondition, targetTime, continuous)
 }
 
+// inPreconditionWindow returns true if the current time is within the precondition window
+// (between planTime - precondition and planTime)
+func (lp *Loadpoint) inPreconditionWindow(planTime time.Time, precondition time.Duration) bool {
+	if planTime.IsZero() || precondition <= 0 {
+		return false
+	}
+	now := lp.clock.Now()
+	preconditionStart := planTime.Add(-precondition)
+	return now.After(preconditionStart) && now.Before(planTime)
+}
+
 // plannerActive checks if the charging plan has a currently active slot
+// or if precondition enforcement keeps the plan active
 func (lp *Loadpoint) plannerActive() (active bool) {
 	defer func() {
 		lp.setPlanActive(active)
@@ -118,12 +130,14 @@ func (lp *Loadpoint) plannerActive() (active bool) {
 	// keep overrunning plans as long as a vehicle is connected
 	// with enforcement enabled, also keep plan during precondition window
 	strategy := lp.getEffectivePlanStrategy()
-	isPreconditionEnforced := strategy.PreconditionEnforced && strategy.Precondition > 0
+	// precondition enforcement only makes sense for offline vehicles without SoC
+	isOfflineVehicle := !lp.socBasedPlanning() || lp.socEstimator == nil
+	isPreconditionEnforced := strategy.PreconditionEnforced && strategy.Precondition > 0 && isOfflineVehicle
 
 	if lp.clock.Until(planTime) < 0 && (!lp.planActive || !lp.connected()) {
 		// don't delete plan if we're still in precondition enforcement window
-		// precondition end time equals planTime (charging finishes earlier by precondition duration)
-		if isPreconditionEnforced && lp.clock.Now().Before(planTime) {
+		// precondition window: planTime - precondition ... planTime
+		if isPreconditionEnforced && lp.inPreconditionWindow(planTime, strategy.Precondition) {
 			lp.log.DEBUG.Printf("plan: keeping plan active for precondition window until %v", planTime.Round(time.Second).Local())
 			return true
 		}
@@ -184,7 +198,7 @@ func (lp *Loadpoint) plannerActive() (active bool) {
 
 		// remember last active plan's slot end time
 		lp.planSlotEnd = activeSlot.End
-	} else if isPreconditionEnforced && lp.clock.Now().Before(planTime) {
+	} else if isPreconditionEnforced && lp.inPreconditionWindow(planTime, strategy.Precondition) {
 		// keep plan active during precondition enforcement window even without active slot
 		lp.log.DEBUG.Printf("plan: in precondition enforcement window until %v", planTime.Round(time.Second).Local())
 		return true

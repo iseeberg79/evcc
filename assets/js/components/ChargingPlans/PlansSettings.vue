@@ -61,6 +61,7 @@
 			:continuous="effectivePlanStrategy?.continuous"
 			:precondition-enforced="effectivePlanStrategy?.preconditionEnforced"
 			:continuous-disabled="!hasVariableRates"
+			:is-offline-vehicle="isOfflineVehicle"
 			:show="strategyOpen"
 			@update="updatePlanStrategy"
 		/>
@@ -173,6 +174,15 @@ export default defineComponent({
 			const slots = this.forecast?.planner || [];
 			const values = new Set(slots.map(({ value }) => value));
 			return values.size > 1;
+		},
+		isOfflineVehicle(): boolean {
+			// Vehicle is considered offline if we don't have SoC data
+			// This indicates no vehicle API connection (no SoC, likely no Climate API)
+			if (!this.socBasedPlanning) {
+				// Energy-based planning = always offline (no vehicle API)
+				return true;
+			}
+			return false;
 		},
 	},
 	watch: {
