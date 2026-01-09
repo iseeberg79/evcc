@@ -7,14 +7,16 @@ import (
 )
 
 type planStrategyPayload struct {
-	Continuous   bool  `json:"continuous"`
-	Precondition int64 `json:"precondition"`
+	Continuous           bool  `json:"continuous"`
+	Precondition         int64 `json:"precondition"`
+	PreconditionEnforced bool  `json:"preconditionEnforced"`
 }
 
 func planStrategyPayloadFromApi(ps api.PlanStrategy) planStrategyPayload {
 	return planStrategyPayload{
-		Continuous:   ps.Continuous,
-		Precondition: int64(ps.Precondition.Seconds()),
+		Continuous:           ps.Continuous,
+		Precondition:         int64(ps.Precondition.Seconds()),
+		PreconditionEnforced: ps.PreconditionEnforced,
 	}
 }
 

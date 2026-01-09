@@ -885,9 +885,11 @@
         "continuous": "kontinuierlich",
         "label": "Optimierung"
       },
+      "continuousDisabledDescription": "Mit dynamischen Strompreisen oder CO₂-Tarif können Sie das Laden optimieren und zwischen günstigsten oder kontinuierlichen Ladefenstern wählen.",
       "planNumber": "Plan {number}",
       "precondition": {
         "description": "Lade {duration} vor Abfahrt zur Batterie-Vorkonditionierung.",
+        "enforceLabel": "Vorkonditionierungsfenster erzwingen",
         "label": "Spätes Laden",
         "optionAll": "alles",
         "optionNo": "nein"

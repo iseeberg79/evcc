@@ -116,7 +116,18 @@ func (lp *Loadpoint) plannerActive() (active bool) {
 	}
 
 	// keep overrunning plans as long as a vehicle is connected
+	// with enforcement enabled, also keep plan during precondition window
+	strategy := lp.getEffectivePlanStrategy()
+	isPreconditionEnforced := strategy.PreconditionEnforced && strategy.Precondition > 0
+
 	if lp.clock.Until(planTime) < 0 && (!lp.planActive || !lp.connected()) {
+		// don't delete plan if we're still in precondition enforcement window
+		// precondition end time equals planTime (charging finishes earlier by precondition duration)
+		if isPreconditionEnforced && lp.clock.Now().Before(planTime) {
+			lp.log.DEBUG.Printf("plan: keeping plan active for precondition window until %v", planTime.Round(time.Second).Local())
+			return true
+		}
+
 		lp.log.DEBUG.Println("plan: deleting expired plan")
 		lp.finishPlan()
 		return false
@@ -134,8 +145,6 @@ func (lp *Loadpoint) plannerActive() (active bool) {
 		lp.finishPlan()
 		return false
 	}
-
-	strategy := lp.getEffectivePlanStrategy()
 
 	plan = lp.GetPlan(planTime, requiredDuration, strategy.Precondition, strategy.Continuous)
 	if plan == nil {
@@ -175,6 +184,10 @@ func (lp *Loadpoint) plannerActive() (active bool) {
 
 		// remember last active plan's slot end time
 		lp.planSlotEnd = activeSlot.End
+	} else if isPreconditionEnforced && lp.clock.Now().Before(planTime) {
+		// keep plan active during precondition enforcement window even without active slot
+		lp.log.DEBUG.Printf("plan: in precondition enforcement window until %v", planTime.Round(time.Second).Local())
+		return true
 	} else if lp.planActive {
 		// planner was active (any slot, not necessarily previous slot) and charge goal has not yet been met
 		switch {

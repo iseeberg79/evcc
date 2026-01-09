@@ -57,7 +57,7 @@
 		</h5>
 		<ChargingPlanStrategy
 			v-bind="chargingPlanStrategyProps"
-			:disabled="strategyDisabled"
+			:continuous-disabled="strategyDisabled"
 			:show="strategyOpen"
 			@update="updatePlanStrategy"
 		/>

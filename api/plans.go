@@ -15,19 +15,22 @@ type RepeatingPlan struct {
 }
 
 type PlanStrategy struct {
-	Continuous   bool          `json:"continuous"`   // force continuous planning
-	Precondition time.Duration `json:"precondition"` // precondition duration in seconds
+	Continuous           bool          `json:"continuous"`           // force continuous planning
+	Precondition         time.Duration `json:"precondition"`         // precondition duration in seconds
+	PreconditionEnforced bool          `json:"preconditionEnforced"` // enforce precondition window
 }
 
 type planStrategy struct {
-	Continuous   bool  `json:"continuous"`   // force continuous planning
-	Precondition int64 `json:"precondition"` // precondition duration in seconds
+	Continuous           bool  `json:"continuous"`           // force continuous planning
+	Precondition         int64 `json:"precondition"`         // precondition duration in seconds
+	PreconditionEnforced bool  `json:"preconditionEnforced"` // enforce precondition window
 }
 
 func (ps PlanStrategy) MarshalJSON() ([]byte, error) {
 	return json.Marshal(planStrategy{
-		Continuous:   ps.Continuous,
-		Precondition: int64(ps.Precondition.Seconds()),
+		Continuous:           ps.Continuous,
+		Precondition:         int64(ps.Precondition.Seconds()),
+		PreconditionEnforced: ps.PreconditionEnforced,
 	})
 }
 
@@ -38,8 +41,9 @@ func (ps *PlanStrategy) UnmarshalJSON(data []byte) error {
 	}
 
 	*ps = PlanStrategy{
-		Continuous:   res.Continuous,
-		Precondition: time.Duration(res.Precondition) * time.Second,
+		Continuous:           res.Continuous,
+		Precondition:         time.Duration(res.Precondition) * time.Second,
+		PreconditionEnforced: res.PreconditionEnforced,
 	}
 
 	return nil

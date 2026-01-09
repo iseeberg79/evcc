@@ -887,9 +887,11 @@
         "continuous": "continuous",
         "label": "Optimization"
       },
+      "continuousDisabledDescription": "With dynamic grid prices or CO₂ tariff, you can optimize charging to use cheapest vs. continuous time windows.",
       "planNumber": "Plan {number}",
       "precondition": {
         "description": "Charge {duration} before departure for battery preconditioning.",
+        "enforceLabel": "Enforce preconditioning window",
         "label": "Late Charging",
         "optionAll": "everything",
         "optionNo": "no"

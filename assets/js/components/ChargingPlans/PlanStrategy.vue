@@ -1,13 +1,13 @@
 <template>
 	<div class="strategy-wrapper" :class="{ open: show }">
 		<div class="strategy-content">
-			<div v-if="disabled" class="row mb-4">
+			<div v-if="continuousDisabled" class="row mb-4">
 				<div class="small text-muted">
 					<strong class="text-primary">{{ $t("general.note") }}</strong>
-					{{ $t("main.chargingPlan.strategyDisabledDescription") }}
+					{{ $t("main.chargingPlan.continuousDisabledDescription") }}
 				</div>
 			</div>
-			<div v-else class="row">
+			<div class="row">
 				<div class="col-12 col-sm-6 col-lg-3 offset-lg-3 mb-3">
 					<div class="row">
 						<label :for="formId('continuous')" class="col-form-label col-5 col-sm-12">
@@ -17,6 +17,7 @@
 							<select
 								:id="formId('continuous')"
 								v-model="localContinuous"
+								:disabled="continuousDisabled"
 								class="form-select"
 								@change="updateStrategy"
 							>
@@ -57,6 +58,23 @@
 					</div>
 				</div>
 			</div>
+			<div v-if="localPrecondition > 0" class="row">
+				<div class="col-12 col-sm-6 offset-lg-3 mb-3">
+					<div class="form-check form-switch">
+						<input
+							:id="formId('preconditionEnforced')"
+							v-model="localPreconditionEnforced"
+							type="checkbox"
+							role="switch"
+							class="form-check-input"
+							@change="updateStrategy"
+						/>
+						<label :for="formId('preconditionEnforced')" class="form-check-label">
+							{{ $t("main.chargingPlan.precondition.enforceLabel") }}
+						</label>
+					</div>
+				</div>
+			</div>
 		</div>
 	</div>
 </template>
@@ -74,13 +92,15 @@ export default defineComponent({
 		show: Boolean,
 		precondition: { type: Number, default: 0 },
 		continuous: { type: Boolean, default: false },
-		disabled: Boolean,
+		continuousDisabled: { type: Boolean, default: false },
+		preconditionEnforced: { type: Boolean, default: false },
 	},
 	emits: ["update"],
 	data() {
 		return {
 			localPrecondition: this.precondition,
 			localContinuous: this.continuous,
+			localPreconditionEnforced: this.preconditionEnforced,
 		};
 	},
 	computed: {
@@ -127,6 +147,15 @@ export default defineComponent({
 			},
 			immediate: true,
 		},
+		preconditionEnforced: {
+			handler(newValue: boolean) {
+				// Only update if value actually changed from external source
+				if (newValue !== this.localPreconditionEnforced) {
+					this.localPreconditionEnforced = newValue;
+				}
+			},
+			immediate: true,
+		},
 	},
 	methods: {
 		formId(name: string) {
@@ -136,6 +165,7 @@ export default defineComponent({
 			const strategy: PlanStrategy = {
 				continuous: this.localContinuous,
 				precondition: this.localPrecondition,
+				preconditionEnforced: this.localPreconditionEnforced,
 			};
 			this.$emit("update", strategy);
 		},

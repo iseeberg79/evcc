@@ -414,7 +414,7 @@ func (lp *Loadpoint) SetPlanStrategy(strategy api.PlanStrategy) error {
 	lp.Lock()
 	defer lp.Unlock()
 
-	lp.log.DEBUG.Printf("set plan strategy: continuous=%v, precondition=%v", strategy.Continuous, strategy.Precondition)
+	lp.log.DEBUG.Printf("set plan strategy: continuous=%v, precondition=%v, enforced=%v", strategy.Continuous, strategy.Precondition, strategy.PreconditionEnforced)
 
 	return lp.setPlanStrategy(strategy)
 }
