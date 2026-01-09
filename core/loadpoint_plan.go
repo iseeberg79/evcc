@@ -130,18 +130,11 @@ func (lp *Loadpoint) plannerActive() (active bool) {
 	// keep overrunning plans as long as a vehicle is connected
 	// with enforcement enabled, also keep plan during precondition window
 	strategy := lp.getEffectivePlanStrategy()
-	// precondition enforcement only makes sense for offline vehicles without SoC
-	isOfflineVehicle := !lp.socBasedPlanning() || lp.socEstimator == nil
-	isPreconditionEnforced := strategy.PreconditionEnforced && strategy.Precondition > 0 && isOfflineVehicle
+	// precondition enforcement only makes sense for offline vehicles
+	// (energy-based planning = no vehicle API, no SoC, likely no Climate API)
+	isPreconditionEnforced := strategy.PreconditionEnforced && strategy.Precondition > 0 && !lp.socBasedPlanning()
 
 	if lp.clock.Until(planTime) < 0 && (!lp.planActive || !lp.connected()) {
-		// don't delete plan if we're still in precondition enforcement window
-		// precondition window: planTime - precondition ... planTime
-		if isPreconditionEnforced && lp.inPreconditionWindow(planTime, strategy.Precondition) {
-			lp.log.DEBUG.Printf("plan: keeping plan active for precondition window until %v", planTime.Round(time.Second).Local())
-			return true
-		}
-
 		lp.log.DEBUG.Println("plan: deleting expired plan")
 		lp.finishPlan()
 		return false
