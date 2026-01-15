@@ -33,6 +33,7 @@ type Estimator struct {
 	prevSoc           float64 // previous vehicle Soc in %
 	prevChargedEnergy float64 // previous charged energy in Wh
 	energyPerSocStep  float64 // Energy per Soc percent in Wh
+	disableGradient   bool    // disable gradient recalibration for inaccurate meters
 }
 
 // NewEstimator creates new estimator
@@ -56,6 +57,11 @@ func (s *Estimator) Reset() {
 	s.capacity = s.vehicle.Capacity() * 1e3           // cache to simplify debugging
 	s.virtualCapacity = s.capacity / ChargeEfficiency // initial capacity taking efficiency into account
 	s.energyPerSocStep = s.virtualCapacity / 100
+}
+
+// SetDisableGradient disables gradient recalibration for inaccurate energy meters
+func (s *Estimator) SetDisableGradient(disabled bool) {
+	s.disableGradient = disabled
 }
 
 // RemainingChargeDuration returns the estimated remaining duration
@@ -138,7 +144,7 @@ func (s *Estimator) Soc(fetchedSoc *float64, chargedEnergy float64) (float64, er
 				energyDiff := chargedEnergy - s.initialEnergy
 
 				// recalculate gradient, wh per soc %
-				if socDiff > 10 && energyDiff > 0 {
+				if socDiff > 10 && energyDiff > 0 && !s.disableGradient {
 					s.energyPerSocStep = energyDiff / socDiff
 					s.virtualCapacity = s.energyPerSocStep * 100
 					s.log.DEBUG.Printf("soc gradient updated: soc: %.1f%%, socDiff: %.1f%%, energyDiff: %.0fWh, energyPerSocStep: %.1fWh, virtualCapacity: %.0fWh", s.vehicleSoc, socDiff, energyDiff, s.energyPerSocStep, s.virtualCapacity)

@@ -638,11 +638,14 @@
       "validate": "prüfen"
     },
     "vehicle": {
+      "advancedSettings": "Erweiterte Einstellungen",
       "cancel": "Abbrechen",
       "chargingSettings": "Ladeeinstellungen",
       "defaultMode": "Standard-Modus",
       "defaultModeHelp": "Lademodus beim Anschließen des Fahrzeugs.",
       "delete": "Fahrzeug löschen",
+      "disableGradient": "SOC-Gradienten-Neukalibrierung deaktivieren",
+      "disableGradientHelp": "Aktiviere dies, wenn deine Wallbox einen ungenauen Energiezähler hat. Verhindert falsche Kapazitätsberechnungen, die dazu führen können, dass Ladepläne fehlschlagen.",
       "generic": "Weitere Integrationen",
       "identifiers": "RFID-Kennungen",
       "identifiersHelp": "Liste der RFID-Kennungen, um das Fahrzeug zu identifizieren. Ein Eintrag pro Zeile. Auf der Übersichtsseite siehst du die aktuelle RFID-Kennung am jeweiligen Ladepunkt.",

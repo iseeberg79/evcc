@@ -191,6 +191,14 @@ params:
       de: Priorität des Ladepunktes oder Fahrzeugs in Relation zu anderen Ladepunkten oder Fahrzeugen für die Zuweisung von PV-Energie
       en: Priority of the loadpoint or vehicle in relation to other loadpoints or vehicles for allocating pv energy
     type: int
+  - name: disablegradient
+    type: bool
+    description:
+      de: SOC-Gradienten-Neukalibrierung deaktivieren
+      en: Disable SOC gradient recalibration
+    help:
+      de: Aktiviere dies, wenn deine Wallbox einen ungenauen Energiezähler hat
+      en: Enable this if your wallbox has an inaccurate energy meter
   - name: standbypower
     unit: W
     description:
@@ -484,6 +492,8 @@ presets:
       advanced: true
     - name: priority
       advanced: true
+    - name: disableGradient
+      advanced: true
     - name: cache
       default: 15m
       advanced: true
@@ -506,6 +516,8 @@ presets:
     - name: identifiers
       advanced: true
     - name: priority
+      advanced: true
+    - name: disableGradient
       advanced: true
   vehicle-features:
     - name: coarsecurrent

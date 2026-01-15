@@ -135,6 +135,15 @@ func (lp *Loadpoint) setActiveVehicle(v api.Vehicle) {
 		// resolve optional config
 		if v.Capacity() > 0 && (lp.Soc.Estimate == nil || *lp.Soc.Estimate) {
 			lp.socEstimator = soc.NewEstimator(lp.log, lp.charger, v)
+
+			// disable gradient recalibration for vehicles with inaccurate energy meters
+			type disableGradient interface {
+				DisableGradient() bool
+			}
+			if dg, ok := v.(disableGradient); ok && dg.DisableGradient() {
+				lp.socEstimator.SetDisableGradient(true)
+				lp.log.INFO.Printf("soc gradient recalibration disabled for %s", v.GetTitle())
+			}
 		}
 
 		lp.publish(keys.VehicleName, vehicle.Settings(lp.log, v).Name())

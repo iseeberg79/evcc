@@ -142,6 +142,20 @@
 					class="me-2"
 				/>
 			</FormRow>
+
+			<h6 class="mt-3">{{ $t("config.vehicle.advancedSettings") }}</h6>
+			<FormRow
+				id="vehicleParamDisableGradient"
+				:label="$t('config.vehicle.disableGradient')"
+				:help="$t('config.vehicle.disableGradientHelp')"
+			>
+				<PropertyField
+					id="vehicleParamDisableGradient"
+					v-model="values.disableGradient"
+					type="Bool"
+					class="w-100"
+				/>
+			</FormRow>
 		</template>
 	</DeviceModalBase>
 </template>
@@ -172,6 +186,7 @@ const CUSTOM_FIELDS = [
 	"identifiers",
 	"phases",
 	"mode",
+	"disableGradient",
 ];
 
 export default defineComponent({

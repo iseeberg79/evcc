@@ -638,11 +638,14 @@
       "validate": "validate"
     },
     "vehicle": {
+      "advancedSettings": "Advanced settings",
       "cancel": "Cancel",
       "chargingSettings": "Charging settings",
       "defaultMode": "Default mode",
       "defaultModeHelp": "Charging mode when connecting the vehicle.",
       "delete": "Delete",
+      "disableGradient": "Disable SOC gradient recalibration",
+      "disableGradientHelp": "Enable this if your wallbox has an inaccurate energy meter. Prevents incorrect capacity calculations that can cause charging plans to fail.",
       "generic": "Other integrations",
       "identifiers": "RFID identifiers",
       "identifiersHelp": "List of RFID strings to identify the vehicle. One entry per line. The current identifier can be found at the respective charging point on the overview page.",
