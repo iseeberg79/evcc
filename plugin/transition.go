@@ -124,11 +124,11 @@ func (p *transitionPlugin) handleTransition(newMode int64) error {
 	needsDelay := false
 
 	if p.currentMode != nil && p.timeout > 0 {
-		// If we have reset modes (from watchdog), only delay when leaving non-reset modes
+		// If we have reset modes (from watchdog), delay unless going TO reset mode
 		if len(p.resetModes) > 0 {
-			needsDelay = !p.resetModes[*p.currentMode]
-			p.log.DEBUG.Printf("transition from %d to %d: currentMode in reset=%v, delay=%v",
-				*p.currentMode, newMode, p.resetModes[*p.currentMode], needsDelay)
+			needsDelay = !p.resetModes[newMode]
+			p.log.DEBUG.Printf("transition from %d to %d: newMode in reset=%v, delay=%v",
+				*p.currentMode, newMode, p.resetModes[newMode], needsDelay)
 		} else {
 			// No reset modes defined, always delay (simple timeout mode)
 			needsDelay = true

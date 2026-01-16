@@ -136,17 +136,20 @@ func TestTransitionWithWatchdogResetModes(t *testing.T) {
 	setter, err := intSetter.IntSetter("")
 	assert.NoError(t, err)
 
-	// Mode 1 (normal) - immediate (first call)
+	// Mode 1 (normal/reset) - immediate (first call)
 	err = setter(1)
 	assert.NoError(t, err)
 	assert.Equal(t, []int64{1}, mock.getCalls())
 
-	// Mode 3 (charge) - immediate (from reset mode)
+	// Mode 3 (charge/non-reset) - DELAYED (to non-reset mode)
 	err = setter(3)
 	assert.NoError(t, err)
-	assert.Equal(t, []int64{1, 3}, mock.getCalls())
+	assert.Equal(t, []int64{1}, mock.getCalls(), "should not apply yet")
 
-	// Mode 2 (hold) - DELAYED (from non-reset mode 3)
+	time.Sleep(150 * time.Millisecond)
+	assert.Equal(t, []int64{1, 3}, mock.getCalls(), "should apply after delay")
+
+	// Mode 2 (hold/non-reset) - DELAYED (to non-reset mode)
 	err = setter(2)
 	assert.NoError(t, err)
 	assert.Equal(t, []int64{1, 3}, mock.getCalls(), "should not apply yet")
@@ -154,19 +157,18 @@ func TestTransitionWithWatchdogResetModes(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 	assert.Equal(t, []int64{1, 3, 2}, mock.getCalls(), "should apply after delay")
 
-	// Mode 1 (normal) - immediate (from reset mode 2... wait, mode 2 is not reset)
-	// Actually mode 2 is non-reset, so 2->1 should delay
+	// Mode 1 (normal/reset) - IMMEDIATE (to reset mode)
 	err = setter(1)
 	assert.NoError(t, err)
-	assert.Equal(t, []int64{1, 3, 2}, mock.getCalls(), "should not apply yet")
+	assert.Equal(t, []int64{1, 3, 2, 1}, mock.getCalls(), "immediate to reset mode")
 
-	time.Sleep(150 * time.Millisecond)
-	assert.Equal(t, []int64{1, 3, 2, 1}, mock.getCalls(), "should apply after delay")
-
-	// Mode 3 (charge) - immediate (from reset mode 1)
+	// Mode 3 (charge/non-reset) - DELAYED (to non-reset mode)
 	err = setter(3)
 	assert.NoError(t, err)
-	assert.Equal(t, []int64{1, 3, 2, 1, 3}, mock.getCalls(), "immediate from reset mode")
+	assert.Equal(t, []int64{1, 3, 2, 1}, mock.getCalls(), "should not apply yet")
+
+	time.Sleep(150 * time.Millisecond)
+	assert.Equal(t, []int64{1, 3, 2, 1, 3}, mock.getCalls(), "should apply after delay")
 }
 
 func TestTransitionSimpleTimeout(t *testing.T) {
@@ -238,29 +240,34 @@ func TestTransitionCancellation(t *testing.T) {
 	setter, err := intSetter.IntSetter("")
 	assert.NoError(t, err)
 
-	// Mode 1 (reset) - immediate
+	// Mode 1 (reset) - immediate (first call)
 	err = setter(1)
 	assert.NoError(t, err)
+	assert.Equal(t, []int64{1}, mock.getCalls())
 
-	// Mode 3 (non-reset) - immediate from reset
+	// Mode 3 (non-reset) - delayed (to non-reset)
 	err = setter(3)
 	assert.NoError(t, err)
+	assert.Equal(t, []int64{1}, mock.getCalls())
 
-	// Start transition 3->2 (should delay)
+	time.Sleep(250 * time.Millisecond)
+	assert.Equal(t, []int64{1, 3}, mock.getCalls())
+
+	// Start transition 3->2 (should delay - to non-reset)
 	err = setter(2)
 	assert.NoError(t, err)
 	assert.Equal(t, []int64{1, 3}, mock.getCalls())
 
 	time.Sleep(50 * time.Millisecond)
 
-	// Cancel by requesting mode 1 (from reset mode perspective, but currently mode 3)
+	// Cancel by requesting mode 1 (to reset - should be immediate)
 	err = setter(1)
 	assert.NoError(t, err)
-	// This should delay because we're still in mode 3 (non-reset)
-	assert.Equal(t, []int64{1, 3}, mock.getCalls())
+	assert.Equal(t, []int64{1, 3, 1}, mock.getCalls(), "immediate to reset mode")
 
+	// Mode 2 should never have been applied
 	time.Sleep(200 * time.Millisecond)
-	assert.Equal(t, []int64{1, 3, 1}, mock.getCalls(), "should apply mode 1, not mode 2")
+	assert.Equal(t, []int64{1, 3, 1}, mock.getCalls(), "mode 2 was cancelled")
 }
 
 func TestTransitionSkipsWritesDuringDelay(t *testing.T) {
@@ -287,25 +294,33 @@ func TestTransitionSkipsWritesDuringDelay(t *testing.T) {
 	setter, err := intSetter.IntSetter("")
 	assert.NoError(t, err)
 
-	// Mode 3 (first call, immediate)
+	// Mode 1 (reset, first call) - immediate
+	err = setter(1)
+	assert.NoError(t, err)
+	assert.Equal(t, []int64{1}, mock.getCalls())
+
+	// Mode 3 (non-reset) - should delay
 	err = setter(3)
 	assert.NoError(t, err)
-	assert.Equal(t, []int64{3}, mock.getCalls())
+	assert.Equal(t, []int64{1}, mock.getCalls())
 
-	// Request mode 2 - should start delay
+	time.Sleep(250 * time.Millisecond)
+	assert.Equal(t, []int64{1, 3}, mock.getCalls())
+
+	// Request mode 2 - should start delay (to non-reset)
 	err = setter(2)
 	assert.NoError(t, err)
-	assert.Equal(t, []int64{3}, mock.getCalls())
+	assert.Equal(t, []int64{1, 3}, mock.getCalls())
 
 	// Request mode 2 again during delay - should skip
 	time.Sleep(50 * time.Millisecond)
 	err = setter(2)
 	assert.NoError(t, err)
-	assert.Equal(t, []int64{3}, mock.getCalls(), "should skip redundant call")
+	assert.Equal(t, []int64{1, 3}, mock.getCalls(), "should skip redundant call")
 
 	// Wait for transition to complete
 	time.Sleep(200 * time.Millisecond)
-	assert.Equal(t, []int64{3, 2}, mock.getCalls())
+	assert.Equal(t, []int64{1, 3, 2}, mock.getCalls())
 }
 
 func TestTransitionAutoDetectFromWatchdog(t *testing.T) {
@@ -339,21 +354,21 @@ func TestTransitionAutoDetectFromWatchdog(t *testing.T) {
 	setter, err := intSetter.IntSetter("")
 	assert.NoError(t, err)
 
-	// Mode 1 (reset) - immediate
+	// Mode 1 (reset) - immediate (first call)
 	err = setter(1)
 	assert.NoError(t, err)
 	assert.Equal(t, []int64{1}, mock.getCalls())
 
-	// Mode 3 (non-reset) - immediate from reset mode
+	// Mode 3 (non-reset) - delayed (to non-reset)
 	err = setter(3)
 	assert.NoError(t, err)
-	assert.Equal(t, []int64{1, 3}, mock.getCalls())
-
-	// Mode 1 (reset) - delayed from non-reset mode 3
-	err = setter(1)
-	assert.NoError(t, err)
-	assert.Equal(t, []int64{1, 3}, mock.getCalls())
+	assert.Equal(t, []int64{1}, mock.getCalls())
 
 	time.Sleep(150 * time.Millisecond)
+	assert.Equal(t, []int64{1, 3}, mock.getCalls())
+
+	// Mode 1 (reset) - immediate (to reset mode)
+	err = setter(1)
+	assert.NoError(t, err)
 	assert.Equal(t, []int64{1, 3, 1}, mock.getCalls())
 }
