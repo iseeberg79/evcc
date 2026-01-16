@@ -152,9 +152,33 @@ func (p *transitionPlugin) handleTransition(newMode int64) error {
 		return nil
 	}
 
-	// Delayed transition - start timer
+	// Delayed transition - stop watchdog if needed and start timer
 	p.pendingMode = &newMode
 	p.log.DEBUG.Printf("delayed transition to mode %d, waiting %v", newMode, p.timeout)
+
+	// Stop the watchdog by applying a reset mode (if not already in reset mode)
+	// This prevents the old mode from being written during the delay
+	if len(p.resetModes) > 0 && !p.resetModes[*p.currentMode] {
+		// Find first reset mode to apply
+		var resetMode int64
+		for mode := range p.resetModes {
+			resetMode = mode
+			break
+		}
+
+		set, err := p.set.IntSetter(p.ctx, "")
+		if err != nil {
+			return err
+		}
+
+		p.log.DEBUG.Printf("stopping watchdog by applying reset mode %d (from non-reset mode %d)",
+			resetMode, *p.currentMode)
+		if err := set(resetMode); err != nil {
+			return err
+		}
+		// Update currentMode to reset since we just applied it
+		p.currentMode = &resetMode
+	}
 
 	_, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
