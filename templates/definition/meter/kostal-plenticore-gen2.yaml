@@ -72,13 +72,16 @@ render: |
     {{- include "modbus" . | indent 2 }}
     value: 802:SoC # 802 battery control
   batterymode:
-    source: watchdog
-    timeout: {{ .watchdog }} # re-write at timeout/2
-    reset: 1 # reset watchdog on normal
+    source: transition
+    timeout: {{ .watchdog }} # delay unless switching TO reset mode (immediate to safe state)
     set:
-      source: switch
-      switch:
-      - case: 1 # normal
+      source: watchdog
+      timeout: {{ .watchdog }} # re-write at timeout/2
+      reset: 1 # mode 1 = normal/safe (immediate when switching TO this mode)
+      set:
+        source: switch
+        switch:
+        - case: 1 # normal
         set:
           source: const
           value: 0 # W (set once to reset from forced charge)
