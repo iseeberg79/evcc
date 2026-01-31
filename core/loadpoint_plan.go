@@ -19,6 +19,7 @@ func (lp *Loadpoint) setPlanActive(active bool) {
 	if !active {
 		lp.planOverrunSent = false
 		lp.planSlotEnd = time.Time{}
+		lp.planAvgCost = 0
 	}
 	if lp.planActive != active {
 		lp.planActive = active
@@ -177,8 +178,9 @@ func (lp *Loadpoint) plannerActive() (active bool) {
 			return false
 		}
 
-		// remember last active plan's slot end time
+		// remember last active plan's slot end time and cost
 		lp.planSlotEnd = activeSlot.End
+		lp.planAvgCost = planner.AverageCost(plan)
 	} else if lp.planActive {
 		// planner was active (any slot, not necessarily previous slot) and charge goal has not yet been met
 		switch {
@@ -196,6 +198,9 @@ func (lp *Loadpoint) plannerActive() (active bool) {
 			return true
 		case lp.clock.Until(planStart) < tariff.SlotDuration:
 			lp.log.DEBUG.Printf("plan: avoid re-start within %v, continuing for remaining %v", tariff.SlotDuration, lp.clock.Until(planStart).Round(time.Second))
+			return true
+		case planStart.After(lp.clock.Now()) && planner.AverageCost(plan) >= lp.planAvgCost:
+			lp.log.DEBUG.Printf("plan: continuing until next slot- later plan not cheaper (%.3f >= %.3f)", planner.AverageCost(plan), lp.planAvgCost)
 			return true
 		}
 	}
