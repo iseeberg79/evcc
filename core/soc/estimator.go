@@ -118,6 +118,11 @@ func (s *Estimator) Soc(fetchedSoc *float64, chargedEnergy float64) float64 {
 		// sample charged energy at soc change, reset energy delta
 		s.prevChargedEnergy = max(chargedEnergy, 0)
 		s.prevSoc = s.vehicleSoc
+	} else if energyDelta > 2*s.energyPerSocStep {
+		// energy spike detected: energyDelta exceeds what a single SoC step could produce,
+		// indicating a stale or batched ChargeRater dump. Reset baseline, skip extrapolation.
+		s.prevChargedEnergy = max(chargedEnergy, 0)
+		s.log.DEBUG.Printf("soc spike detected: energyDelta: %.0fWh, threshold: %.0fWh- skipping", energyDelta, 2*s.energyPerSocStep)
 	} else {
 		s.vehicleSoc = min(*fetchedSoc+energyDelta/s.energyPerSocStep, 100)
 		s.log.DEBUG.Printf("soc estimated: %.2f%% (vehicle: %.2f%%)", s.vehicleSoc, *fetchedSoc)
