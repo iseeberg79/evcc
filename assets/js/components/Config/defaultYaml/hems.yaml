@@ -1,3 +1,11 @@
+## external control via Tibber Grid Reward
+
+#type: tibbergridreward
+#token: "your-tibber-api-token" # https://developer.tibber.com/settings/access-token
+#homeId: "your-home-id" # optional if you have only one home
+#loadpoint: 1 # loadpoint index (1-based)
+#refresh: 5m # lease renewal interval (lease = refresh + min(refresh/2, 60s))
+
 ## external control via relay
 
 #type: relay
