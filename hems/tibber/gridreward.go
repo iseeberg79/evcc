@@ -199,6 +199,7 @@ func (g *GridReward) connect(ctx context.Context) error {
 	lease := g.refresh + min(g.refresh/2, 60*time.Second)
 
 	delivering := false
+	stateChangedAt := time.Now()
 	renewTicker := time.NewTicker(g.refresh)
 	defer renewTicker.Stop()
 
@@ -208,9 +209,12 @@ func (g *GridReward) connect(ctx context.Context) error {
 			return ctx.Err()
 
 		case <-renewTicker.C:
+			since := time.Since(stateChangedAt).Round(time.Second)
 			if delivering {
-				g.log.DEBUG.Printf("renewing external control lease (%v)", lease)
+				g.log.DEBUG.Printf("grid reward delivering for %v, renewing lease (%v)", since, lease)
 				g.lp.SetExternalControl(lease)
+			} else {
+				g.log.DEBUG.Printf("grid reward unavailable for %v", since)
 			}
 
 		case r := <-msgCh:
@@ -230,9 +234,11 @@ func (g *GridReward) connect(ctx context.Context) error {
 
 				if typename == "GridRewardDelivering" {
 					delivering = true
+					stateChangedAt = time.Now()
 					g.lp.SetExternalControl(lease)
 				} else {
 					delivering = false
+					stateChangedAt = time.Now()
 					g.lp.SetExternalControl(0)
 				}
 
