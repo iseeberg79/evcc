@@ -117,8 +117,9 @@ type Loadpoint struct {
 	limitEnergy              float64  // Session limit for energy
 	smartCostLimit           *float64 // always charge if consumption cost is below this value
 	smartFeedInPriorityLimit *float64 // prevent charging if feed-in cost is above this value
-	batteryBoost             int      // battery boost state
-	batteryBoostLimit        int      // battery boost soc limit (0-100, 100=disabled)
+	batteryBoost             int       // battery boost state
+	batteryBoostLimit        int       // battery boost soc limit (0-100, 100=disabled)
+	externalControlUntil     time.Time // external control lease expiry
 
 	mode                api.ChargeMode
 	enabled             bool      // Charger enabled state
@@ -737,6 +738,10 @@ func (lp *Loadpoint) setAndPublishEnabled(enabled bool) {
 
 // syncCharger updates charger status and synchronizes it with expectations
 func (lp *Loadpoint) syncCharger() error {
+	if lp.externalControlActive() {
+		return nil
+	}
+
 	enabled, err := lp.charger.Enabled()
 	if err != nil {
 		return fmt.Errorf("charger enabled: %w", err)
@@ -1191,6 +1196,11 @@ func (lp *Loadpoint) effectiveCurrent() float64 {
 	}
 
 	return lp.offeredCurrent
+}
+
+// externalControlActive returns true if an external system holds the control lease
+func (lp *Loadpoint) externalControlActive() bool {
+	return lp.clock.Now().Before(lp.externalControlUntil)
 }
 
 // elapsePVTimer puts the pv enable/disable timer into elapsed state
@@ -1973,6 +1983,7 @@ func (lp *Loadpoint) Update(sitePower, batteryBoostPower float64, consumption, f
 
 	mode := lp.GetMode()
 	lp.publish(keys.Mode, mode)
+	lp.publish(keys.ExternalControlActive, lp.externalControlActive())
 
 	// update and publish plan without being short-circuited by modes etc.
 	plannerActive := lp.plannerActive()
@@ -1986,6 +1997,9 @@ func (lp *Loadpoint) Update(sitePower, batteryBoostPower float64, consumption, f
 
 	case lp.scalePhasesRequired():
 		err = lp.scalePhases(lp.phasesConfigured)
+
+	case lp.externalControlActive():
+		// external system owns the charger — evcc does not touch enable/current
 
 	case mode == api.ModeOff:
 		var current float64

@@ -172,6 +172,11 @@ type API interface {
 	// SetBatteryBoostLimit sets the battery boost soc limit
 	SetBatteryBoostLimit(int)
 
+	// GetExternalControl returns true if external control is active
+	GetExternalControl() bool
+	// SetExternalControl activates external control for the given duration (0 = release)
+	SetExternalControl(duration time.Duration)
+
 	//
 	// smart grid charging
 	//

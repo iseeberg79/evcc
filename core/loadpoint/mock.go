@@ -739,6 +739,32 @@ func (mr *MockAPIMockRecorder) PublishEffectiveValues() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishEffectiveValues", reflect.TypeOf((*MockAPI)(nil).PublishEffectiveValues))
 }
 
+// GetExternalControl mocks base method.
+func (m *MockAPI) GetExternalControl() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetExternalControl")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// GetExternalControl indicates an expected call of GetExternalControl.
+func (mr *MockAPIMockRecorder) GetExternalControl() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetExternalControl", reflect.TypeOf((*MockAPI)(nil).GetExternalControl))
+}
+
+// SetExternalControl mocks base method.
+func (m *MockAPI) SetExternalControl(duration time.Duration) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetExternalControl", duration)
+}
+
+// SetExternalControl indicates an expected call of SetExternalControl.
+func (mr *MockAPIMockRecorder) SetExternalControl(duration any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetExternalControl", reflect.TypeOf((*MockAPI)(nil).SetExternalControl), duration)
+}
+
 // SetBatteryBoost mocks base method.
 func (m *MockAPI) SetBatteryBoost(enable bool) error {
 	m.ctrl.T.Helper()
