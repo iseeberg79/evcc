@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -16,7 +15,6 @@ import (
 )
 
 const (
-	loginURL    = "https://app.tibber.com/v1/login.credentials"
 	wsURL       = "wss://app.tibber.com/v4/gql/ws"
 	subprotocol = "graphql-transport-ws"
 )
@@ -32,21 +30,16 @@ type gqlMessage struct {
 // a loadpoint via external control when the grid reward is delivering.
 type GridReward struct {
 	log     *util.Logger
-	username string
-	password string
+	token   string
 	homeId  string
 	lp      loadpoint.API
 	refresh time.Duration
-
-	token       string
-	tokenExpiry time.Time
 }
 
 // NewFromConfig creates a GridReward HEMS from generic config.
 func NewFromConfig(ctx context.Context, other map[string]any, site site.API) (*GridReward, error) {
 	cc := struct {
-		Username  string
-		Password  string
+		Token     string
 		HomeId    string
 		Loadpoint int
 		Refresh   time.Duration
@@ -59,18 +52,21 @@ func NewFromConfig(ctx context.Context, other map[string]any, site site.API) (*G
 		return nil, err
 	}
 
+	if cc.Token == "" {
+		return nil, fmt.Errorf("missing tibber token")
+	}
+
 	lps := site.Loadpoints()
 	if cc.Loadpoint < 1 || cc.Loadpoint > len(lps) {
 		return nil, fmt.Errorf("invalid loadpoint index %d (have %d)", cc.Loadpoint, len(lps))
 	}
 
 	return &GridReward{
-		log:      util.NewLogger("tibber-gridreward"),
-		username: cc.Username,
-		password: cc.Password,
-		homeId:   cc.HomeId,
-		lp:       lps[cc.Loadpoint-1],
-		refresh:  cc.Refresh,
+		log:     util.NewLogger("tibber-gridreward").Redact(cc.Token, cc.HomeId),
+		token:   cc.Token,
+		homeId:  cc.HomeId,
+		lp:      lps[cc.Loadpoint-1],
+		refresh: cc.Refresh,
 	}, nil
 }
 
@@ -100,52 +96,12 @@ func (g *GridReward) Run() {
 	}
 }
 
-// fetchToken returns a cached Tibber JWT, refreshing when near expiry.
-func (g *GridReward) fetchToken(ctx context.Context) (string, error) {
-	if g.token != "" && time.Now().Before(g.tokenExpiry) {
-		return g.token, nil
-	}
-
-	body := strings.NewReader(fmt.Sprintf(`{"email":%q,"password":%q}`, g.username, g.password))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, loginURL, body)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
-	}
-	if result.Token == "" {
-		return "", fmt.Errorf("tibber authentication failed")
-	}
-
-	g.token = result.Token
-	g.tokenExpiry = time.Now().Add(25 * time.Minute)
-
-	return g.token, nil
-}
-
 // connect performs one full WebSocket session: dial → handshake → subscribe → event loop.
 // Returns when the connection drops or an unrecoverable error occurs.
 func (g *GridReward) connect(ctx context.Context) error {
-	token, err := g.fetchToken(ctx)
-	if err != nil {
-		return fmt.Errorf("auth: %w", err)
-	}
-
 	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		Subprotocols: []string{subprotocol},
-		HTTPHeader:   http.Header{"Authorization": {"Bearer " + token}},
+		HTTPHeader:   http.Header{"Authorization": {"Bearer " + g.token}},
 	})
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
