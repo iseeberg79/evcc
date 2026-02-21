@@ -9,6 +9,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/coder/websocket"
+	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/loadpoint"
 	"github.com/evcc-io/evcc/core/site"
 	"github.com/evcc-io/evcc/util"
@@ -53,7 +54,7 @@ func NewFromConfig(ctx context.Context, other map[string]any, site site.API) (*G
 	}
 
 	if cc.Token == "" {
-		return nil, fmt.Errorf("missing tibber token")
+		return nil, api.ErrMissingToken
 	}
 
 	lps := site.Loadpoints()
@@ -86,6 +87,8 @@ func (g *GridReward) Run() {
 	for {
 		if err := g.connect(ctx); err != nil && ctx.Err() == nil {
 			g.log.ERROR.Println(err)
+		} else {
+			bo.Reset()
 		}
 
 		// Release control immediately when the connection is lost so evcc
