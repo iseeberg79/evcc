@@ -31,13 +31,12 @@ type gqlMessage struct {
 // GridReward subscribes to the Tibber Grid Reward status and controls
 // a loadpoint via external control when the grid reward is delivering.
 type GridReward struct {
-	log           *util.Logger
-	username      string
-	password      string
-	homeId        string
-	lp            loadpoint.API
-	leaseDuration time.Duration
-	renewInterval time.Duration
+	log     *util.Logger
+	username string
+	password string
+	homeId  string
+	lp      loadpoint.API
+	refresh time.Duration
 
 	token       string
 	tokenExpiry time.Time
@@ -46,16 +45,14 @@ type GridReward struct {
 // NewFromConfig creates a GridReward HEMS from generic config.
 func NewFromConfig(ctx context.Context, other map[string]any, site site.API) (*GridReward, error) {
 	cc := struct {
-		Username      string
-		Password      string
-		HomeId        string
-		Loadpoint     int
-		LeaseDuration time.Duration
-		RenewInterval time.Duration
+		Username  string
+		Password  string
+		HomeId    string
+		Loadpoint int
+		Refresh   time.Duration
 	}{
-		Loadpoint:     1,
-		LeaseDuration: 90 * time.Second,
-		RenewInterval: 60 * time.Second,
+		Loadpoint: 1,
+		Refresh:   300 * time.Second,
 	}
 
 	if err := util.DecodeOther(other, &cc); err != nil {
@@ -68,13 +65,12 @@ func NewFromConfig(ctx context.Context, other map[string]any, site site.API) (*G
 	}
 
 	return &GridReward{
-		log:           util.NewLogger("tibber-gridreward"),
-		username:      cc.Username,
-		password:      cc.Password,
-		homeId:        cc.HomeId,
-		lp:            lps[cc.Loadpoint-1],
-		leaseDuration: cc.LeaseDuration,
-		renewInterval: cc.RenewInterval,
+		log:      util.NewLogger("tibber-gridreward"),
+		username: cc.Username,
+		password: cc.Password,
+		homeId:   cc.HomeId,
+		lp:       lps[cc.Loadpoint-1],
+		refresh:  cc.Refresh,
 	}, nil
 }
 
@@ -198,8 +194,10 @@ func (g *GridReward) connect(ctx context.Context) error {
 		}
 	}()
 
+	lease := g.refresh + min(g.refresh/2, 60*time.Second)
+
 	delivering := false
-	renewTicker := time.NewTicker(g.renewInterval)
+	renewTicker := time.NewTicker(g.refresh)
 	defer renewTicker.Stop()
 
 	for {
@@ -209,8 +207,8 @@ func (g *GridReward) connect(ctx context.Context) error {
 
 		case <-renewTicker.C:
 			if delivering {
-				g.log.DEBUG.Printf("renewing external control lease (%v)", g.leaseDuration)
-				g.lp.SetExternalControl(g.leaseDuration)
+				g.log.DEBUG.Printf("renewing external control lease (%v)", lease)
+				g.lp.SetExternalControl(lease)
 			}
 
 		case r := <-msgCh:
@@ -230,7 +228,7 @@ func (g *GridReward) connect(ctx context.Context) error {
 
 				if typename == "GridRewardDelivering" {
 					delivering = true
-					g.lp.SetExternalControl(g.leaseDuration)
+					g.lp.SetExternalControl(lease)
 				} else {
 					delivering = false
 					g.lp.SetExternalControl(0)
