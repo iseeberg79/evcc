@@ -1,12 +1,3 @@
-## external control via Tibber Grid Reward
-
-#type: tibbergridreward
-#username: your@email.com
-#password: "your-tibber-password"
-#homeId: "your-home-id" # optional if you have only one home
-#loadpoint: 1 # loadpoint index (1-based)
-#refresh: 5m # lease renewal interval (default 5m, lease = refresh + min(refresh/2, 60s))
-
 ## external control via relay
 
 #type: relay
@@ -19,3 +10,13 @@
 
 #type: eebus # general EEBus setup (cert gen) required
 #ski: "1234-5678-90AB-CDEF" # SKI of control box (grid operator)
+
+## external loadpoint control via Tibber Grid Reward
+
+#type: tibbergridreward
+#username: your@email.com
+#password: "your-tibber-password"
+#loadpoint: 1           # loadpoint index (1-based)
+#refresh: 5m            # lease renewal interval
+#homeId: "your-home-id" # optional: only required for multiple homes
+#vehicle: "eGolf"       # optional: vehicle name as shown in Tibber app (offline vehicle)
