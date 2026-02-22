@@ -19,4 +19,3 @@
 #loadpoint: 1           # loadpoint index (1-based)
 #refresh: 5m            # lease renewal interval
 #homeId: "your-home-id" # optional: only required for multiple homes
-#vehicle: "eGolf"       # optional: vehicle name as shown in Tibber app (offline vehicle)
