@@ -125,8 +125,10 @@ func (g *GridReward) Run() {
 
 // resolveVehicle looks up the vehicle ID by name and checks canReadLevel.
 // Sets vehicleId only if Tibber cannot read the level itself.
+// MyVehicle (from myVehicles) has no name field — we list IDs first, then
+// query each Vehicle (from vehicle(id:)) for name and canReadLevel.
 func (g *GridReward) resolveVehicle(ctx context.Context) error {
-	data, err := g.gqlPost(ctx, `{ me { myVehicles { vehicles { id name } } } }`)
+	data, err := g.gqlPost(ctx, `{ me { myVehicles { vehicles { id } } } }`)
 	if err != nil {
 		return fmt.Errorf("list vehicles: %w", err)
 	}
@@ -135,8 +137,7 @@ func (g *GridReward) resolveVehicle(ctx context.Context) error {
 		Me struct {
 			MyVehicles struct {
 				Vehicles []struct {
-					ID   string `json:"id"`
-					Name string `json:"name"`
+					ID string `json:"id"`
 				} `json:"vehicles"`
 			} `json:"myVehicles"`
 		} `json:"me"`
@@ -145,46 +146,44 @@ func (g *GridReward) resolveVehicle(ctx context.Context) error {
 		return err
 	}
 
-	var vehicleId string
 	for _, v := range res.Me.MyVehicles.Vehicles {
-		if strings.EqualFold(v.Name, g.vehicleName) {
-			vehicleId = v.ID
-			break
+		vdata, err := g.gqlPost(ctx, fmt.Sprintf(
+			`{ me { vehicle(id: %q) { name battery { canReadLevel } } } }`, v.ID,
+		))
+		if err != nil {
+			g.log.DEBUG.Printf("vehicle %s details: %v", v.ID, err)
+			continue
 		}
-	}
-	if vehicleId == "" {
-		return fmt.Errorf("vehicle %q not found", g.vehicleName)
-	}
 
-	// Check canReadLevel — only push SoC if Tibber cannot read it itself.
-	vdata, err := g.gqlPost(ctx, fmt.Sprintf(
-		`{ me { vehicle(id: %q) { battery { canReadLevel } } } }`, vehicleId,
-	))
-	if err != nil {
-		return fmt.Errorf("vehicle details: %w", err)
-	}
+		var vres struct {
+			Me struct {
+				Vehicle struct {
+					Name    string `json:"name"`
+					Battery struct {
+						CanReadLevel bool `json:"canReadLevel"`
+					} `json:"battery"`
+				} `json:"vehicle"`
+			} `json:"me"`
+		}
+		if err := json.Unmarshal(vdata, &vres); err != nil {
+			continue
+		}
 
-	var vres struct {
-		Me struct {
-			Vehicle struct {
-				Battery struct {
-					CanReadLevel bool `json:"canReadLevel"`
-				} `json:"battery"`
-			} `json:"vehicle"`
-		} `json:"me"`
-	}
-	if err := json.Unmarshal(vdata, &vres); err != nil {
-		return err
-	}
+		if !strings.EqualFold(vres.Me.Vehicle.Name, g.vehicleName) {
+			continue
+		}
 
-	if vres.Me.Vehicle.Battery.CanReadLevel {
-		g.log.DEBUG.Printf("vehicle %q: canReadLevel=true, SoC push disabled", g.vehicleName)
+		if vres.Me.Vehicle.Battery.CanReadLevel {
+			g.log.DEBUG.Printf("vehicle %q: canReadLevel=true, SoC push disabled", g.vehicleName)
+			return nil
+		}
+
+		g.vehicleId = v.ID
+		g.log.DEBUG.Printf("vehicle %q resolved: %s", g.vehicleName, v.ID)
 		return nil
 	}
 
-	g.vehicleId = vehicleId
-	g.log.DEBUG.Printf("vehicle %q resolved: %s", g.vehicleName, vehicleId)
-	return nil
+	return fmt.Errorf("vehicle %q not found", g.vehicleName)
 }
 
 // pushVehicleState sends SoC (and optionally capacity) to the Tibber offline vehicle.
