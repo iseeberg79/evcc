@@ -48,6 +48,11 @@ type GridReward struct {
 
 	token       string
 	tokenExpiry time.Time
+
+	// vehicle state push tracking
+	lastVehicle   api.Vehicle
+	lastPushedSoc int
+	lastPushedCap int
 }
 
 // NewFromConfig creates a GridReward HEMS from generic config.
@@ -183,7 +188,7 @@ func (g *GridReward) resolveVehicle(ctx context.Context) error {
 }
 
 // pushVehicleState sends SoC (and optionally capacity) to the Tibber offline vehicle.
-// Only pushes when SoC-based planning is active and SoC is known.
+// Only pushes when SoC-based planning is active and values have changed.
 func (g *GridReward) pushVehicleState(ctx context.Context) {
 	if g.vehicleId == "" || !g.lp.SocBasedPlanning() {
 		return
@@ -194,14 +199,29 @@ func (g *GridReward) pushVehicleState(ctx context.Context) {
 		return
 	}
 
-	settings := fmt.Sprintf(`{ key: "offline.vehicle.batteryLevel", value: %d }`,
-		int(math.Round(soc)))
+	socInt := int(math.Round(soc))
 
-	if vehicle := g.lp.GetVehicle(); vehicle != nil {
+	vehicle := g.lp.GetVehicle()
+	if vehicle != g.lastVehicle {
+		// vehicle changed — reset tracking so capacity gets re-pushed
+		g.lastVehicle = vehicle
+		g.lastPushedCap = 0
+	}
+
+	var capInt int
+	if vehicle != nil {
 		if cap := vehicle.Capacity(); cap > 0 {
-			settings += fmt.Sprintf(`, { key: "offline.vehicle.batteryCapacity", value: %d }`,
-				int(math.Round(cap)))
+			capInt = int(math.Round(cap))
 		}
+	}
+
+	if socInt == g.lastPushedSoc && capInt == g.lastPushedCap {
+		return
+	}
+
+	settings := fmt.Sprintf(`{ key: "offline.vehicle.batteryLevel", value: %d }`, socInt)
+	if capInt > 0 && capInt != g.lastPushedCap {
+		settings += fmt.Sprintf(`, { key: "offline.vehicle.batteryCapacity", value: %d }`, capInt)
 	}
 
 	mutation := fmt.Sprintf(
@@ -214,7 +234,11 @@ func (g *GridReward) pushVehicleState(ctx context.Context) {
 		return
 	}
 
-	g.log.DEBUG.Printf("pushed SoC %.0f%% to vehicle %q", soc, g.vehicleName)
+	g.log.DEBUG.Printf("pushed SoC %d%% to vehicle %q", socInt, g.vehicleName)
+	g.lastPushedSoc = socInt
+	if capInt > 0 {
+		g.lastPushedCap = capInt
+	}
 }
 
 // setBatteryHold sets or clears the external battery hold mode.
