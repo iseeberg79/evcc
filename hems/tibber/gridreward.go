@@ -36,18 +36,20 @@ type gqlMessage struct {
 // GridReward subscribes to the Tibber Grid Reward status and controls
 // a loadpoint via external control when the grid reward is delivering.
 type GridReward struct {
-	log         *util.Logger
-	username    string
-	password    string
-	homeId      string
-	vehicleName string
-	vehicleId   string // resolved at startup; empty if canReadLevel=true or no vehicle configured
-	lp          loadpoint.API
-	site        site.API
-	refresh     time.Duration
+	log      *util.Logger
+	username string
+	password string
+	homeId   string
+	lp       loadpoint.API
+	site     site.API
+	refresh  time.Duration
 
 	token       string
 	tokenExpiry time.Time
+
+	// tibberVehicles maps lowercase vehicle name to Tibber vehicle ID,
+	// only for vehicles where canReadLevel=false (Tibber needs SoC from us).
+	tibberVehicles map[string]string
 
 	// vehicle state push tracking
 	lastVehicle   api.Vehicle
@@ -61,7 +63,6 @@ func NewFromConfig(ctx context.Context, other map[string]any, s site.API) (*Grid
 		Username  string
 		Password  string
 		HomeId    string
-		Vehicle   string
 		Loadpoint int
 		Refresh   time.Duration
 	}{
@@ -79,14 +80,13 @@ func NewFromConfig(ctx context.Context, other map[string]any, s site.API) (*Grid
 	}
 
 	return &GridReward{
-		log:         util.NewLogger("tibber-gridreward").Redact(cc.Password, cc.HomeId),
-		username:    cc.Username,
-		password:    cc.Password,
-		homeId:      cc.HomeId,
-		vehicleName: cc.Vehicle,
-		lp:          lps[cc.Loadpoint-1],
-		site:        s,
-		refresh:     cc.Refresh,
+		log:      util.NewLogger("tibber-gridreward").Redact(cc.Password, cc.HomeId),
+		username: cc.Username,
+		password: cc.Password,
+		homeId:   cc.HomeId,
+		lp:       lps[cc.Loadpoint-1],
+		site:     s,
+		refresh:  cc.Refresh,
 	}, nil
 }
 
@@ -99,10 +99,8 @@ func (g *GridReward) ConsumptionLimit() float64 {
 func (g *GridReward) Run() {
 	ctx := context.Background()
 
-	if g.vehicleName != "" {
-		if err := g.resolveVehicle(ctx); err != nil {
-			g.log.WARN.Printf("vehicle lookup: %v", err)
-		}
+	if err := g.fetchTibberVehicles(ctx); err != nil {
+		g.log.WARN.Printf("fetch vehicles: %v", err)
 	}
 
 	bo := backoff.NewExponentialBackOff(backoff.WithMaxElapsedTime(0))
@@ -123,11 +121,11 @@ func (g *GridReward) Run() {
 	}
 }
 
-// resolveVehicle looks up the vehicle ID by name and checks canReadLevel.
-// Sets vehicleId only if Tibber cannot read the level itself.
-// MyVehicle (from myVehicles) has no name field — we list IDs first, then
-// query each Vehicle (from vehicle(id:)) for name and canReadLevel.
-func (g *GridReward) resolveVehicle(ctx context.Context) error {
+// fetchTibberVehicles builds a map of lowercase vehicle name → Tibber vehicle ID
+// for all vehicles where canReadLevel=false (i.e., Tibber needs SoC from us).
+// MyVehicle (from myVehicles) has no name field — IDs are listed first, then
+// each vehicle is queried individually via vehicle(id:) which returns the Vehicle type.
+func (g *GridReward) fetchTibberVehicles(ctx context.Context) error {
 	data, err := g.gqlPost(ctx, `{ me { myVehicles { vehicles { id } } } }`)
 	if err != nil {
 		return fmt.Errorf("list vehicles: %w", err)
@@ -146,12 +144,13 @@ func (g *GridReward) resolveVehicle(ctx context.Context) error {
 		return err
 	}
 
+	vehicles := make(map[string]string)
 	for _, v := range res.Me.MyVehicles.Vehicles {
 		vdata, err := g.gqlPost(ctx, fmt.Sprintf(
 			`{ me { vehicle(id: %q) { name battery { canReadLevel } } } }`, v.ID,
 		))
 		if err != nil {
-			g.log.DEBUG.Printf("vehicle %s details: %v", v.ID, err)
+			g.log.DEBUG.Printf("vehicle %s: %v", v.ID, err)
 			continue
 		}
 
@@ -169,27 +168,35 @@ func (g *GridReward) resolveVehicle(ctx context.Context) error {
 			continue
 		}
 
-		if !strings.EqualFold(vres.Me.Vehicle.Name, g.vehicleName) {
+		name := vres.Me.Vehicle.Name
+		if vres.Me.Vehicle.Battery.CanReadLevel {
+			g.log.DEBUG.Printf("vehicle %q: canReadLevel=true, skipping SoC push", name)
 			continue
 		}
 
-		if vres.Me.Vehicle.Battery.CanReadLevel {
-			g.log.DEBUG.Printf("vehicle %q: canReadLevel=true, SoC push disabled", g.vehicleName)
-			return nil
-		}
-
-		g.vehicleId = v.ID
-		g.log.DEBUG.Printf("vehicle %q resolved: %s", g.vehicleName, v.ID)
-		return nil
+		vehicles[strings.ToLower(name)] = v.ID
+		g.log.DEBUG.Printf("vehicle %q registered for SoC push", name)
 	}
 
-	return fmt.Errorf("vehicle %q not found", g.vehicleName)
+	g.tibberVehicles = vehicles
+	return nil
 }
 
-// pushVehicleState sends SoC (and optionally capacity) to the Tibber offline vehicle.
+// pushVehicleState sends SoC (and optionally capacity) to the Tibber offline vehicle
+// matching the currently connected evcc vehicle by title.
 // Only pushes when SoC-based planning is active and values have changed.
 func (g *GridReward) pushVehicleState(ctx context.Context) {
-	if g.vehicleId == "" || !g.lp.SocBasedPlanning() {
+	if len(g.tibberVehicles) == 0 || !g.lp.SocBasedPlanning() {
+		return
+	}
+
+	vehicle := g.lp.GetVehicle()
+	if vehicle == nil {
+		return
+	}
+
+	tibberID, ok := g.tibberVehicles[strings.ToLower(vehicle.GetTitle())]
+	if !ok {
 		return
 	}
 
@@ -200,7 +207,6 @@ func (g *GridReward) pushVehicleState(ctx context.Context) {
 
 	socInt := int(math.Round(soc))
 
-	vehicle := g.lp.GetVehicle()
 	if vehicle != g.lastVehicle {
 		// vehicle changed — reset tracking so capacity gets re-pushed
 		g.lastVehicle = vehicle
@@ -208,10 +214,8 @@ func (g *GridReward) pushVehicleState(ctx context.Context) {
 	}
 
 	var capInt int
-	if vehicle != nil {
-		if cap := vehicle.Capacity(); cap > 0 {
-			capInt = int(math.Round(cap))
-		}
+	if cap := vehicle.Capacity(); cap > 0 {
+		capInt = int(math.Round(cap))
 	}
 
 	if socInt == g.lastPushedSoc && capInt == g.lastPushedCap {
@@ -225,7 +229,7 @@ func (g *GridReward) pushVehicleState(ctx context.Context) {
 
 	mutation := fmt.Sprintf(
 		`mutation { me { setVehicleSettings(id: %q settings: [%s]) { id } } }`,
-		g.vehicleId, settings,
+		tibberID, settings,
 	)
 
 	if _, err := g.gqlPost(ctx, mutation); err != nil {
@@ -233,7 +237,7 @@ func (g *GridReward) pushVehicleState(ctx context.Context) {
 		return
 	}
 
-	g.log.DEBUG.Printf("pushed SoC %d%% to vehicle %q", socInt, g.vehicleName)
+	g.log.DEBUG.Printf("pushed SoC %d%% to Tibber vehicle %q", socInt, vehicle.GetTitle())
 	g.lastPushedSoc = socInt
 	if capInt > 0 {
 		g.lastPushedCap = capInt
