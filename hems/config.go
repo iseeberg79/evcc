@@ -8,6 +8,7 @@ import (
 	"github.com/evcc-io/evcc/core/site"
 	"github.com/evcc-io/evcc/hems/eebus"
 	"github.com/evcc-io/evcc/hems/hems"
+	"github.com/evcc-io/evcc/hems/octopus"
 	"github.com/evcc-io/evcc/hems/relay"
 	"github.com/evcc-io/evcc/hems/tibber"
 )
@@ -23,6 +24,8 @@ func NewFromConfig(ctx context.Context, typ string, other map[string]any, site s
 		return relay.NewFromConfig(ctx, other, site)
 	case "tibbergridreward":
 		return tibber.NewFromConfig(ctx, other, site)
+	case "octopussmartcharge":
+		return octopus.NewFromConfig(ctx, other, site)
 	default:
 		return nil, errors.New("unknown hems: " + typ)
 	}
