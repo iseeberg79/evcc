@@ -10,15 +10,17 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/coder/websocket"
+	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/loadpoint"
 	"github.com/evcc-io/evcc/core/site"
 	"github.com/evcc-io/evcc/util"
 )
 
 const (
-	loginURL    = "https://app.tibber.com/v1/login.credentials"
-	wsURL       = "wss://app.tibber.com/v4/gql/ws"
-	subprotocol = "graphql-transport-ws"
+	loginURL              = "https://app.tibber.com/v1/login.credentials"
+	wsURL                 = "wss://app.tibber.com/v4/gql/ws"
+	subprotocol           = "graphql-transport-ws"
+	batteryRenewInterval  = 30 * time.Second
 )
 
 // gqlMessage is a graphql-transport-ws protocol message.
@@ -36,6 +38,7 @@ type GridReward struct {
 	password string
 	homeId   string
 	lp       loadpoint.API
+	site     site.API
 	refresh  time.Duration
 
 	token       string
@@ -43,7 +46,7 @@ type GridReward struct {
 }
 
 // NewFromConfig creates a GridReward HEMS from generic config.
-func NewFromConfig(ctx context.Context, other map[string]any, site site.API) (*GridReward, error) {
+func NewFromConfig(ctx context.Context, other map[string]any, s site.API) (*GridReward, error) {
 	cc := struct {
 		Username  string
 		Password  string
@@ -59,7 +62,7 @@ func NewFromConfig(ctx context.Context, other map[string]any, site site.API) (*G
 		return nil, err
 	}
 
-	lps := site.Loadpoints()
+	lps := s.Loadpoints()
 	if cc.Loadpoint < 1 || cc.Loadpoint > len(lps) {
 		return nil, fmt.Errorf("invalid loadpoint index %d (have %d)", cc.Loadpoint, len(lps))
 	}
@@ -70,6 +73,7 @@ func NewFromConfig(ctx context.Context, other map[string]any, site site.API) (*G
 		password: cc.Password,
 		homeId:   cc.HomeId,
 		lp:       lps[cc.Loadpoint-1],
+		site:     s,
 		refresh:  cc.Refresh,
 	}, nil
 }
@@ -97,9 +101,20 @@ func (g *GridReward) Run() {
 		// Release control immediately when the connection is lost so evcc
 		// resumes its own mode without waiting for the lease to expire.
 		g.lp.SetExternalControl(0)
+		g.setBatteryHold(false)
 
 		time.Sleep(bo.NextBackOff())
 	}
+}
+
+// setBatteryHold sets or clears the external battery hold mode.
+// Errors are silently ignored (e.g. no battery configured).
+func (g *GridReward) setBatteryHold(hold bool) {
+	mode := api.BatteryUnknown
+	if hold {
+		mode = api.BatteryHold
+	}
+	_ = g.site.SetBatteryModeExternal(mode)
 }
 
 // fetchToken returns a cached Tibber app JWT, refreshing when near expiry.
@@ -202,6 +217,8 @@ func (g *GridReward) connect(ctx context.Context) error {
 	stateChangedAt := time.Now()
 	renewTicker := time.NewTicker(g.refresh)
 	defer renewTicker.Stop()
+	batteryTicker := time.NewTicker(batteryRenewInterval)
+	defer batteryTicker.Stop()
 
 	for {
 		select {
@@ -215,6 +232,11 @@ func (g *GridReward) connect(ctx context.Context) error {
 				g.lp.SetExternalControl(lease)
 			} else {
 				g.log.DEBUG.Printf("grid reward unavailable for %v", since)
+			}
+
+		case <-batteryTicker.C:
+			if delivering {
+				g.setBatteryHold(true)
 			}
 
 		case r := <-msgCh:
@@ -236,10 +258,12 @@ func (g *GridReward) connect(ctx context.Context) error {
 					delivering = true
 					stateChangedAt = time.Now()
 					g.lp.SetExternalControl(lease)
+					g.setBatteryHold(true)
 				} else {
 					delivering = false
 					stateChangedAt = time.Now()
 					g.lp.SetExternalControl(0)
+					g.setBatteryHold(false)
 				}
 
 			case "ping":
