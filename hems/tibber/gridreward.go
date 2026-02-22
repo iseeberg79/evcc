@@ -1,9 +1,11 @@
 package tibber
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -17,10 +19,11 @@ import (
 )
 
 const (
-	loginURL              = "https://app.tibber.com/v1/login.credentials"
-	wsURL                 = "wss://app.tibber.com/v4/gql/ws"
-	subprotocol           = "graphql-transport-ws"
-	batteryRenewInterval  = 30 * time.Second
+	loginURL             = "https://app.tibber.com/v1/login.credentials"
+	gqlURL               = "https://app.tibber.com/v4/gql"
+	wsURL                = "wss://app.tibber.com/v4/gql/ws"
+	subprotocol          = "graphql-transport-ws"
+	batteryRenewInterval = 30 * time.Second
 )
 
 // gqlMessage is a graphql-transport-ws protocol message.
@@ -33,13 +36,15 @@ type gqlMessage struct {
 // GridReward subscribes to the Tibber Grid Reward status and controls
 // a loadpoint via external control when the grid reward is delivering.
 type GridReward struct {
-	log      *util.Logger
-	username string
-	password string
-	homeId   string
-	lp       loadpoint.API
-	site     site.API
-	refresh  time.Duration
+	log         *util.Logger
+	username    string
+	password    string
+	homeId      string
+	vehicleName string
+	vehicleId   string // resolved at startup; empty if canReadLevel=true or no vehicle configured
+	lp          loadpoint.API
+	site        site.API
+	refresh     time.Duration
 
 	token       string
 	tokenExpiry time.Time
@@ -51,6 +56,7 @@ func NewFromConfig(ctx context.Context, other map[string]any, s site.API) (*Grid
 		Username  string
 		Password  string
 		HomeId    string
+		Vehicle   string
 		Loadpoint int
 		Refresh   time.Duration
 	}{
@@ -68,13 +74,14 @@ func NewFromConfig(ctx context.Context, other map[string]any, s site.API) (*Grid
 	}
 
 	return &GridReward{
-		log:      util.NewLogger("tibber-gridreward").Redact(cc.Password, cc.HomeId),
-		username: cc.Username,
-		password: cc.Password,
-		homeId:   cc.HomeId,
-		lp:       lps[cc.Loadpoint-1],
-		site:     s,
-		refresh:  cc.Refresh,
+		log:         util.NewLogger("tibber-gridreward").Redact(cc.Password, cc.HomeId),
+		username:    cc.Username,
+		password:    cc.Password,
+		homeId:      cc.HomeId,
+		vehicleName: cc.Vehicle,
+		lp:          lps[cc.Loadpoint-1],
+		site:        s,
+		refresh:     cc.Refresh,
 	}, nil
 }
 
@@ -83,12 +90,16 @@ func (g *GridReward) ConsumptionLimit() float64 {
 	return 0
 }
 
-// Run implements hems.API. It connects to Tibber, subscribes to grid reward
-// state changes, and drives the loadpoint's external control lease accordingly.
-// It reconnects automatically on failure; when disconnected the lease expires
-// naturally, returning control to evcc.
+// Run implements hems.API.
 func (g *GridReward) Run() {
 	ctx := context.Background()
+
+	if g.vehicleName != "" {
+		if err := g.resolveVehicle(ctx); err != nil {
+			g.log.WARN.Printf("vehicle lookup: %v", err)
+		}
+	}
+
 	bo := backoff.NewExponentialBackOff(backoff.WithMaxElapsedTime(0))
 
 	for {
@@ -107,6 +118,105 @@ func (g *GridReward) Run() {
 	}
 }
 
+// resolveVehicle looks up the vehicle ID by name and checks canReadLevel.
+// Sets vehicleId only if Tibber cannot read the level itself.
+func (g *GridReward) resolveVehicle(ctx context.Context) error {
+	data, err := g.gqlPost(ctx, `{ me { myVehicles { vehicles { id name } } } }`)
+	if err != nil {
+		return fmt.Errorf("list vehicles: %w", err)
+	}
+
+	var res struct {
+		Me struct {
+			MyVehicles struct {
+				Vehicles []struct {
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				} `json:"vehicles"`
+			} `json:"myVehicles"`
+		} `json:"me"`
+	}
+	if err := json.Unmarshal(data, &res); err != nil {
+		return err
+	}
+
+	var vehicleId string
+	for _, v := range res.Me.MyVehicles.Vehicles {
+		if strings.EqualFold(v.Name, g.vehicleName) {
+			vehicleId = v.ID
+			break
+		}
+	}
+	if vehicleId == "" {
+		return fmt.Errorf("vehicle %q not found", g.vehicleName)
+	}
+
+	// Check canReadLevel — only push SoC if Tibber cannot read it itself.
+	vdata, err := g.gqlPost(ctx, fmt.Sprintf(
+		`{ me { vehicle(id: %q) { battery { canReadLevel } } } }`, vehicleId,
+	))
+	if err != nil {
+		return fmt.Errorf("vehicle details: %w", err)
+	}
+
+	var vres struct {
+		Me struct {
+			Vehicle struct {
+				Battery struct {
+					CanReadLevel bool `json:"canReadLevel"`
+				} `json:"battery"`
+			} `json:"vehicle"`
+		} `json:"me"`
+	}
+	if err := json.Unmarshal(vdata, &vres); err != nil {
+		return err
+	}
+
+	if vres.Me.Vehicle.Battery.CanReadLevel {
+		g.log.DEBUG.Printf("vehicle %q: canReadLevel=true, SoC push disabled", g.vehicleName)
+		return nil
+	}
+
+	g.vehicleId = vehicleId
+	g.log.DEBUG.Printf("vehicle %q resolved: %s", g.vehicleName, vehicleId)
+	return nil
+}
+
+// pushVehicleState sends SoC (and optionally capacity) to the Tibber offline vehicle.
+// Only pushes when SoC-based planning is active and SoC is known.
+func (g *GridReward) pushVehicleState(ctx context.Context) {
+	if g.vehicleId == "" || !g.lp.SocBasedPlanning() {
+		return
+	}
+
+	soc := g.lp.GetSoc()
+	if soc <= 0 {
+		return
+	}
+
+	settings := fmt.Sprintf(`{ key: "offline.vehicle.batteryLevel", value: %d }`,
+		int(math.Round(soc)))
+
+	if vehicle := g.lp.GetVehicle(); vehicle != nil {
+		if cap := vehicle.Capacity(); cap > 0 {
+			settings += fmt.Sprintf(`, { key: "offline.vehicle.batteryCapacity", value: %d }`,
+				int(math.Round(cap)))
+		}
+	}
+
+	mutation := fmt.Sprintf(
+		`mutation { me { setVehicleSettings(id: %q settings: [%s]) { id } } }`,
+		g.vehicleId, settings,
+	)
+
+	if _, err := g.gqlPost(ctx, mutation); err != nil {
+		g.log.WARN.Printf("push vehicle state: %v", err)
+		return
+	}
+
+	g.log.DEBUG.Printf("pushed SoC %.0f%% to vehicle %q", soc, g.vehicleName)
+}
+
 // setBatteryHold sets or clears the external battery hold mode.
 // Errors are silently ignored (e.g. no battery configured).
 func (g *GridReward) setBatteryHold(hold bool) {
@@ -115,6 +225,41 @@ func (g *GridReward) setBatteryHold(hold bool) {
 		mode = api.BatteryHold
 	}
 	_ = g.site.SetBatteryModeExternal(mode)
+}
+
+// gqlPost sends a GraphQL query/mutation to the Tibber app API.
+func (g *GridReward) gqlPost(ctx context.Context, query string) (json.RawMessage, error) {
+	token, err := g.fetchToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	body, _ := json.Marshal(map[string]string{"query": query})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, gqlURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Data   json.RawMessage `json:"data"`
+		Errors json.RawMessage `json:"errors"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if result.Errors != nil {
+		return nil, fmt.Errorf("%s", result.Errors)
+	}
+
+	return result.Data, nil
 }
 
 // fetchToken returns a cached Tibber app JWT, refreshing when near expiry.
@@ -233,6 +378,7 @@ func (g *GridReward) connect(ctx context.Context) error {
 			} else {
 				g.log.DEBUG.Printf("grid reward unavailable for %v", since)
 			}
+			g.pushVehicleState(ctx)
 
 		case <-batteryTicker.C:
 			if delivering {
@@ -265,6 +411,7 @@ func (g *GridReward) connect(ctx context.Context) error {
 					g.lp.SetExternalControl(0)
 					g.setBatteryHold(false)
 				}
+				g.pushVehicleState(ctx)
 
 			case "ping":
 				// respond to server keepalive
