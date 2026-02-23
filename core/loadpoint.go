@@ -763,6 +763,10 @@ func (lp *Loadpoint) syncCharger() error {
 		enabled = true
 
 		if shouldBeConsistent {
+			if lp.externalControlActive() {
+				return nil
+			}
+
 			if err := lp.charger.Enable(true); err != nil { // also enable charger to correct internal state
 				return fmt.Errorf("charger enable: %w", err)
 			}
