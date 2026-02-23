@@ -193,6 +193,7 @@ export interface ConfigLoadpoint {
   title: string;
   defaultMode: string;
   priority: number;
+  externalControlYield: boolean;
   phasesConfigured: number;
   minCurrent: number;
   maxCurrent: number;

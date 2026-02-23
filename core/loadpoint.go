@@ -98,9 +98,10 @@ type Loadpoint struct {
 	Enable, Disable loadpoint.ThresholdConfig
 
 	// from yaml
-	DefaultMode api.ChargeMode `mapstructure:"mode"`     // Default charge mode, used for disconnect
-	Title       string         `mapstructure:"title"`    // UI title
-	Priority    int            `mapstructure:"priority"` // Priority
+	DefaultMode          api.ChargeMode `mapstructure:"mode"`                 // Default charge mode, used for disconnect
+	Title                string         `mapstructure:"title"`                // UI title
+	Priority             int            `mapstructure:"priority"`             // Priority
+	ExternalControlYield bool           `mapstructure:"externalControlYield"` // Yield control on unexpected charging (e.g. NeoGrid)
 
 	// from yaml, deprecated
 	GuardDuration_ time.Duration `mapstructure:"guardduration"` // ignored, present for compatibility
@@ -1978,6 +1979,11 @@ func (lp *Loadpoint) Update(sitePower, batteryBoostPower float64, consumption, f
 	// publish soc after updating charger status to make sure
 	// initial update of connected state matches charger status
 	lp.publishSocAndRange()
+
+	// yield control to external system if charger is unexpectedly active
+	if lp.ExternalControlYield && !lp.enabled && lp.charging() {
+		lp.SetExternalControl(lp.GetDisableDelay())
+	}
 
 	// sync settings with charger
 	if err := lp.syncCharger(); err != nil {
