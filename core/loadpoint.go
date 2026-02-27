@@ -1773,10 +1773,10 @@ func (lp *Loadpoint) publishSocAndRange() {
 		return socR, limitR
 	}
 
-	soc, limit := socAndLimit("charger", lp.charger)
-	if soc == nil && (lp.vehicleSocPollAllowed() || lp.chargerHasFeature(api.IntegratedDevice)) {
+	fetchedSoc, limit := socAndLimit("charger", lp.charger)
+	if fetchedSoc == nil && (lp.vehicleSocPollAllowed() || lp.chargerHasFeature(api.IntegratedDevice)) {
 		lp.socUpdated = lp.clock.Now()
-		soc, limit = socAndLimit("vehicle", lp.GetVehicle())
+		fetchedSoc, limit = socAndLimit("vehicle", lp.GetVehicle())
 
 		// range
 		if vs, ok := lp.GetVehicle().(api.VehicleRange); ok {
@@ -1789,11 +1789,11 @@ func (lp *Loadpoint) publishSocAndRange() {
 		}
 	}
 
-	if soc != nil {
+	if fetchedSoc != nil {
 		if socEstimator == nil {
-			lp.vehicleSoc = *soc
+			lp.vehicleSoc = *fetchedSoc
 		} else {
-			lp.vehicleSoc = socEstimator.Soc(soc, lp.GetChargedEnergy())
+			lp.vehicleSoc = socEstimator.Soc(fetchedSoc, lp.GetChargedEnergy())
 			lp.log.DEBUG.Printf("vehicle soc (estimator): %.0f%%", lp.vehicleSoc)
 		}
 	}
@@ -1817,6 +1817,14 @@ func (lp *Loadpoint) publishSocAndRange() {
 		lp.SetRemainingDuration(d)
 
 		lp.SetRemainingEnergy(socEstimator.RemainingChargeEnergy(limitSoc))
+	} else if v := lp.GetVehicle(); v != nil && v.Capacity() > 0 && lp.vehicleSoc > 0 {
+		// estimator disabled but vehicle capacity known: calculate remaining duration without soc estimation
+		limitSoc := min(apiLimitSoc, lp.EffectiveLimitSoc())
+		var d time.Duration
+		if lp.charging() {
+			d = soc.RemainingChargeDuration(float64(limitSoc), lp.chargePower, lp.vehicleSoc, v.Capacity())
+		}
+		lp.SetRemainingDuration(d)
 	}
 
 	// trigger message after variables are updated
