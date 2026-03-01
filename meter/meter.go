@@ -18,7 +18,7 @@ func init() {
 
 //evcc:function decorateMeter
 //evcc:basetype api.Meter
-//evcc:types api.MeterEnergy,api.PhaseCurrents,api.PhaseVoltages,api.PhasePowers,api.MaxACPowerGetter
+//evcc:types api.MeterEnergy,api.PhaseCurrents,api.PhaseVoltages,api.PhasePowers,api.MaxACPowerGetter,api.Curtailer
 
 //evcc:function decorateMeterBattery
 //evcc:basetype api.Meter
@@ -40,6 +40,7 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 		Soc                *plugin.Config // optional
 		LimitSoc           *plugin.Config // optional
 		BatteryMode        *plugin.Config // optional
+		Curtail            *plugin.Config // optional
 	}{
 		batterySocLimits: batterySocLimits{
 			MinSoc: 20,
@@ -100,8 +101,24 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 		), nil
 	}
 
+	curtailS, err := cc.Curtail.IntSetter(ctx, "curtail")
+	if err != nil {
+		return nil, fmt.Errorf("curtail: %w", err)
+	}
+
+	var curtailer api.Curtailer
+	if curtailS != nil {
+		curtailer = NewCurtailer(func(b bool) error {
+			v := int64(0)
+			if b {
+				v = 1
+			}
+			return curtailS(v)
+		}, nil)
+	}
+
 	return m.Decorate(
-		energyG, currentsG, voltagesG, powersG, cc.pvMaxACPower.Decorator(),
+		energyG, currentsG, voltagesG, powersG, cc.pvMaxACPower.Decorator(), curtailer,
 	), nil
 }
 
@@ -123,10 +140,17 @@ func (m *Meter) Decorate(
 	totalEnergy func() (float64, error),
 	currents, voltages, powers func() (float64, float64, float64, error),
 	maxACPower func() float64,
+	curtailer api.Curtailer,
 ) api.Meter {
+	var curtailF func(bool) error
+	var curtailedF func() (bool, error)
+	if curtailer != nil {
+		curtailF = curtailer.Curtail
+		curtailedF = curtailer.Curtailed
+	}
 	return decorateMeter(m,
 		totalEnergy, currents, voltages, powers,
-		maxACPower,
+		maxACPower, curtailF, curtailedF,
 	)
 }
 

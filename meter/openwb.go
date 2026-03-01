@@ -143,5 +143,5 @@ func NewOpenWBFromConfig(other map[string]any) (api.Meter, error) {
 		return m.DecorateBattery(nil, soc, capacity, nil, nil, nil), nil
 	}
 
-	return m.Decorate(nil, currents, nil, nil, nil), nil
+	return m.Decorate(nil, currents, nil, nil, nil, nil), nil
 }

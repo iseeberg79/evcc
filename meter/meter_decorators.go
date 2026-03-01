@@ -6,12 +6,12 @@ import (
 	"github.com/evcc-io/evcc/api"
 )
 
-func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCurrents func() (float64, float64, float64, error), phaseVoltages func() (float64, float64, float64, error), phasePowers func() (float64, float64, float64, error), maxACPowerGetter func() float64) api.Meter {
+func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCurrents func() (float64, float64, float64, error), phaseVoltages func() (float64, float64, float64, error), phasePowers func() (float64, float64, float64, error), maxACPowerGetter func() float64, curtailer0 func(bool) error, curtailer1 func() (bool, error)) api.Meter {
 	switch {
-	case maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents == nil && phaseVoltages == nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents == nil && phaseVoltages == nil:
 		return base
 
-	case maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents == nil && phaseVoltages == nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents == nil && phaseVoltages == nil:
 		return &struct {
 			api.Meter
 			api.MeterEnergy
@@ -22,7 +22,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages == nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages == nil:
 		return &struct {
 			api.Meter
 			api.PhaseCurrents
@@ -33,7 +33,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages == nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages == nil:
 		return &struct {
 			api.Meter
 			api.MeterEnergy
@@ -48,7 +48,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents == nil && phaseVoltages != nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents == nil && phaseVoltages != nil:
 		return &struct {
 			api.Meter
 			api.PhaseVoltages
@@ -59,7 +59,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents == nil && phaseVoltages != nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents == nil && phaseVoltages != nil:
 		return &struct {
 			api.Meter
 			api.MeterEnergy
@@ -74,7 +74,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages != nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages != nil:
 		return &struct {
 			api.Meter
 			api.PhaseCurrents
@@ -89,7 +89,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages != nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages != nil:
 		return &struct {
 			api.Meter
 			api.MeterEnergy
@@ -108,7 +108,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages == nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages == nil:
 		return &struct {
 			api.Meter
 			api.PhaseCurrents
@@ -123,7 +123,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages == nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages == nil:
 		return &struct {
 			api.Meter
 			api.MeterEnergy
@@ -142,7 +142,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages != nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages != nil:
 		return &struct {
 			api.Meter
 			api.PhaseCurrents
@@ -161,7 +161,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages != nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages != nil:
 		return &struct {
 			api.Meter
 			api.MeterEnergy
@@ -184,7 +184,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents == nil && phaseVoltages == nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents == nil && phaseVoltages == nil:
 		return &struct {
 			api.Meter
 			api.MaxACPowerGetter
@@ -195,7 +195,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents == nil && phaseVoltages == nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents == nil && phaseVoltages == nil:
 		return &struct {
 			api.Meter
 			api.MaxACPowerGetter
@@ -210,7 +210,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages == nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages == nil:
 		return &struct {
 			api.Meter
 			api.MaxACPowerGetter
@@ -225,7 +225,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages == nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages == nil:
 		return &struct {
 			api.Meter
 			api.MaxACPowerGetter
@@ -244,7 +244,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents == nil && phaseVoltages != nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents == nil && phaseVoltages != nil:
 		return &struct {
 			api.Meter
 			api.MaxACPowerGetter
@@ -259,7 +259,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents == nil && phaseVoltages != nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents == nil && phaseVoltages != nil:
 		return &struct {
 			api.Meter
 			api.MaxACPowerGetter
@@ -278,7 +278,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages != nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages != nil:
 		return &struct {
 			api.Meter
 			api.MaxACPowerGetter
@@ -297,7 +297,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages != nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages != nil:
 		return &struct {
 			api.Meter
 			api.MaxACPowerGetter
@@ -320,7 +320,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages == nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages == nil:
 		return &struct {
 			api.Meter
 			api.MaxACPowerGetter
@@ -339,7 +339,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages == nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages == nil:
 		return &struct {
 			api.Meter
 			api.MaxACPowerGetter
@@ -362,7 +362,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages != nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages != nil:
 		return &struct {
 			api.Meter
 			api.MaxACPowerGetter
@@ -385,7 +385,7 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			},
 		}
 
-	case maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages != nil:
+	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages != nil:
 		return &struct {
 			api.Meter
 			api.MaxACPowerGetter
@@ -395,6 +395,534 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 			api.PhaseVoltages
 		}{
 			Meter: base,
+			MaxACPowerGetter: &decorateMeterMaxACPowerGetterImpl{
+				maxACPowerGetter: maxACPowerGetter,
+			},
+			MeterEnergy: &decorateMeterMeterEnergyImpl{
+				meterEnergy: meterEnergy,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+			PhasePowers: &decorateMeterPhasePowersImpl{
+				phasePowers: phasePowers,
+			},
+			PhaseVoltages: &decorateMeterPhaseVoltagesImpl{
+				phaseVoltages: phaseVoltages,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents == nil && phaseVoltages == nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents == nil && phaseVoltages == nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MeterEnergy
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MeterEnergy: &decorateMeterMeterEnergyImpl{
+				meterEnergy: meterEnergy,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages == nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.PhaseCurrents
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages == nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MeterEnergy
+			api.PhaseCurrents
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MeterEnergy: &decorateMeterMeterEnergyImpl{
+				meterEnergy: meterEnergy,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents == nil && phaseVoltages != nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.PhaseVoltages
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			PhaseVoltages: &decorateMeterPhaseVoltagesImpl{
+				phaseVoltages: phaseVoltages,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents == nil && phaseVoltages != nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MeterEnergy
+			api.PhaseVoltages
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MeterEnergy: &decorateMeterMeterEnergyImpl{
+				meterEnergy: meterEnergy,
+			},
+			PhaseVoltages: &decorateMeterPhaseVoltagesImpl{
+				phaseVoltages: phaseVoltages,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages != nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.PhaseCurrents
+			api.PhaseVoltages
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+			PhaseVoltages: &decorateMeterPhaseVoltagesImpl{
+				phaseVoltages: phaseVoltages,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages != nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MeterEnergy
+			api.PhaseCurrents
+			api.PhaseVoltages
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MeterEnergy: &decorateMeterMeterEnergyImpl{
+				meterEnergy: meterEnergy,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+			PhaseVoltages: &decorateMeterPhaseVoltagesImpl{
+				phaseVoltages: phaseVoltages,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages == nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.PhaseCurrents
+			api.PhasePowers
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+			PhasePowers: &decorateMeterPhasePowersImpl{
+				phasePowers: phasePowers,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages == nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MeterEnergy
+			api.PhaseCurrents
+			api.PhasePowers
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MeterEnergy: &decorateMeterMeterEnergyImpl{
+				meterEnergy: meterEnergy,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+			PhasePowers: &decorateMeterPhasePowersImpl{
+				phasePowers: phasePowers,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages != nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.PhaseCurrents
+			api.PhasePowers
+			api.PhaseVoltages
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+			PhasePowers: &decorateMeterPhasePowersImpl{
+				phasePowers: phasePowers,
+			},
+			PhaseVoltages: &decorateMeterPhaseVoltagesImpl{
+				phaseVoltages: phaseVoltages,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter == nil && meterEnergy != nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages != nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MeterEnergy
+			api.PhaseCurrents
+			api.PhasePowers
+			api.PhaseVoltages
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MeterEnergy: &decorateMeterMeterEnergyImpl{
+				meterEnergy: meterEnergy,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+			PhasePowers: &decorateMeterPhasePowersImpl{
+				phasePowers: phasePowers,
+			},
+			PhaseVoltages: &decorateMeterPhaseVoltagesImpl{
+				phaseVoltages: phaseVoltages,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents == nil && phaseVoltages == nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MaxACPowerGetter
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MaxACPowerGetter: &decorateMeterMaxACPowerGetterImpl{
+				maxACPowerGetter: maxACPowerGetter,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents == nil && phaseVoltages == nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MaxACPowerGetter
+			api.MeterEnergy
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MaxACPowerGetter: &decorateMeterMaxACPowerGetterImpl{
+				maxACPowerGetter: maxACPowerGetter,
+			},
+			MeterEnergy: &decorateMeterMeterEnergyImpl{
+				meterEnergy: meterEnergy,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages == nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MaxACPowerGetter
+			api.PhaseCurrents
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MaxACPowerGetter: &decorateMeterMaxACPowerGetterImpl{
+				maxACPowerGetter: maxACPowerGetter,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages == nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MaxACPowerGetter
+			api.MeterEnergy
+			api.PhaseCurrents
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MaxACPowerGetter: &decorateMeterMaxACPowerGetterImpl{
+				maxACPowerGetter: maxACPowerGetter,
+			},
+			MeterEnergy: &decorateMeterMeterEnergyImpl{
+				meterEnergy: meterEnergy,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents == nil && phaseVoltages != nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MaxACPowerGetter
+			api.PhaseVoltages
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MaxACPowerGetter: &decorateMeterMaxACPowerGetterImpl{
+				maxACPowerGetter: maxACPowerGetter,
+			},
+			PhaseVoltages: &decorateMeterPhaseVoltagesImpl{
+				phaseVoltages: phaseVoltages,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents == nil && phaseVoltages != nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MaxACPowerGetter
+			api.MeterEnergy
+			api.PhaseVoltages
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MaxACPowerGetter: &decorateMeterMaxACPowerGetterImpl{
+				maxACPowerGetter: maxACPowerGetter,
+			},
+			MeterEnergy: &decorateMeterMeterEnergyImpl{
+				meterEnergy: meterEnergy,
+			},
+			PhaseVoltages: &decorateMeterPhaseVoltagesImpl{
+				phaseVoltages: phaseVoltages,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages != nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MaxACPowerGetter
+			api.PhaseCurrents
+			api.PhaseVoltages
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MaxACPowerGetter: &decorateMeterMaxACPowerGetterImpl{
+				maxACPowerGetter: maxACPowerGetter,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+			PhaseVoltages: &decorateMeterPhaseVoltagesImpl{
+				phaseVoltages: phaseVoltages,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents != nil && phasePowers == nil && phaseVoltages != nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MaxACPowerGetter
+			api.MeterEnergy
+			api.PhaseCurrents
+			api.PhaseVoltages
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MaxACPowerGetter: &decorateMeterMaxACPowerGetterImpl{
+				maxACPowerGetter: maxACPowerGetter,
+			},
+			MeterEnergy: &decorateMeterMeterEnergyImpl{
+				meterEnergy: meterEnergy,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+			PhaseVoltages: &decorateMeterPhaseVoltagesImpl{
+				phaseVoltages: phaseVoltages,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages == nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MaxACPowerGetter
+			api.PhaseCurrents
+			api.PhasePowers
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MaxACPowerGetter: &decorateMeterMaxACPowerGetterImpl{
+				maxACPowerGetter: maxACPowerGetter,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+			PhasePowers: &decorateMeterPhasePowersImpl{
+				phasePowers: phasePowers,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages == nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MaxACPowerGetter
+			api.MeterEnergy
+			api.PhaseCurrents
+			api.PhasePowers
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MaxACPowerGetter: &decorateMeterMaxACPowerGetterImpl{
+				maxACPowerGetter: maxACPowerGetter,
+			},
+			MeterEnergy: &decorateMeterMeterEnergyImpl{
+				meterEnergy: meterEnergy,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+			PhasePowers: &decorateMeterPhasePowersImpl{
+				phasePowers: phasePowers,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter != nil && meterEnergy == nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages != nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MaxACPowerGetter
+			api.PhaseCurrents
+			api.PhasePowers
+			api.PhaseVoltages
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
+			MaxACPowerGetter: &decorateMeterMaxACPowerGetterImpl{
+				maxACPowerGetter: maxACPowerGetter,
+			},
+			PhaseCurrents: &decorateMeterPhaseCurrentsImpl{
+				phaseCurrents: phaseCurrents,
+			},
+			PhasePowers: &decorateMeterPhasePowersImpl{
+				phasePowers: phasePowers,
+			},
+			PhaseVoltages: &decorateMeterPhaseVoltagesImpl{
+				phaseVoltages: phaseVoltages,
+			},
+		}
+
+	case curtailer0 != nil && curtailer1 != nil && maxACPowerGetter != nil && meterEnergy != nil && phaseCurrents != nil && phasePowers != nil && phaseVoltages != nil:
+		return &struct {
+			api.Meter
+			api.Curtailer
+			api.MaxACPowerGetter
+			api.MeterEnergy
+			api.PhaseCurrents
+			api.PhasePowers
+			api.PhaseVoltages
+		}{
+			Meter: base,
+			Curtailer: &decorateMeterCurtailerImpl{
+				curtailer0: curtailer0,
+				curtailer1: curtailer1,
+			},
 			MaxACPowerGetter: &decorateMeterMaxACPowerGetterImpl{
 				maxACPowerGetter: maxACPowerGetter,
 			},
@@ -414,6 +942,19 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 	}
 
 	return nil
+}
+
+type decorateMeterCurtailerImpl struct {
+	curtailer0 func(bool) error
+	curtailer1 func() (bool, error)
+}
+
+func (impl *decorateMeterCurtailerImpl) Curtail(p0 bool) error {
+	return impl.curtailer0(p0)
+}
+
+func (impl *decorateMeterCurtailerImpl) Curtailed() (bool, error) {
+	return impl.curtailer1()
 }
 
 type decorateMeterMaxACPowerGetterImpl struct {

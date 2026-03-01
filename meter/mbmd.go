@@ -138,7 +138,7 @@ func NewMbmdFromConfig(ctx context.Context, other map[string]any) (api.Meter, er
 		return m.DecorateBattery(totalEnergy, soc, cc.batteryCapacity.Decorator(), cc.batterySocLimits.Decorator(), cc.batteryPowerLimits.Decorator(), nil), nil
 	}
 
-	return m.Decorate(totalEnergy, currentsG, voltagesG, powersG, nil), nil
+	return m.Decorate(totalEnergy, currentsG, voltagesG, powersG, nil, nil), nil
 }
 
 // deviceOp checks is RS485 device supports operation

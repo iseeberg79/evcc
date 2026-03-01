@@ -100,6 +100,6 @@ func NewHomeAssistantFromConfig(other map[string]any) (api.Meter, error) {
 	}
 
 	return m.Decorate(
-		energyG, currentsG, voltagesG, powersG, cc.pvMaxACPower.Decorator(),
+		energyG, currentsG, voltagesG, powersG, cc.pvMaxACPower.Decorator(), nil,
 	), nil
 }
