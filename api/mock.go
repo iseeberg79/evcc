@@ -857,7 +857,7 @@ func (m *MockCircuit) EXPECT() *MockCircuitMockRecorder {
 }
 
 // Curtail mocks base method.
-func (m *MockCircuit) Curtail(arg0 bool) {
+func (m *MockCircuit) Curtail(arg0 float64) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Curtail", arg0)
 }
@@ -869,10 +869,10 @@ func (mr *MockCircuitMockRecorder) Curtail(arg0 any) *gomock.Call {
 }
 
 // Curtailed mocks base method.
-func (m *MockCircuit) Curtailed() bool {
+func (m *MockCircuit) Curtailed() float64 {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Curtailed")
-	ret0, _ := ret[0].(bool)
+	ret0, _ := ret[0].(float64)
 	return ret0
 }
 

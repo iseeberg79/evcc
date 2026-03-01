@@ -101,19 +101,15 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 		), nil
 	}
 
-	curtailS, err := cc.Curtail.IntSetter(ctx, "curtail")
+	curtailS, err := cc.Curtail.FloatSetter(ctx, "curtail")
 	if err != nil {
 		return nil, fmt.Errorf("curtail: %w", err)
 	}
 
 	var curtailer api.Curtailer
 	if curtailS != nil {
-		curtailer = NewCurtailer(func(b bool) error {
-			v := int64(0)
-			if b {
-				v = 1
-			}
-			return curtailS(v)
+		curtailer = NewCurtailer(func(rate float64) error {
+			return curtailS(rate * 100) // 0.0–1.0 → 0–100 for register
 		}, nil)
 	}
 
@@ -142,8 +138,8 @@ func (m *Meter) Decorate(
 	maxACPower func() float64,
 	curtailer api.Curtailer,
 ) api.Meter {
-	var curtailF func(bool) error
-	var curtailedF func() (bool, error)
+	var curtailF func(float64) error
+	var curtailedF func() (float64, error)
 	if curtailer != nil {
 		curtailF = curtailer.Curtail
 		curtailedF = curtailer.Curtailed

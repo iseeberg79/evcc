@@ -105,20 +105,15 @@ func NewRCT(ctx context.Context, uri, usage string, batterySocLimits batterySocL
 	}
 
 	// decorate api.Curtailer
-	var curtail func(bool) error
-	var curtailed func() (bool, error)
+	var curtail func(float64) error
+	var curtailed func() (float64, error)
 	if usage == "pv" {
-		curtail = func(b bool) error {
-			var r float64
-			if !b {
-				r = 1.0
-			}
-			return m.conn.Write(rct.BufVControlPowerReduction, floatVal(r))
+		curtail = func(rate float64) error {
+			return m.conn.Write(rct.BufVControlPowerReduction, floatVal(rate))
 		}
 
-		curtailed = func() (bool, error) {
-			r, err := m.queryFloat(rct.BufVControlPowerReduction)
-			return r != 1, err
+		curtailed = func() (float64, error) {
+			return m.queryFloat(rct.BufVControlPowerReduction)
 		}
 	}
 

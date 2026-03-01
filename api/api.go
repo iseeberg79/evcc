@@ -200,8 +200,8 @@ type Dimmer interface {
 
 // Curtailer provides EEG §9 curtailment
 type Curtailer interface {
-	Curtailed() (bool, error)
-	Curtail(bool) error
+	Curtailed() (float64, error) // 1.0 = not throttled
+	Curtail(float64) error
 }
 
 // ChargeController allows to start/stop the charging session on the vehicle side
@@ -283,8 +283,8 @@ type Circuit interface {
 	Dimmed() bool
 
 	// EEG §9 - reduce feed-in to the grid
-	Curtail(bool)
-	Curtailed() bool
+	Curtail(float64)
+	Curtailed() float64
 }
 
 // Redactor is an interface to redact sensitive data

@@ -234,31 +234,28 @@ func (c *EEBus) Dim(dim bool) error {
 var _ api.Curtailer = (*EEBus)(nil)
 
 // Curtailed implements the api.Curtailer interface
-func (c *EEBus) Curtailed() (bool, error) {
+func (c *EEBus) Curtailed() (float64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	limit, err := eebusReadValue(1, c.eg.EgLPPInterface, c.egLppEntity, c.eg.EgLPPInterface.ProductionLimit)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 
-	// Check if limit is active and has a valid power value
-	return limit.IsActive && limit.Value > 0, nil
+	if limit.IsActive && limit.Value > 0 {
+		return 0.0, nil
+	}
+	return 1.0, nil
 }
 
 // Curtail implements the api.Curtailer interface
-func (c *EEBus) Curtail(curtail bool) error {
+func (c *EEBus) Curtail(rate float64) error {
 	// Sets or removes the production power limit
+	active := rate < 1.0
 
-	// TODO: change api.Curtailer to make limit configurable
-	// For now, we use a fixed safe limit of 0W
-	limit := 0.0
-
-	var value float64
-	if curtail {
-		value = limit
-	}
+	// TODO: value = rate * kWp when ProductionNominalMax is configurable
+	value := 0.0
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -269,7 +266,7 @@ func (c *EEBus) Curtail(curtail bool) error {
 
 	_, err := c.eg.EgLPPInterface.WriteProductionLimit(c.egLppEntity, ucapi.LoadLimit{
 		Value:    value,
-		IsActive: curtail,
+		IsActive: active,
 	}, c.callbackResult("production limit"))
 
 	return err

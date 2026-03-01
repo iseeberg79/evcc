@@ -18,8 +18,8 @@ type circuitStruct struct {
 	Current    *float64 `json:"current,omitempty"`
 	MaxPower   float64  `json:"maxPower,omitempty"`
 	MaxCurrent float64  `json:"maxCurrent,omitempty"`
-	Dimmed     bool     `json:"dimmed"`
-	Curtailed  bool     `json:"curtailed"`
+	Dimmed     bool    `json:"dimmed"`
+	Curtailed  float64 `json:"curtailed"`
 }
 
 // publishCircuits returns a list of circuit titles
@@ -81,7 +81,7 @@ func (site *Site) dimMeters(dim bool) error {
 	return errs
 }
 
-func (site *Site) curtailPV(curtail bool) error {
+func (site *Site) curtailPV(rate float64) error {
 	var errs error
 
 	for _, dev := range site.pvMeters {
@@ -91,7 +91,7 @@ func (site *Site) curtailPV(curtail bool) error {
 		}
 
 		if curtailed, err := m.Curtailed(); err == nil {
-			if curtail == curtailed {
+			if rate == curtailed {
 				continue
 			}
 		} else {
@@ -101,8 +101,8 @@ func (site *Site) curtailPV(curtail bool) error {
 			continue
 		}
 
-		if err := m.Curtail(curtail); err == nil {
-			site.log.DEBUG.Printf("%s curtail: %t", dev.Config().Name, curtail)
+		if err := m.Curtail(rate); err == nil {
+			site.log.DEBUG.Printf("%s curtail: %.1f", dev.Config().Name, rate)
 		} else if !errors.Is(err, api.ErrNotAvailable) {
 			errs = errors.Join(errs, fmt.Errorf("%s curtail: %w", dev.Config().Name, err))
 		}

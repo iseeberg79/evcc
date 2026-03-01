@@ -34,10 +34,10 @@ type Circuit struct {
 	getMaxCurrent func() (float64, error) // dynamic max allowed current
 	getMaxPower   func() (float64, error) // dynamic max allowed power
 
-	current   float64
-	power     float64
-	dimmed    bool
-	curtailed bool
+	current     float64
+	power       float64
+	dimmed      bool
+	curtailRate float64
 
 	currentUpdated time.Time
 	powerUpdated   time.Time
@@ -107,12 +107,13 @@ func NewFromConfig(ctx context.Context, log *util.Logger, other map[string]any) 
 // New creates a circuit
 func New(log *util.Logger, title string, maxCurrent, maxPower float64, meter api.Meter, timeout time.Duration) (*Circuit, error) {
 	c := &Circuit{
-		log:        log,
-		title:      title,
-		maxCurrent: maxCurrent,
-		maxPower:   maxPower,
-		meter:      meter,
-		timeout:    timeout,
+		log:         log,
+		title:       title,
+		maxCurrent:  maxCurrent,
+		maxPower:    maxPower,
+		meter:       meter,
+		timeout:     timeout,
+		curtailRate: 1.0,
 	}
 
 	if maxPower == 0 {
@@ -404,23 +405,21 @@ func (c *Circuit) Dimmed() bool {
 	return c.parent.Dimmed()
 }
 
-func (c *Circuit) Curtail(curtail bool) {
+func (c *Circuit) Curtail(rate float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.curtailed = curtail
+	c.curtailRate = rate
 }
 
-func (c *Circuit) Curtailed() bool {
+func (c *Circuit) Curtailed() float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if c.curtailed {
-		return true
+	rate := c.curtailRate
+	if c.parent != nil {
+		if p := c.parent.Curtailed(); p < rate {
+			rate = p
+		}
 	}
-
-	if c.parent == nil {
-		return false
-	}
-
-	return c.parent.Curtailed()
+	return rate
 }

@@ -6,7 +6,7 @@ import (
 	"github.com/evcc-io/evcc/api"
 )
 
-func decorateRCT(base *RCT, meterEnergy func() (float64, error), curtailer0 func(bool) error, curtailer1 func() (bool, error), battery func() (float64, error), batterySocLimiter func() (float64, float64), batteryPowerLimiter func() (float64, float64), batteryController func(api.BatteryMode) error, batteryCapacity func() float64) api.Meter {
+func decorateRCT(base *RCT, meterEnergy func() (float64, error), curtailer0 func(float64) error, curtailer1 func() (float64, error), battery func() (float64, error), batterySocLimiter func() (float64, float64), batteryPowerLimiter func() (float64, float64), batteryController func(api.BatteryMode) error, batteryCapacity func() float64) api.Meter {
 	switch {
 	case battery == nil && curtailer0 == nil && curtailer1 == nil && meterEnergy == nil:
 		return base
@@ -1599,15 +1599,15 @@ func (impl *decorateRCTBatterySocLimiterImpl) GetSocLimits() (float64, float64) 
 }
 
 type decorateRCTCurtailerImpl struct {
-	curtailer0 func(bool) error
-	curtailer1 func() (bool, error)
+	curtailer0 func(float64) error
+	curtailer1 func() (float64, error)
 }
 
-func (impl *decorateRCTCurtailerImpl) Curtail(p0 bool) error {
+func (impl *decorateRCTCurtailerImpl) Curtail(p0 float64) error {
 	return impl.curtailer0(p0)
 }
 
-func (impl *decorateRCTCurtailerImpl) Curtailed() (bool, error) {
+func (impl *decorateRCTCurtailerImpl) Curtailed() (float64, error) {
 	return impl.curtailer1()
 }
 

@@ -281,9 +281,12 @@ func (c *EEBus) setProductionLimit(limit float64) {
 		c.productionLimitActivated = time.Time{}
 	}
 
-	c.root.Curtail(active)
-	// TODO make ProductionNominalMax configurable (Site kWp)
-	// c.root.SetMaxProduction(limit)
+	rate := 1.0
+	if active {
+		rate = 0.0
+		// TODO: rate = limit / kWp when ProductionNominalMax is configurable
+	}
+	c.root.Curtail(rate)
 
 	if err := c.updateSession(&c.smartgridProductionId, smartgrid.Curtail, limit); err != nil {
 		c.log.ERROR.Printf("smartgrid curtail session: %v", err)

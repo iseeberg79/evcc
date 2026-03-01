@@ -6,7 +6,7 @@ import (
 	"github.com/evcc-io/evcc/api"
 )
 
-func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCurrents func() (float64, float64, float64, error), phaseVoltages func() (float64, float64, float64, error), phasePowers func() (float64, float64, float64, error), maxACPowerGetter func() float64, curtailer0 func(bool) error, curtailer1 func() (bool, error)) api.Meter {
+func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCurrents func() (float64, float64, float64, error), phaseVoltages func() (float64, float64, float64, error), phasePowers func() (float64, float64, float64, error), maxACPowerGetter func() float64, curtailer0 func(float64) error, curtailer1 func() (float64, error)) api.Meter {
 	switch {
 	case curtailer0 == nil && curtailer1 == nil && maxACPowerGetter == nil && meterEnergy == nil && phaseCurrents == nil && phaseVoltages == nil:
 		return base
@@ -945,15 +945,15 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 }
 
 type decorateMeterCurtailerImpl struct {
-	curtailer0 func(bool) error
-	curtailer1 func() (bool, error)
+	curtailer0 func(float64) error
+	curtailer1 func() (float64, error)
 }
 
-func (impl *decorateMeterCurtailerImpl) Curtail(p0 bool) error {
+func (impl *decorateMeterCurtailerImpl) Curtail(p0 float64) error {
 	return impl.curtailer0(p0)
 }
 
-func (impl *decorateMeterCurtailerImpl) Curtailed() (bool, error) {
+func (impl *decorateMeterCurtailerImpl) Curtailed() (float64, error) {
 	return impl.curtailer1()
 }
 

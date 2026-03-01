@@ -133,8 +133,6 @@ func (c *Fnn3) run() error {
 }
 
 func (c *Fnn3) curtail(frac float64) error {
-	c.root.Curtail(frac < 1.0)
-	// TODO make ProductionNominalMax configurable (Site kWp)
-	// c.root.SetMaxPower(c.maxPower*frac)
+	c.root.Curtail(frac)
 	return nil
 }
