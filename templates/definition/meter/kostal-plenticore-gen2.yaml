@@ -50,6 +50,13 @@ params:
     type: duration
     default: 60s
     advanced: true
+  - name: curtailrate
+    type: number
+    default: 0
+    advanced: true
+    description:
+      de: Einspeisung bei EEG §9 Abregelung in Prozent (0 = Nulleinspeisung, 70 = 70%-Regel)
+      en: Feed-in during EEG §9 curtailment in percent (0 = zero feed-in, 70 = 70% rule)
 render: |
   {{- if eq .usage "pv" }}
   type: custom
@@ -82,10 +89,10 @@ render: |
           source: sunspec
           {{- include "modbus" . | indent 8 }}
           value: 123:WMaxLimPct
-    - case: 1 # curtailed → WMaxLimPct = 0%
+    - case: 1 # curtailed → WMaxLimPct = curtailrate%
       set:
         source: const
-        value: 0
+        value: {{ .curtailrate }}
         set:
           source: sunspec
           {{- include "modbus" . | indent 8 }}
