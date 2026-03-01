@@ -71,6 +71,25 @@ render: |
     value: 103:WH # total yield
     scale: 0.001
   maxacpower: {{ .maxacpower }} # W
+  curtail:
+    source: switch
+    switch:
+    - case: 0 # not curtailed → WMaxLimPct = 100%
+      set:
+        source: const
+        value: 100
+        set:
+          source: sunspec
+          {{- include "modbus" . | indent 8 }}
+          value: 123:WMaxLimPct
+    - case: 1 # curtailed → WMaxLimPct = 0%
+      set:
+        source: const
+        value: 0
+        set:
+          source: sunspec
+          {{- include "modbus" . | indent 8 }}
+          value: 123:WMaxLimPct
   {{- end }}
   {{- if eq .usage "battery" }}
   type: custom
