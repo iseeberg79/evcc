@@ -108,15 +108,15 @@ type Loadpoint struct {
 	MinCurrent_    float64       `mapstructure:"minCurrent"`    // ignored, present for compatibility
 	MaxCurrent_    float64       `mapstructure:"maxCurrent"`    // ignored, present for compatibility
 
-	title                    string   // UI title
-	priority                 int      // Priority
-	minCurrent               float64  // PV mode: start current	Min+PV mode: min current
-	maxCurrent               float64  // Max allowed current. Physically ensured by the charger
-	phasesConfigured         int      // Charger configured phase mode 0/1/3
-	limitSoc                 int      // Session limit for soc
-	limitEnergy              float64  // Session limit for energy
-	smartCostLimit           *float64 // always charge if consumption cost is below this value
-	smartFeedInPriorityLimit *float64 // prevent charging if feed-in cost is above this value
+	title                    string    // UI title
+	priority                 int       // Priority
+	minCurrent               float64   // PV mode: start current	Min+PV mode: min current
+	maxCurrent               float64   // Max allowed current. Physically ensured by the charger
+	phasesConfigured         int       // Charger configured phase mode 0/1/3
+	limitSoc                 int       // Session limit for soc
+	limitEnergy              float64   // Session limit for energy
+	smartCostLimit           *float64  // always charge if consumption cost is below this value
+	smartFeedInPriorityLimit *float64  // prevent charging if feed-in cost is above this value
 	batteryBoost             int       // battery boost state
 	batteryBoostLimit        int       // battery boost soc limit (0-100, 100=disabled)
 	externalControlUntil     time.Time // external control lease expiry
@@ -763,6 +763,15 @@ func (lp *Loadpoint) syncCharger() error {
 		enabled = true
 
 		if shouldBeConsistent {
+			if lp.externalControlActive() {
+				return nil
+			}
+
+			if lp.ExternalControlYield {
+				lp.externalControlUntil = lp.clock.Now().Add(lp.GetDisableDelay())
+				return nil
+			}
+
 			if err := lp.charger.Enable(true); err != nil { // also enable charger to correct internal state
 				return fmt.Errorf("charger enable: %w", err)
 			}
