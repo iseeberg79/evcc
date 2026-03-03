@@ -527,7 +527,7 @@ export interface Battery {
   power: number;
   capacity: number;
   soc: number;
-  devices: BatteryMeter[];
+  devices?: BatteryMeter[];
   forecast?: BatteryForecast;
 }
 
