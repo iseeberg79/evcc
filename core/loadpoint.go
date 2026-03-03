@@ -768,6 +768,11 @@ func (lp *Loadpoint) syncCharger() error {
 				return nil
 			}
 
+			if lp.ExternalControlYield {
+				lp.externalControlUntil = lp.clock.Now().Add(lp.GetDisableDelay())
+				return nil
+			}
+
 			if err := lp.charger.Enable(true); err != nil { // also enable charger to correct internal state
 				return fmt.Errorf("charger enable: %w", err)
 			}
@@ -1979,11 +1984,6 @@ func (lp *Loadpoint) Update(sitePower, batteryBoostPower float64, consumption, f
 	// publish soc after updating charger status to make sure
 	// initial update of connected state matches charger status
 	lp.publishSocAndRange()
-
-	// yield control to external system if charger is unexpectedly active
-	if lp.ExternalControlYield && !lp.enabled && lp.charging() {
-		lp.SetExternalControl(lp.GetDisableDelay())
-	}
 
 	// sync settings with charger
 	if err := lp.syncCharger(); err != nil {
