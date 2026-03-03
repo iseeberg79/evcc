@@ -1262,6 +1262,7 @@
       "vehicleLimitReached": "Vehicle limit reached.",
       "waitForAuthorization": "Connected. Waiting for authorization…",
       "waitForVehicle": "Ready. Waiting for vehicle…",
+      "externalControlActive": "Charging controlled by external system.",
       "welcome": "Short initial charge to confirm connection."
     },
     "vehicles": "Parking",

@@ -302,6 +302,7 @@ export interface Loadpoint {
   vehicleSoc: number;
   vehicleTitle: string;
   vehicleWelcomeActive: boolean;
+  externalControlActive: boolean;
 }
 
 export interface UiLoadpoint extends Loadpoint {

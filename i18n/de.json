@@ -1261,6 +1261,7 @@
       "vehicleLimitReached": "Fahrzeuglimit erreicht.",
       "waitForAuthorization": "Verbunden. Warte auf Autorisierung …",
       "waitForVehicle": "Ladebereit. Warte auf Fahrzeug …",
+      "externalControlActive": "Laden wird von einem externen System gesteuert.",
       "welcome": "Kurze initiale Ladung zur Bestätigung der Verbindung."
     },
     "vehicles": "Parkplatz",
