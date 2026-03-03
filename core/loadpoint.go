@@ -100,7 +100,8 @@ type Loadpoint struct {
 	// from yaml
 	DefaultMode api.ChargeMode `mapstructure:"mode"`     // Default charge mode, used for disconnect
 	Title       string         `mapstructure:"title"`    // UI title
-	Priority    int            `mapstructure:"priority"` // Priority
+	Priority             int  `mapstructure:"priority"`             // Priority
+	ExternalControlYield bool `mapstructure:"externalControlYield"` // Yield control on unexpected charging (e.g. NeoGrid)
 
 	// from yaml, deprecated
 	GuardDuration_ time.Duration `mapstructure:"guardduration"` // ignored, present for compatibility
