@@ -415,6 +415,8 @@ export default defineComponent({
 </script>
 
 <style scoped>
+@import "../../../css/breakpoints.css";
+
 .loadpoint {
 	border-radius: 2rem;
 	color: var(--evcc-default-text);
@@ -446,7 +448,7 @@ export default defineComponent({
 	margin: 0 -1rem;
 }
 /* breakpoint sm */
-@media (min-width: 576px) {
+@media (--sm-and-up) {
 	.divider {
 		margin: 0 -1.5rem;
 	}
