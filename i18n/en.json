@@ -367,6 +367,8 @@
       "pollModeConnected": "connected",
       "pollModeConnectedHelp": "Update vehicle status in regular intervals when connected.",
       "pollModeLabel": "Update behaviour",
+      "externalControlYieldHelp": "When an external system (e.g. Ostrom NeoGrid, Tibber Grid Rewards) takes control of the charger unexpectedly, evcc yields instead of interrupting the charge. evcc resumes control once charging stops.",
+      "externalControlYieldLabel": "Yield control",
       "priorityHelp": "Higher priority get preferred access to solar surplus.",
       "priorityLabel": "Priority",
       "save": "Save",
@@ -1263,6 +1265,7 @@
       "vehicleLimitReached": "Vehicle limit reached.",
       "waitForAuthorization": "Connected. Waiting for authorization…",
       "waitForVehicle": "Ready. Waiting for vehicle…",
+      "externalControlActive": "Charging controlled by external system.",
       "welcome": "Short initial charge to confirm connection."
     },
     "vehicles": "Parking",

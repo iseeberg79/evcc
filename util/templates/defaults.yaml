@@ -317,6 +317,15 @@ params:
     help:
       en: Charger will enable charging for short time when vehicle is connected, irrespective of configured charge mode. This is useful for vehicles that require power supply when connecting.
       de: Wallbox gibt kurzzeitige Ladefreigabe bei Fahrzeugverbindung. Das ermöglicht es Fahrzeugen, die eine Stromversorgung beim Anschließen benötigen, einen Fehlerzustand zu vermeiden.
+  - name: externalControlYield
+    type: bool
+    advanced: true
+    description:
+      en: Yield control
+      de: Steuerung abgeben
+    help:
+      en: When an external system (e.g. Ostrom NeoGrid, Tibber Grid Rewards) takes control of the charger unexpectedly, evcc yields instead of interrupting the charge. evcc resumes control once charging stops.
+      de: Wenn ein externes System (z.B. Ostrom NeoGrid, Tibber Grid Rewards) die Wallbox unerwartet übernimmt, gibt evcc die Steuerung ab statt den Ladevorgang zu unterbrechen. evcc übernimmt wieder, sobald der Ladevorgang endet.
   - name: defaultmode
     type: int
     usages: ["battery"]

@@ -367,6 +367,8 @@
       "pollModeConnected": "wenn verbunden",
       "pollModeConnectedHelp": "Fahrzeugstatus in regelmäßigen Abständen abfragen, wenn verbunden.",
       "pollModeLabel": "Update-Verhalten",
+      "externalControlYieldHelp": "Wenn ein externes System (z.B. Ostrom NeoGrid, Tibber Grid Rewards) die Wallbox unerwartet übernimmt, gibt evcc die Steuerung ab statt den Ladevorgang zu unterbrechen. evcc übernimmt wieder, sobald der Ladevorgang endet.",
+      "externalControlYieldLabel": "Steuerung abgeben",
       "priorityHelp": "Höherer Prioritäten haben Vorrang beim PV-Überschuss.",
       "priorityLabel": "Priorität",
       "save": "Speichern",
@@ -1263,6 +1265,7 @@
       "vehicleLimitReached": "Fahrzeuglimit erreicht.",
       "waitForAuthorization": "Verbunden. Warte auf Autorisierung …",
       "waitForVehicle": "Ladebereit. Warte auf Fahrzeug …",
+      "externalControlActive": "Laden wird von einem externen System gesteuert.",
       "welcome": "Kurze initiale Ladung zur Bestätigung der Verbindung."
     },
     "vehicles": "Parkplatz",

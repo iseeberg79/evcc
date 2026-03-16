@@ -193,6 +193,7 @@ export interface ConfigLoadpoint {
   title: string;
   defaultMode: string;
   priority: number;
+  externalControlYield: boolean;
   phasesConfigured: number;
   minCurrent: number;
   maxCurrent: number;
@@ -301,6 +302,7 @@ export interface Loadpoint {
   vehicleSoc: number;
   vehicleTitle: string;
   vehicleWelcomeActive: boolean;
+  externalControlActive: boolean;
 }
 
 export interface UiLoadpoint extends Loadpoint {
