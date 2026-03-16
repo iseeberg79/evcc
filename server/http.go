@@ -217,7 +217,7 @@ func (s *HTTPd) RegisterSiteHandlers(site site.API) {
 			"batteryBoost":              {"POST", "/batteryboost/{value:[01truefalse]+}", boolHandler(lp.SetBatteryBoost, func() bool { return lp.GetBatteryBoost() > 0 })},
 			"batteryBoostLimit":         {"POST", "/batteryboostlimit/{value:[0-9]+}", intHandler(pass(lp.SetBatteryBoostLimit), lp.GetBatteryBoostLimit)},
 			"externalControl":           {"POST", "/externalcontrol/{value:[0-9]+}", durationHandler(pass(lp.SetExternalControl), func() time.Duration { return 0 })},
-			"externalControlDelete":      {"DELETE", "/externalcontrol", func(w http.ResponseWriter, r *http.Request) {
+			"externalControlDelete": {"DELETE", "/externalcontrol", func(w http.ResponseWriter, r *http.Request) {
 				lp.SetExternalControl(0)
 				jsonWrite(w, false)
 			}},

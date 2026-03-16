@@ -98,8 +98,8 @@ type Loadpoint struct {
 	Enable, Disable loadpoint.ThresholdConfig
 
 	// from yaml
-	DefaultMode          api.ChargeMode `mapstructure:"mode"`                 // Default charge mode, used for disconnect
-	Title                string         `mapstructure:"title"`                // UI title
+	DefaultMode api.ChargeMode `mapstructure:"mode"`     // Default charge mode, used for disconnect
+	Title       string         `mapstructure:"title"`    // UI title
 	Priority    int            `mapstructure:"priority"` // Priority
 
 	// from yaml, deprecated
