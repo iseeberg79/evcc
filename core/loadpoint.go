@@ -100,8 +100,7 @@ type Loadpoint struct {
 	// from yaml
 	DefaultMode          api.ChargeMode `mapstructure:"mode"`                 // Default charge mode, used for disconnect
 	Title                string         `mapstructure:"title"`                // UI title
-	Priority             int            `mapstructure:"priority"`             // Priority
-	ExternalControlYield bool           `mapstructure:"externalControlYield"` // Yield control on unexpected charging (e.g. NeoGrid)
+	Priority    int            `mapstructure:"priority"` // Priority
 
 	// from yaml, deprecated
 	GuardDuration_ time.Duration `mapstructure:"guardduration"` // ignored, present for compatibility
@@ -765,11 +764,6 @@ func (lp *Loadpoint) syncCharger() error {
 
 		if shouldBeConsistent {
 			if lp.externalControlActive() {
-				return nil
-			}
-
-			if lp.ExternalControlYield {
-				lp.externalControlUntil = lp.clock.Now().Add(lp.GetDisableDelay())
 				return nil
 			}
 

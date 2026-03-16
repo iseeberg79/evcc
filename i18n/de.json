@@ -86,9 +86,9 @@
           "heating": "Benutzerdefinierte Heizung"
         },
         "heatpump": "Benutzerdefinierte Wärmepumpe",
-        "sgready": "Benutzerdefinierte Wärmepumpe (sg-ready über Plugins)",
+        "sgready": "Benutzerdefinierte Wärmepumpe (SG-Ready über Plugins)",
         "sgready-boost": "Benutzerdefinierte Wärmepumpe (sg-ready-boost, veraltet)",
-        "sgready-relay": "Benutzerdefinierte Wärmepumpe (sg-ready über Relais)",
+        "sgready-relay": "Benutzerdefinierte Wärmepumpe (SG-Ready über Relais)",
         "switchsocket": "Benutzerdefinierte schaltbare Steckdose"
       }
     },
@@ -130,9 +130,8 @@
       "currency": "Währung",
       "current": "Strom",
       "currentRange": "Strom",
-      "curtailed": "Einspeisung begrenzt",
       "detected": "Erkannt",
-      "dimmed": "Verbrauch begrenzt",
+      "dimmed": "Gedimmt",
       "enabled": "Ladebereit",
       "energy": "Energie",
       "events": "Ereignisse",
@@ -154,7 +153,6 @@
       "phases1p3p": "Phasenumschaltung",
       "power": "Leistung",
       "powerRange": "Leistung",
-      "price": "Preis",
       "range": "Reichweite",
       "singlePhase": "Einphasig",
       "soc": "Ladestand",
@@ -367,8 +365,6 @@
       "pollModeConnected": "wenn verbunden",
       "pollModeConnectedHelp": "Fahrzeugstatus in regelmäßigen Abständen abfragen, wenn verbunden.",
       "pollModeLabel": "Update-Verhalten",
-      "externalControlYieldHelp": "Wenn ein externes System (z.B. Ostrom NeoGrid, Tibber Grid Rewards) die Wallbox unerwartet übernimmt, gibt evcc die Steuerung ab statt den Ladevorgang zu unterbrechen. evcc übernimmt wieder, sobald der Ladevorgang endet.",
-      "externalControlYieldLabel": "Steuerung abgeben",
       "priorityHelp": "Höherer Prioritäten haben Vorrang beim PV-Überschuss.",
       "priorityLabel": "Priorität",
       "save": "Speichern",
@@ -428,7 +424,7 @@
     },
     "messaging": {
       "addMessenger": "Dienst hinzufügen",
-      "description": "Benachrichtigungen über Ladevorgänge erhalten.",
+      "description": "Benachrichtigungen über Ladevorgänge und andere Ereignisse erhalten.",
       "event": {
         "asleep": {
           "messageDefault": "Ladefreigabe, Fahrzeug {vehicleName} lädt nicht.",
@@ -625,7 +621,7 @@
     },
     "pv": {
       "titleAdd": "PV-Anlage hinzufügen",
-      "titleEdit": "PV-Zähler bearbeiten"
+      "titleEdit": "PV-Anlage bearbeiten"
     },
     "section": {
       "additionalMeter": "Zusätzliche Zähler",
@@ -642,13 +638,11 @@
       "cardTitle": "Sunny Home Manager",
       "description": "evcc ist mit einer Integration für den SMA Sunny Home Manager (SHM) mittels SEMP-Protokoll ausgestattet. Wenn dieser im selben Netzwerk läuft, sollte dir nach der Anmeldung in deinem Sunny Portal-Konto automatisch angeboten werden, alle in evcc konfigurierten Ladepunkte als neu erkannte Verbraucher hinzuzufügen. Alles sollte sofort einsatzbereit sein, ohne dass hier weitere Anpassungen erforderlich sind.",
       "descriptionDeviceId": "12-stelliger HEX-String. Präfix für alle Geräte (Ladepunkt, ..).",
-      "descriptionDeviceSerial": "12-stelliger HEX-String. Basisseriennummer für alle Geräte (Ladepunkt, ..). Standardmäßig leitet evcc diese aus der MAC-Addresse des Hosts ab.",
       "descriptionIdPattern": "Kennungsmuster",
       "descriptionIds": "Im Sunny Portal benötigt jeder Verbraucher (Ladepunkt, ..) eine eindeutige Kennung. evcc generiert basierend auf deiner Hardware eine eindeutige Kennung. Wenn du evcc auf andere Hardware migrierst, kann sich diese Kennung ändern. Um die Historie zu erhalten, kannst du die generierten Kennungen hier überschreiben. Öffne die SEMP-URL (/semp), um deine aktuellen Kennungen zu überprüfen.",
       "descriptionSempUrl": "SEMP-URL",
       "descriptionVendorId": "8-stelliger HEX-String. Allgemeines Präfix aller Entitäten. Standardmäßig verwendet evcc seine eigene interne Hersteller-ID.",
       "labelDeviceId": "Geräte-ID",
-      "labelDeviceSerial": "Geräteseriennummer",
       "labelVendorId": "Hersteller-ID",
       "title": "SMA Sunny Home Manager"
     },

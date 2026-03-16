@@ -307,19 +307,6 @@
 							/>
 						</FormRow>
 
-						<FormRow
-							id="loadpointExternalControlYield"
-							:label="$t('config.loadpoint.externalControlYieldLabel')"
-							:help="$t('config.loadpoint.externalControlYieldHelp')"
-						>
-							<PropertyField
-								id="loadpointExternalControlYield"
-								v-model="values.externalControlYield"
-								type="Bool"
-								size="w-100"
-							/>
-						</FormRow>
-
 						<h6>
 							{{ $t("config.loadpoint.electricalTitle") }}
 							<small class="text-muted">{{
@@ -626,7 +613,6 @@ const defaultValues = {
 	minCurrent: 6,
 	maxCurrent: 16,
 	priority: 0,
-	externalControlYield: false,
 	defaultMode: "",
 	thresholds: {
 		enable: { delay: 1 * nsPerMin, threshold: 0 },

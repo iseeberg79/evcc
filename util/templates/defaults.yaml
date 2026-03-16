@@ -100,11 +100,8 @@ params:
     type: int
   - name: connector
     description:
-      en: Connector number
-      de: Anschlussnummer
-    help:
-      en: For multi-connector stations. Numbering starts at 1.
-      de: Bei Ladestationen mit mehreren Anschlüssen. Zählung beginnt bei 1.
+      de: Ladepunkt (falls >1 Ladepunkt)
+      en: Loadpoint (if >1 loadpoint)
     advanced: true
     default: 1
   - name: cache
@@ -317,15 +314,6 @@ params:
     help:
       en: Charger will enable charging for short time when vehicle is connected, irrespective of configured charge mode. This is useful for vehicles that require power supply when connecting.
       de: Wallbox gibt kurzzeitige Ladefreigabe bei Fahrzeugverbindung. Das ermöglicht es Fahrzeugen, die eine Stromversorgung beim Anschließen benötigen, einen Fehlerzustand zu vermeiden.
-  - name: externalControlYield
-    type: bool
-    advanced: true
-    description:
-      en: Yield control
-      de: Steuerung abgeben
-    help:
-      en: When an external system (e.g. Ostrom NeoGrid, Tibber Grid Rewards) takes control of the charger unexpectedly, evcc yields instead of interrupting the charge. evcc resumes control once charging stops.
-      de: Wenn ein externes System (z.B. Ostrom NeoGrid, Tibber Grid Rewards) die Wallbox unerwartet übernimmt, gibt evcc die Steuerung ab statt den Ladevorgang zu unterbrechen. evcc übernimmt wieder, sobald der Ladevorgang endet.
   - name: defaultmode
     type: int
     usages: ["battery"]
@@ -451,11 +439,6 @@ params:
     type: string
     description:
       generic: Station ID
-    help:
-      en: Unique identifier of the charger. Automatically detected once the charger connects.
-      de: Eindeutige Wallbox-Kennung. Wird automatisch erkannt, sobald sich die Wallbox verbindet.
-    example: EVB-P12354
-    private: true
   - name: meter
     description:
       en: Meter ID
@@ -650,7 +633,21 @@ presets:
 
   ocpp:
     - name: stationid
+      type: string
+      description:
+        generic: Station ID
+      help:
+        en: Unique identifier of the charger. evcc auto-detects this once the charger connects.
+        de: Eindeutige Wallbox-Kennung. evcc erkennt diese automatisch, sobald sich die Wallbox verbindet.
+      example: EVB-P12354
     - name: connector
+      description:
+        en: Connector number
+        de: Anschlussnummer
+      help:
+        de: Bei Ladestationen mit mehreren Anschlüssen. Die Zählung beginnt bei 1 für den ersten Anschluss.
+        en: For charging stations with multiple connectors. Counting starts at 1 for the first connector.
+      default: 1
     - name: remotestart
       advanced: true
       type: bool
