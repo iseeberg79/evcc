@@ -1296,12 +1296,14 @@ func (lp *Loadpoint) scalePhases(phases int) error {
 func (lp *Loadpoint) fastCharging() error {
 	if lp.hasPhaseSwitching() {
 		phases := 3
-		maxPower1p := Voltage * lp.effectiveMaxCurrent()
 
 		// load management limit active
-		if circuitMaxPower := circuitMaxPower(lp.circuit); circuitMaxPower > 0 && circuitMaxPower < 1.1*maxPower1p {
-			phases = 1
-			lp.log.DEBUG.Printf("fast charging: scaled to 1p to match %.0fW max circuit power", circuitMaxPower)
+		if lp.circuit != nil {
+			minPower3p := currentToPower(lp.effectiveMinCurrent(), 3)
+			if powerLimit := lp.circuit.ValidatePower(lp.chargePower, minPower3p); powerLimit < minPower3p {
+				phases = 1
+				lp.log.DEBUG.Printf("fast charging: scaled to 1p to match %.0fW available circuit power", powerLimit)
+			}
 		}
 
 		if err := lp.scalePhasesIfAvailable(phases); err != nil {
@@ -1777,10 +1779,10 @@ func (lp *Loadpoint) publishSocAndRange() {
 		return socR, limitR
 	}
 
-	soc, limit := socAndLimit("charger", lp.charger)
-	if soc == nil && (lp.vehicleSocPollAllowed() || lp.chargerHasFeature(api.IntegratedDevice)) {
+	socR, limitR := socAndLimit("charger", lp.charger)
+	if socR == nil && (lp.vehicleSocPollAllowed() || lp.chargerHasFeature(api.IntegratedDevice)) {
 		lp.socUpdated = lp.clock.Now()
-		soc, limit = socAndLimit("vehicle", lp.GetVehicle())
+		socR, limitR = socAndLimit("vehicle", lp.GetVehicle())
 
 		// range
 		if vs, ok := lp.GetVehicle().(api.VehicleRange); ok {
@@ -1793,35 +1795,42 @@ func (lp *Loadpoint) publishSocAndRange() {
 		}
 	}
 
-	if soc != nil {
+	if socR != nil {
 		if socEstimator == nil {
-			lp.vehicleSoc = *soc
+			lp.vehicleSoc = *socR
 		} else {
-			lp.vehicleSoc = socEstimator.Soc(soc, lp.GetChargedEnergy())
+			lp.vehicleSoc = socEstimator.Soc(socR, lp.GetChargedEnergy())
 			lp.log.DEBUG.Printf("vehicle soc (estimator): %.0f%%", lp.vehicleSoc)
 		}
 	}
 	lp.publish(keys.VehicleSoc, lp.vehicleSoc)
 
 	apiLimitSoc := 100
-	if limit != nil {
-		apiLimitSoc = int(*limit)
+	if limitR != nil {
+		apiLimitSoc = int(*limitR)
 		// https://github.com/evcc-io/evcc/issues/13349
-		lp.publish(keys.VehicleLimitSoc, float64(*limit))
+		lp.publish(keys.VehicleLimitSoc, float64(*limitR))
 	}
 
-	if socEstimator != nil {
-		// use minimum of vehicle and loadpoint
-		limitSoc := min(apiLimitSoc, lp.EffectiveLimitSoc())
+	limitSoc := min(apiLimitSoc, lp.EffectiveLimitSoc())
+	v := lp.GetVehicle()
 
-		var d time.Duration
+	var d time.Duration
+	var e float64
+	switch {
+	case socEstimator != nil:
 		if lp.charging() {
 			d = socEstimator.RemainingChargeDuration(float64(limitSoc), lp.chargePower)
 		}
-		lp.SetRemainingDuration(d)
-
-		lp.SetRemainingEnergy(socEstimator.RemainingChargeEnergy(limitSoc))
+		e = socEstimator.RemainingChargeEnergy(limitSoc)
+	case v != nil && v.Capacity() > 0 && lp.vehicleSoc > 0:
+		if lp.charging() {
+			d = soc.RemainingChargeDuration(float64(limitSoc), lp.chargePower, lp.vehicleSoc, v.Capacity())
+		}
+		e = soc.RemainingChargeEnergy(limitSoc, lp.vehicleSoc, v.Capacity())
 	}
+	lp.SetRemainingDuration(d)
+	lp.SetRemainingEnergy(e)
 
 	// trigger message after variables are updated
 	lp.bus.Publish(evVehicleSoc, lp.vehicleSoc)
@@ -1992,6 +2001,10 @@ func (lp *Loadpoint) Update(sitePower, batteryBoostPower float64, consumption, f
 	// update and publish plan without being short-circuited by modes etc.
 	plannerActive := lp.plannerActive()
 
+	// update and publish min soc not reached state
+	minSocNotReached := lp.minSocNotReached()
+	lp.publish(keys.MinSocNotReached, minSocNotReached)
+
 	// execute loading strategy
 	switch {
 	case !lp.connected():
@@ -2013,7 +2026,7 @@ func (lp *Loadpoint) Update(sitePower, batteryBoostPower float64, consumption, f
 		err = lp.setLimit(current)
 
 	// minimum or target charging
-	case lp.minSocNotReached() || plannerActive:
+	case minSocNotReached || plannerActive:
 		err = lp.fastCharging()
 		lp.resetPhaseTimer()
 		lp.elapsePVTimer() // let PV mode disable immediately afterwards
