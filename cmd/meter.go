@@ -18,6 +18,8 @@ var meterCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(meterCmd)
+	withCustomTemplate(meterCmd)
+
 	meterCmd.Flags().StringP(flagBatteryMode, "b", "", flagBatteryModeDescription)
 	meterCmd.Flags().DurationP(flagBatteryModeWait, "w", 0, flagBatteryModeWaitDescription)
 	meterCmd.Flags().Bool(flagDiagnose, false, flagDiagnoseDescription)
@@ -58,7 +60,7 @@ func runMeter(cmd *cobra.Command, args []string) {
 		flagUsed = true
 
 		for _, v := range config.Instances(meters) {
-			if b, ok := v.(api.BatteryController); ok {
+			if b, ok := api.Cap[api.BatteryController](v); ok {
 				if err := b.SetBatteryMode(mode); err != nil {
 					log.FATAL.Fatalln("set battery mode:", err)
 				}
@@ -96,7 +98,4 @@ func runMeter(cmd *cobra.Command, args []string) {
 		log.INFO.Println("running heartbeat (if any) until interrupted (Ctrl-C to stop)")
 		time.Sleep(time.Hour)
 	}
-
-	// wait for shutdown
-	<-shutdownDoneC()
 }

@@ -1,23 +1,26 @@
 package core
 
 import (
+	"errors"
+
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/keys"
 	"github.com/evcc-io/evcc/core/session"
 	"github.com/evcc-io/evcc/core/wrapper"
 	"github.com/jinzhu/now"
-	"github.com/samber/lo"
 )
 
 func (lp *Loadpoint) chargeMeterTotal() float64 {
-	m, ok := lp.chargeMeter.(api.MeterEnergy)
+	m, ok := api.Cap[api.MeterEnergy](lp.chargeMeter)
 	if !ok {
 		return 0
 	}
 
 	f, err := m.TotalEnergy()
 	if err != nil {
-		lp.log.ERROR.Printf("charge total import: %v", err)
+		if !errors.Is(err, api.ErrNotAvailable) {
+			lp.log.ERROR.Printf("charge total import: %v", err)
+		}
 		return 0
 	}
 
@@ -42,7 +45,7 @@ func (lp *Loadpoint) createSession() {
 		lp.session.Vehicle = lp.GetTitle()
 	}
 
-	if c, ok := lp.charger.(api.Identifier); ok {
+	if c, ok := api.Cap[api.Identifier](lp.charger); ok {
 		if id, err := c.Identify(); err == nil {
 			lp.session.Identifier = id
 		}
@@ -73,12 +76,12 @@ func (lp *Loadpoint) stopSession() {
 		s.MeterStop = &meterStop
 	}
 
-	s.SolarPercentage = lo.ToPtr(lp.energyMetrics.SolarPercentage())
+	s.SolarPercentage = new(lp.energyMetrics.SolarPercentage())
 	s.Price = lp.energyMetrics.Price()
 	s.PricePerKWh = lp.energyMetrics.PricePerKWh()
 	s.Co2PerKWh = lp.energyMetrics.Co2PerKWh()
 	s.ChargedEnergy = lp.energyMetrics.TotalWh() / 1e3
-	s.ChargeDuration = lo.ToPtr(lp.chargeDuration.Abs())
+	s.ChargeDuration = new(lp.chargeDuration.Abs())
 
 	lp.db.Persist(s)
 }

@@ -9,8 +9,10 @@ requirements:
 params:
   - name: usage
     choice: ["grid", "pv", "battery"]
-    allinone: true
   - name: host
+  - name: port
+    default: 8899
+    required: true
   - name: externalpower
     type: bool
     description:
@@ -39,7 +41,7 @@ params:
     default: 30s
 render: |
   type: rct
-  uri: {{ .host }}
+  uri: {{ .host }}:{{ .port }}
   usage: {{ .usage }}
   cache: {{ .cache }}
   {{- include "battery-params" . }}

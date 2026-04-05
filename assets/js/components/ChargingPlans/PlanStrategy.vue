@@ -1,7 +1,13 @@
 <template>
-	<div class="strategy-wrapper" :class="{ open: show }">
-		<div class="strategy-content">
-			<div class="row">
+	<div class="collapsible-wrapper" :class="{ open: show }">
+		<div class="collapsible-content pb-3">
+			<div v-if="disabled" class="row mb-4">
+				<div class="small text-muted">
+					<strong class="text-primary">{{ $t("general.note") }}</strong>
+					{{ $t("main.chargingPlan.strategyDisabledDescription") }}
+				</div>
+			</div>
+			<div v-else class="row">
 				<div class="col-12 col-sm-6 col-lg-3 offset-lg-3 mb-3">
 					<div class="row">
 						<label :for="formId('continuous')" class="col-form-label col-5 col-sm-12">
@@ -68,6 +74,7 @@ export default defineComponent({
 		show: Boolean,
 		precondition: { type: Number, default: 0 },
 		continuous: { type: Boolean, default: false },
+		disabled: Boolean,
 	},
 	emits: ["update"],
 	data() {
@@ -135,33 +142,3 @@ export default defineComponent({
 	},
 });
 </script>
-
-<style scoped>
-.strategy-wrapper {
-	display: grid;
-	grid-template-rows: 0fr;
-	margin-bottom: 0;
-	transition:
-		grid-template-rows 0.3s ease 0.2s,
-		margin-bottom 0.3s ease 0.2s;
-}
-
-.strategy-wrapper.open {
-	grid-template-rows: 1fr;
-	margin-bottom: 1rem;
-	transition:
-		grid-template-rows 0.3s ease,
-		margin-bottom 0.3s ease;
-}
-
-.strategy-content {
-	overflow: hidden;
-	opacity: 0;
-	transition: opacity 0.2s ease;
-}
-
-.open .strategy-content {
-	opacity: 1;
-	transition: opacity 0.3s ease 0.2s;
-}
-</style>

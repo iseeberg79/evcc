@@ -10,16 +10,12 @@ capabilities: ["battery-control"]
 params:
   - name: usage
     choice: ["grid", "pv", "battery"]
-    allinone: true
   - name: modbus
     choice: ["rs485", "tcpip"]
     baudrate: 9600
     id: 1
-  - name: storageunit
-    type: int
-    default: 1
-    advanced: true
   - name: maxacpower
+  - name: storageunit
   - preset: battery-params
   - name: includegenport
     type: bool
@@ -193,7 +189,7 @@ render: |
             register:
               address: 166 
               type: writemultiple
-              decode: int32s
+              decode: int16
         - source: const
           value: 0
           set:
@@ -233,7 +229,7 @@ render: |
             register:
               address: 166 
               type: writemultiple
-              decode: int32s
+              decode: int16
         - source: const
           value: 0
           set:
@@ -273,7 +269,7 @@ render: |
             register:
               address: 166 
               type: writemultiple
-              decode: int32s
+              decode: int16
         - source: const
           value: 0
           set:

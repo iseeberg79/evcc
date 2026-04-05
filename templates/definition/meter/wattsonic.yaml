@@ -9,7 +9,6 @@ capabilities: ["battery-control"]
 params:
   - name: usage
     choice: ["grid", "pv", "battery"]
-    allinone: true
   - name: modbus
     choice: ["rs485"]
     port: 502
@@ -104,6 +103,7 @@ render: |
     source: modbus
     {{- include "modbus" . | indent 2 }}
     delay: {{ .delay }}
+    scale: 0.01
     register:
       address: 43000    # SOC
       type: holding
