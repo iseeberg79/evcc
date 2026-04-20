@@ -733,9 +733,7 @@ func (c *Easee) Phases1p3p(phases int) error {
 			data.DynamicCircuitCurrentP3 = &max3
 		}
 
-		// Pause charging before switching phases to prevent overcurrent: the car
-		// may still be drawing at its previous 1p current when the new (lower)
-		// per-phase DCC limit is applied after the switch. Loadpoint will
+		// Car must stop charging during a phase transition; loadpoint will
 		// re-enable via syncCharger, same as the charger-level path below.
 		if err := c.Enable(false); err != nil {
 			return err
