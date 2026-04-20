@@ -4,23 +4,27 @@ requirements:
 products:
   - brand: GoodWe
     description:
-      generic: EH/BT/BH Hybrid Inverter (WiFi)
+      generic: ET/EH/BT/BH Hybrid Inverter (WiFi)
 params:
   - name: usage
     choice: ["grid", "pv", "battery"]
   - name: host
+  - name: uri
+    deprecated: true
 render: |
   type: custom
   {{- if eq .usage "grid" }}
   power:
     source: aa55udp
-    host: {{ .host }}
+    host: {{ or .host .uri }}
+    id: 247
     register: 35139
     count: 2
     decode: int32be
   energy:
     source: aa55udp
-    host: {{ .host }}
+    host: {{ or .host .uri }}
+    id: 247
     register: 36017
     count: 2
     decode: float32be
@@ -29,13 +33,15 @@ render: |
   {{- if eq .usage "pv" }}
   power:
     source: aa55udp
-    host: {{ .host }}
+    host: {{ or .host .uri }}
+    id: 247
     register: 35137
     count: 2
     decode: int32be
   energy:
     source: aa55udp
-    host: {{ .host }}
+    host: {{ or .host .uri }}
+    id: 247
     register: 35191
     count: 2
     decode: uint32be
@@ -44,20 +50,23 @@ render: |
   {{- if eq .usage "battery" }}
   power:
     source: aa55udp
-    host: {{ .host }}
+    host: {{ or .host .uri }}
+    id: 247
     register: 35182
     count: 2
     decode: int32be
   energy:
     source: aa55udp
-    host: {{ .host }}
+    host: {{ or .host .uri }}
+    id: 247
     register: 35209
     count: 2
     decode: uint32be
     scale: 0.1
   soc:
     source: aa55udp
-    host: {{ .host }}
+    host: {{ or .host .uri }}
+    id: 247
     register: 37007
     count: 1
     decode: uint16be
