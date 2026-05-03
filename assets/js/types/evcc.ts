@@ -1,6 +1,8 @@
 import type { StaticPlan, RepeatingPlan, PlanStrategy } from "../components/ChargingPlans/types";
 import type { ForecastSlot, SolarDetails } from "../components/Forecast/types";
 
+export const GRID_CONTROL = "gridcontrol";
+
 // react-native-webview
 interface WebView {
   postMessage: (message: string) => void;
@@ -37,12 +39,6 @@ export interface HemsConfig {
   type: string;
 }
 
-export interface HemsStatus {
-  maxPower: number;
-}
-
-export type Hems = ConfigStatus<HemsConfig, HemsStatus>;
-
 export interface ShmConfig {
   vendorId: string;
   deviceId: string;
@@ -53,6 +49,18 @@ export interface FatalError {
   class?: string;
   device?: string;
 }
+
+export type StatisticsPeriod = "30d" | "365d" | "thisYear" | "total";
+export type StatisticsIndicator = "none" | "solar" | "price" | "savings" | "co2" | "co2saved";
+
+export interface StatisticsData {
+  avgCo2: number;
+  avgPrice: number;
+  chargedKWh: number;
+  solarPercentage: number;
+}
+
+export type Statistics = Record<StatisticsPeriod, StatisticsData>;
 
 export interface State {
   offline: boolean;
@@ -67,9 +75,11 @@ export interface State {
   authProviders?: AuthProviders;
   evopt?: EvOpt;
   version?: string;
+  availableVersion?: string;
   system?: string;
   timezone?: string;
   battery?: Battery;
+  batteryMode?: BATTERY_MODE;
   pv?: Meter[];
   aux?: Meter[];
   ext?: Meter[];
@@ -80,21 +90,32 @@ export interface State {
   tariffSolar?: number;
   mqtt?: MqttConfig;
   influx?: InfluxConfig;
-  hems?: ConfigStatus<HemsConfig, HemsStatus>;
+  hems?: ConfigStatus<HemsConfig, unknown>;
   shm?: ShmConfig;
   sponsor?: ConfigStatus<unknown, SponsorStatus>;
   eebus?: ConfigStatus<EebusConfig, EebusStatus>;
+  remote?: Remote;
   modbusproxy?: ModbusProxy[];
   messaging?: ConfigStatus<unknown, unknown>;
   messagingEvents?: MessagingEvents;
   interval?: number;
   circuits?: Record<string, Circuit>;
+  bufferSoc?: number;
+  prioritySoc?: number;
+  bufferStartSoc?: number;
+  batteryDischargeControl?: boolean;
+  batteryGridChargeLimit?: number | null;
+  smartCostAvailable?: boolean;
+  smartCostType?: SMART_COST_TYPE;
   siteTitle?: string;
   vehicles: Record<string, Vehicle>;
+  statistics?: Statistics;
   authDisabled?: boolean;
   config?: string;
   database?: string;
   ocpp?: Ocpp;
+  optimizer?: boolean;
+  mcp?: boolean;
 }
 
 export interface ConfigStatus<C, S> {
@@ -138,12 +159,15 @@ export interface Config {
 }
 
 export interface Circuit {
-  name: string;
-  maxPower: number;
-  power?: number;
-  maxCurrent: number;
+  title?: string;
+  icon?: string;
+  parent?: string;
+  power: number;
   current?: number;
-  config?: Config;
+  maxPower?: number;
+  maxCurrent?: number;
+  dimmed?: boolean;
+  curtailed?: boolean;
 }
 
 export interface Entity {
@@ -264,6 +288,7 @@ export interface Loadpoint {
   limitSoc: number;
   maxCurrent: number;
   minCurrent: number;
+  minSocNotReached: boolean;
   mode: CHARGE_MODE;
   offeredCurrent: number;
   phaseAction: PHASE_ACTION;
@@ -301,6 +326,7 @@ export interface Loadpoint {
   vehicleSoc: number;
   vehicleTitle: string;
   vehicleWelcomeActive: boolean;
+  batteryBoostLimit: number;
 }
 
 export interface UiLoadpoint extends Loadpoint {
@@ -312,6 +338,18 @@ export interface UiLoadpoint extends Loadpoint {
   visible: boolean;
   lastSmartCostLimit: number | undefined;
   lastSmartFeedInPriorityLimit: number | undefined;
+  range: number;
+  vehicleRange: number;
+  vehicleSoc: number;
+  capacity: number;
+  vehicleKnown: boolean;
+  vehicleHasSoc: boolean;
+  socBasedCharging: boolean;
+  socBasedPlanning: boolean;
+  sessionInfo: SessionInfoKey | undefined;
+  rangePerSoc: number | undefined;
+  socPerKwh: number;
+  vehicleNotReachable: boolean;
 }
 
 export enum THEME {
@@ -355,6 +393,13 @@ export enum CHARGE_MODE {
   NOW = "now",
   MINPV = "minpv",
   PV = "pv",
+}
+
+export enum BATTERY_MODE {
+  UNKNOWN = "unknown",
+  NORMAL = "normal",
+  HOLD = "hold",
+  CHARGE = "charge",
 }
 
 export enum PHASES {
@@ -455,6 +500,29 @@ export type Certificate = {
   private: string;
 };
 
+export type Remote = ConfigStatus<RemoteConfig, RemoteStatus>;
+
+export type RemoteConfig = {
+  enabled: boolean;
+};
+
+export type RemoteStatus = {
+  connected: boolean;
+  url?: string;
+  loginBlocked: boolean;
+  lastSeen?: Record<string, string>;
+};
+
+export type RemoteClient = {
+  username: string;
+  createdAt: string;
+  expiresAt?: string;
+};
+
+export type RemoteClientCreated = RemoteClient & {
+  password: string;
+};
+
 export type Eebus = ConfigStatus<EebusConfig, EebusStatus>;
 
 export type EebusConfig = {
@@ -526,7 +594,7 @@ export interface Battery {
   power: number;
   capacity: number;
   soc: number;
-  devices: BatteryMeter[];
+  devices?: BatteryMeter[];
   forecast?: BatteryForecast;
 }
 

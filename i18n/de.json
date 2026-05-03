@@ -40,6 +40,7 @@
     "legendTopName": "Batterieunterstütztes Fahrzeugladen",
     "legendTopSubline": "wenn Hausbatterie über {soc} ist.",
     "modalTitle": "Hausbatterie",
+    "noBattery": "Keine Batterien konfiguriert.",
     "usageTab": "Batterienutzung"
   },
   "config": {
@@ -86,9 +87,9 @@
           "heating": "Benutzerdefinierte Heizung"
         },
         "heatpump": "Benutzerdefinierte Wärmepumpe",
-        "sgready": "Benutzerdefinierte Wärmepumpe (SG-Ready über Plugins)",
+        "sgready": "Benutzerdefinierte Wärmepumpe (sg-ready über Plugins)",
         "sgready-boost": "Benutzerdefinierte Wärmepumpe (sg-ready-boost, veraltet)",
-        "sgready-relay": "Benutzerdefinierte Wärmepumpe (SG-Ready über Relais)",
+        "sgready-relay": "Benutzerdefinierte Wärmepumpe (sg-ready über Relais)",
         "switchsocket": "Benutzerdefinierte schaltbare Steckdose"
       }
     },
@@ -112,6 +113,7 @@
       "title": "Währung"
     },
     "deviceValue": {
+      "activeClients": "Aktive Clients",
       "amount": "Anzahl",
       "broker": "Broker",
       "bucket": "Bucket",
@@ -125,13 +127,15 @@
       "chargedEnergy": "Geladen",
       "co2": "Netz-CO₂",
       "configured": "Konfiguriert",
+      "connected": "Verbunden",
       "connections": "Verbindungen",
       "controllable": "Steuerbar",
       "currency": "Währung",
       "current": "Strom",
       "currentRange": "Strom",
+      "curtailed": "Einspeisung begrenzt",
       "detected": "Erkannt",
-      "dimmed": "Gedimmt",
+      "dimmed": "Verbrauch begrenzt",
       "enabled": "Ladebereit",
       "energy": "Energie",
       "events": "Ereignisse",
@@ -142,6 +146,7 @@
       "hemsActiveLimit": "Aktives Limit",
       "hemsType": "Kommunikation",
       "identifier": "RFID-Kennung",
+      "loginBlocked": "Login-Limit erreicht",
       "max": "max",
       "messengers": "Dienste",
       "no": "Nein",
@@ -153,6 +158,7 @@
       "phases1p3p": "Phasenumschaltung",
       "power": "Leistung",
       "powerRange": "Leistung",
+      "price": "Preis",
       "range": "Reichweite",
       "singlePhase": "Einphasig",
       "soc": "Ladestand",
@@ -222,6 +228,7 @@
       "authPerformHint": "Öffnet ein neues Tab. Anschließend hier weiter machen.",
       "authPrepare": "Verbindung vorbereiten",
       "cancel": "Abbrechen",
+      "change": "Ändern",
       "clear": "Löschen",
       "close": "Schließen",
       "confirmSave": "Es gibt ungespeicherte Änderungen. Jetzt speichern?",
@@ -336,7 +343,7 @@
       "defaultsHintLink": "Einstellungen anpassen",
       "delete": "Löschen",
       "electricalSubtitle": "Im Zweifelsfall Elektriker fragen.",
-      "electricalTitle": "Elektrisch",
+      "electricalTitle": "Elektrik",
       "energyMeterHelp": "Zusätzlicher Zähler, wenn die Wallbox keinen integrierten hat.",
       "energyMeterLabel": "Energiezähler",
       "estimateLabel": "Ladestand zwischen API-Updates interpolieren",
@@ -422,9 +429,16 @@
       "welcomeBannerText": "Lege zunächst eine **Wallbox**, **Heizung**, **Netzzähler**, **Solar**, **Batterie** oder **zusätzlichen Zähler** an. Falls du nur testen möchtest, wähle ein **Demogerät**.",
       "welcomeBannerTitle": "Los geht's mit der Konfiguration!"
     },
+    "mcp": {
+      "description": "Stellt einen Model Context Protocol Server bereit. Damit können KI-Assistenten wie Claude den Zustand deines Systems auslesen und das Laden steuern.",
+      "exampleLabel": "Beispiel: Claude CLI",
+      "restartHint": "Wird nach Neustart verfügbar.",
+      "title": "MCP Server",
+      "url": "MCP-Endpunkt"
+    },
     "messaging": {
       "addMessenger": "Dienst hinzufügen",
-      "description": "Benachrichtigungen über Ladevorgänge und andere Ereignisse erhalten.",
+      "description": "Benachrichtigungen über Ladevorgänge erhalten.",
       "event": {
         "asleep": {
           "messageDefault": "Ladefreigabe, Fahrzeug {vehicleName} lädt nicht.",
@@ -596,6 +610,12 @@
       "url": "Server-URL",
       "urlHelp": "Kopiere diese URL in die Konfiguration deiner Wallbox. Details findest du im Handbuch des Herstellers. Die Wallbox sollte automatisch ihre eindeutige Kennung (Station-ID) an die URL anhängen. In seltenen Fällen musst du die Kennung manuell angeben. Beispiel: `{url}`"
     },
+    "optimizer": {
+      "description": "Analysiert Solarprognose, Strompreise und deinen typischen Verbrauch, um Batterie- und Ladestrategie zu optimieren. Daten werden zur Berechnung an den evcc Optimierungsdienst übertragen. Berechnet und visualisiert aktuell nur. Steuert noch keine Geräte.",
+      "enable": "Optimizer aktivieren",
+      "info": "Es kann einige Minuten dauern, bis der Optimizer-Menüeintrag sichtbar wird. Bei neuen Installationen kann es bis zu 24 Stunden dauern, bis evcc genügend Daten gesammelt hat.",
+      "title": "Optimizer"
+    },
     "options": {
       "boolean": {
         "no": "nein",
@@ -621,7 +641,39 @@
     },
     "pv": {
       "titleAdd": "PV-Anlage hinzufügen",
-      "titleEdit": "PV-Anlage bearbeiten"
+      "titleEdit": "PV-Zähler bearbeiten"
+    },
+    "remote": {
+      "active": "Aktiv",
+      "addClient": "Client hinzufügen",
+      "addClientDescription": "Zugangsdaten werden ausschließlich lokal auf deiner evcc-Instanz gespeichert und überprüft.",
+      "addClientTitle": "Remote-Client hinzufügen",
+      "clientCreated": "Client erstellt",
+      "clients": "Clients",
+      "confirmDelete": "Client löschen?",
+      "connected": "Verbunden",
+      "createClient": "Client erstellen",
+      "description": "Externer Zugriff auf die evcc-Installation über die evcc-App. Ohne Portfreigabe oder VPN.",
+      "deviceName": "Gerätename",
+      "disconnected": "Nicht verbunden",
+      "done": "Fertig",
+      "enableLabel": "Remotezugriff aktivieren",
+      "expiration": "Ablauf",
+      "expirationNone": "Nie",
+      "expired": "abgelaufen",
+      "expiresIn": "läuft {time} ab",
+      "lastActive": "aktiv {time}",
+      "loginBlocked": "Remote-Logins sind wegen zu vieler fehlgeschlagener Anmeldeversuche für eine Minute gesperrt.",
+      "manualLogin": "Oder melde dich manuell unter {url} in deinem Browser mit diesen Zugangsdaten an:",
+      "noClients": "Noch keine Clients. Niemand kann sich verbinden.",
+      "password": "Passwort",
+      "passwordOnce": "Dieses Passwort wird nur einmal angezeigt. QR-Code scannen oder jetzt kopieren. Es wird später nicht mehr angezeigt.",
+      "qrInstall": "Installiere die evcc-App für {ios} oder {android}.",
+      "qrScan": "Scanne den Code mit der Kamera deines Smartphones, um dich zu verbinden. Klicke ihn an, wenn du bereits dein Handy nutzt.",
+      "removeClient": "Client entfernen",
+      "title": "Remotezugriff",
+      "url": "Öffentliche URL",
+      "username": "Benutzername"
     },
     "section": {
       "additionalMeter": "Zusätzliche Zähler",
@@ -638,20 +690,26 @@
       "cardTitle": "Sunny Home Manager",
       "description": "evcc ist mit einer Integration für den SMA Sunny Home Manager (SHM) mittels SEMP-Protokoll ausgestattet. Wenn dieser im selben Netzwerk läuft, sollte dir nach der Anmeldung in deinem Sunny Portal-Konto automatisch angeboten werden, alle in evcc konfigurierten Ladepunkte als neu erkannte Verbraucher hinzuzufügen. Alles sollte sofort einsatzbereit sein, ohne dass hier weitere Anpassungen erforderlich sind.",
       "descriptionDeviceId": "12-stelliger HEX-String. Präfix für alle Geräte (Ladepunkt, ..).",
+      "descriptionDeviceSerial": "12-stelliger HEX-String. Basisseriennummer für alle Geräte (Ladepunkt, ..). Standardmäßig leitet evcc diese aus der MAC-Addresse des Hosts ab.",
       "descriptionIdPattern": "Kennungsmuster",
       "descriptionIds": "Im Sunny Portal benötigt jeder Verbraucher (Ladepunkt, ..) eine eindeutige Kennung. evcc generiert basierend auf deiner Hardware eine eindeutige Kennung. Wenn du evcc auf andere Hardware migrierst, kann sich diese Kennung ändern. Um die Historie zu erhalten, kannst du die generierten Kennungen hier überschreiben. Öffne die SEMP-URL (/semp), um deine aktuellen Kennungen zu überprüfen.",
       "descriptionSempUrl": "SEMP-URL",
       "descriptionVendorId": "8-stelliger HEX-String. Allgemeines Präfix aller Entitäten. Standardmäßig verwendet evcc seine eigene interne Hersteller-ID.",
       "labelDeviceId": "Geräte-ID",
+      "labelDeviceSerial": "Geräteseriennummer",
       "labelVendorId": "Hersteller-ID",
       "title": "SMA Sunny Home Manager"
     },
     "sponsor": {
+      "activationKey": "Lizenzschlüssel",
+      "activationKeyHint": "Per E-Mail zugesandt. Kann im {url} gefunden werden.",
       "addToken": "Token eingeben",
       "changeToken": "Token ändern",
       "description": "Das Sponsoring-Modell hilft uns, das Projekt zu pflegen und nachhaltig neue und spannende Funktionen zu entwickeln. Als Sponsor erhältst du Zugriff auf alle Wallbox-Implementierungen.",
-      "descriptionToken": "Als Sponsor erhältst du dein Token auf {url}. Zum Ausprobieren gibts ein {trialToken}.",
-      "enterYourToken": "Token eingeben",
+      "descriptionToken": "Als GitHub-Sponsor findest du dein Token auf {url}. Zum Ausprobieren gibt's ein {trialToken}.",
+      "email": "E-Mail",
+      "emailHint": "E-Mail-Adresse, die du für {url} verwendet hast",
+      "enterYourToken": "Dein Sponsor Token",
       "error": "Das Sponsortoken ist ungültig.",
       "invalid": "ungültig",
       "labelToken": "Sponsortoken",
@@ -662,7 +720,7 @@
       "tokenRequiredShort": "Kein Sponsortoken konfiguriert.",
       "trialToken": "Testtoken",
       "viaYaml": "über evcc.yaml",
-      "yourToken": "Dein Token"
+      "yourToken": "Sponsor Token"
     },
     "system": {
       "backupRestore": {
@@ -842,6 +900,15 @@
       "configurePriceCo2": "Lerne Preis und CO₂-Emissionen zu konfigurieren.",
       "footerLong": "{percent} Sonnenenergie",
       "footerShort": "{percent} Sonne",
+      "indicator": {
+        "co2": "CO₂-Emissionen",
+        "co2saved": "CO₂ eingespart",
+        "none": "keine",
+        "price": "Energiepreis",
+        "savings": "Ersparnis",
+        "solar": "Solarenergie"
+      },
+      "indicatorLabel": "Header-Info",
       "modalTitle": "Auswertung Ladeenergie",
       "moneySaved": "{value} gespart",
       "percentGrid": "{grid} kWh Netz",
@@ -853,10 +920,11 @@
         "thisYear": "dieses Jahr",
         "total": "gesamt"
       },
-      "periodLabel": "Zeitraum:",
+      "periodLabel": "Zeitraum",
       "priceTitle": "Energiepreis",
       "referenceGrid": "Netz",
-      "referenceLabel": "Referenzdaten:",
+      "referenceLabel": "Referenzdaten",
+      "sessionInfo": "Basierend auf abgeschlossenen Ladevorgängen.",
       "tabTitle": "Meine Daten"
     },
     "sponsor": {
@@ -882,15 +950,26 @@
     },
     "version": {
       "availableLong": "neue Version verfügbar",
+      "community": "evcc Community",
+      "labelRelease": "Release",
+      "labelVersion": "Version",
+      "labelWebsite": "Website",
+      "latestVersion": "aktuelle Version",
+      "madeByCommunity": "Entwickelt von der {0}.",
       "modalCancel": "Abbrechen",
       "modalDownload": "Download",
       "modalInstalledVersion": "Installierte Version",
+      "modalLatest": "Du verwendest bereits die aktuellste Version.",
+      "modalNextRelease": "Was ist neu im nächsten Release",
       "modalNoReleaseNotes": "Keine Versionshinweise verfügbar. Mehr Informationen zur neuen Version:",
       "modalTitle": "Neue Version verfügbar",
       "modalUpdate": "Installieren",
       "modalUpdateNow": "Jetzt installieren",
       "modalUpdateStarted": "Starte die neue Version von evcc…",
-      "modalUpdateStatusStart": "Installation gestartet:"
+      "modalUpdateStatusStart": "Installation gestartet:",
+      "modalViewOnGitHub": "Auf GitHub ansehen",
+      "openSource": "Open Source",
+      "poweredByOpenSource": "Unterstützt von {0}."
     }
   },
   "forecast": {
@@ -900,6 +979,13 @@
       "lowestHour": "Sauberste Stunde",
       "range": "Bereich"
     },
+    "empty": {
+      "co2": "Erfahre, wann Netzstrom in deiner Region sauber ist. Ladepläne werden auf niedrige Emissionen optimiert und CO₂-Einsparungen berechnet.",
+      "price": "Dynamischen Stromtarif konfigurieren, um Ladepläne automatisch zu optimieren und Einsparungen zu berechnen.",
+      "setup": "Tarife und Vorhersagen einrichten",
+      "solar": "Erwartete Solarproduktion für heute und die nächsten Tage. Wird in Zukunft auch für die automatische Ladeoptimierung verwendet."
+    },
+    "hideLine": "Linie ausblenden",
     "modalTitle": "Vorhersage",
     "price": {
       "average": "Durchschnitt",
@@ -907,6 +993,8 @@
       "lowestHour": "Günstigste Stunde",
       "range": "Bereich"
     },
+    "priceZoom": "vergrößern",
+    "showLine": "Linie anzeigen",
     "solar": {
       "dayAfterTomorrow": "Übermorgen",
       "partly": "teilweise",
@@ -915,10 +1003,12 @@
       "tomorrow": "Morgen"
     },
     "solarAdjust": "Solarprognose anhand der realen Produktionsdaten anpassen{percent}.",
+    "solarAdjustMedium": "an reale Produktionsdaten anpassen",
+    "solarAdjustShort": "anpassen",
     "type": {
-      "co2": "CO₂",
-      "price": "Preis",
-      "solar": "Solar"
+      "co2": "CO₂-Emissionen",
+      "price": "Netzpreis",
+      "solar": "Solarproduktion"
     }
   },
   "general": {
@@ -1124,6 +1214,7 @@
         "once": "Boost ist für diesen Ladevorgang aktiviert.",
         "stateActive": "Batterie Boost aktiv",
         "stateBelowLimit": "Batterie zu niedrig für Boost",
+        "stateHold": "Batterie gesperrt",
         "stateReady": "Batterie Boost bereit"
       },
       "batteryUsage": "Hausbatterie",
@@ -1233,6 +1324,7 @@
       "batteryBoostBelowLimit": "Batterie zu niedrig für Boost.",
       "batteryBoostDisabled": "Batterie Boost deaktiviert.",
       "batteryBoostEnabled": "Boost bis Batterie bei {limit}.",
+      "batteryBoostHold": "Batterie gesperrt. Boost nicht verfügbar.",
       "charging": "Ladevorgang aktiv …",
       "cheapEnergyCharging": "Günstige Energie verfügbar.",
       "cheapEnergyNextStart": "Günstige Energie in {duration}.",
@@ -1257,6 +1349,7 @@
       "targetChargeWaitForVehicle": "Ladeplan bereit. Warte auf Fahrzeug …",
       "vehicleLimit": "Fahrzeuglimit",
       "vehicleLimitReached": "Fahrzeuglimit erreicht.",
+      "waitForAuthorization": "Verbunden. Warte auf Autorisierung …",
       "waitForVehicle": "Ladebereit. Warte auf Fahrzeug …",
       "welcome": "Kurze initiale Ladung zur Bestätigung der Verbindung."
     },
@@ -1364,6 +1457,7 @@
     },
     "loadpoint": "Ladepunkt",
     "noData": "Noch keine Ladevorgänge in diesem Monat.",
+    "odometer": "Kilometerstand",
     "overview": "Übersicht",
     "period": {
       "month": "Monat",
@@ -1471,5 +1565,13 @@
     "lineErrorLink": "Zeile {0}",
     "restartButton": "Neu starten",
     "title": "Fehler beim Starten"
+  },
+  "tabBar": {
+    "battery": "Batterie",
+    "charge": "Laden",
+    "comingSoon": "Diese Seite ist in Arbeit.",
+    "forecast": "Vorhersage",
+    "more": "Mehr",
+    "sessions": "Ladungen"
   }
 }
