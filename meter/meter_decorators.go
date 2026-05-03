@@ -8,7 +8,7 @@ import (
 	"github.com/evcc-io/evcc/api"
 )
 
-func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCurrents func() (float64, float64, float64, error), phaseVoltages func() (float64, float64, float64, error), phasePowers func() (float64, float64, float64, error), maxACPowerGetter func() float64, curtailer0 func(bool) error, curtailer1 func() (bool, error)) api.Meter {
+func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCurrents func() (float64, float64, float64, error), phaseVoltages func() (float64, float64, float64, error), phasePowers func() (float64, float64, float64, error), maxACPowerGetter func() float64) api.Meter {
 	caps := make(map[reflect.Type]any)
 
 	if meterEnergy != nil {
@@ -31,10 +31,6 @@ func decorateMeter(base api.Meter, meterEnergy func() (float64, error), phaseCur
 		caps[reflect.TypeFor[api.MaxACPowerGetter]()] = &decorateMeterMaxACPowerGetterImpl{maxACPowerGetter: maxACPowerGetter}
 	}
 
-	if curtailer0 != nil && curtailer1 != nil {
-		caps[reflect.TypeFor[api.Curtailer]()] = &decorateMeterCurtailerImpl{curtailer0: curtailer0, curtailer1: curtailer1}
-	}
-
 	if len(caps) == 0 {
 		return base
 	}
@@ -55,18 +51,6 @@ func (d *decorateMeterCapable) Capability(typ reflect.Type) (any, bool) {
 	return c, ok
 }
 
-type decorateMeterCurtailerImpl struct {
-	curtailer0 func(bool) error
-	curtailer1 func() (bool, error)
-}
-
-func (impl *decorateMeterCurtailerImpl) Curtail(p0 bool) error {
-	return impl.curtailer0(p0)
-}
-
-func (impl *decorateMeterCurtailerImpl) Curtailed() (bool, error) {
-	return impl.curtailer1()
-}
 
 type decorateMeterMaxACPowerGetterImpl struct {
 	maxACPowerGetter func() float64

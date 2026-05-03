@@ -119,7 +119,7 @@ func NewDanfossTLX(ctx context.Context, cfg comlynx.Config, maxACPower func() fl
 		_ = conn.Close()
 	}()
 
-	return decorateMeter(m, totalEnergy, currents, voltages, powers, maxACPower, nil, nil), nil
+	return decorateMeter(m, totalEnergy, currents, voltages, powers, maxACPower), nil
 }
 
 func (m *DanfossTLX) CurrentPower() (float64, error) {

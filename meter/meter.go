@@ -3,6 +3,7 @@ package meter
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/meter/measurement"
@@ -142,16 +143,18 @@ func (m *Meter) Decorate(
 	maxACPower func() float64,
 	curtailer api.Curtailer,
 ) api.Meter {
-	var curtailF func(bool) error
-	var curtailedF func() (bool, error)
-	if curtailer != nil {
-		curtailF = curtailer.Curtail
-		curtailedF = curtailer.Curtailed
+	res := decorateMeter(m, totalEnergy, currents, voltages, powers, maxACPower)
+	if curtailer == nil {
+		return res
 	}
-	return decorateMeter(m,
-		totalEnergy, currents, voltages, powers,
-		maxACPower, curtailF, curtailedF,
-	)
+	if capable, ok := res.(*decorateMeterCapable); ok {
+		capable.caps[reflect.TypeFor[api.Curtailer]()] = curtailer
+		return capable
+	}
+	return &decorateMeterCapable{
+		Meter: m,
+		caps:  map[reflect.Type]any{reflect.TypeFor[api.Curtailer](): curtailer},
+	}
 }
 
 func (m *Meter) DecorateBattery(
