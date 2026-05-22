@@ -419,9 +419,6 @@ func (c *Easee) ProductUpdate(i json.RawMessage) {
 			c.obsTime[easee.SESSION_ENERGY] = time.Now()
 		}
 
-		if opMode == easee.ModeError {
-			c.log.ERROR.Printf("charger error (opMode %d)", opMode)
-		}
 		c.opMode = opMode
 
 		// startup completed
@@ -484,8 +481,6 @@ func (c *Easee) Status() (api.ChargeStatus, error) {
 		res = api.StatusB
 	case easee.ModeCharging:
 		res = api.StatusC
-	case easee.ModeError:
-		res = api.StatusB
 	default:
 		return res, fmt.Errorf("invalid opmode: %d", c.opMode)
 	}
