@@ -165,6 +165,7 @@ export default defineComponent({
 		chargerStatusReason: String as PropType<CHARGER_STATUS_REASON | null>,
 		chargerFeatureIntegratedDevice: Boolean,
 		chargerFeatureHeating: Boolean,
+		chargerFeatureContinuous: Boolean,
 		chargerIcon: String as PropType<string | null>,
 
 		// vehicle
@@ -273,6 +274,9 @@ export default defineComponent({
 		},
 		heating() {
 			return this.chargerFeatureHeating;
+		},
+		continuous() {
+			return this.chargerFeatureContinuous;
 		},
 		phasesProps() {
 			return this.collectProps(Phases);

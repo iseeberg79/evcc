@@ -133,6 +133,7 @@ export default defineComponent({
 		batteryMode: String as PropType<BATTERY_MODE>,
 		enabled: Boolean,
 		heating: Boolean,
+		continuous: Boolean,
 		id: [String, Number],
 		integratedDevice: Boolean,
 		limitEnergy: Number,
