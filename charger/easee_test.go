@@ -218,46 +218,6 @@ func TestEasee_waitForDynamicChargerCurrent(t *testing.T) {
 	}
 }
 
-func TestEasee_waitForOpMode(t *testing.T) {
-	testCases := []struct {
-		targetMode  int
-		updateState bool
-		sendObs     bool
-		expectErr   error
-	}{
-		{easee.ModeCharging, false, false, nil},           // short circuit, already in target mode
-		{easee.ModeAwaitingStart, true, true, nil},        // normal flow
-		{easee.ModeAwaitingStart, false, false, api.ErrTimeout}, // missing state change
-		{easee.ModeAwaitingStart, true, false, nil},       // late landing state change (transition without Obs)
-	}
-
-	for _, tc := range testCases {
-		t.Logf("%+v", tc)
-
-		e := newEasee()
-		e.opMode = easee.ModeCharging
-
-		if tc.updateState {
-			go func() {
-				e.opMode = easee.ModeAwaitingStart
-				if tc.sendObs {
-					e.obsC <- easee.Observation{
-						ID: easee.CHARGER_OP_MODE,
-					}
-				}
-			}()
-		}
-
-		err := e.waitForOpMode(tc.targetMode)
-
-		if tc.expectErr != nil {
-			assert.EqualError(t, err, tc.expectErr.Error())
-		} else {
-			assert.NoError(t, err)
-		}
-	}
-}
-
 func TestEasee_StatusReason(t *testing.T) {
 	testcases := []struct {
 		opMode         int

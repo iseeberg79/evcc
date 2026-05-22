@@ -554,10 +554,7 @@ func (c *Easee) Enable(enable bool) (err error) {
 	}
 
 	if enable {
-		// wait for ModeCharging: Easee drops DCC commands during resume transition
-		if err := c.waitForOpMode(easee.ModeCharging); err != nil {
-			return err
-		}
+		// reset currents after enable, as easee automatically resets to maxA
 		return c.MaxCurrent(int64(c.current))
 	}
 
@@ -599,31 +596,6 @@ func (c *Easee) waitForChargerEnabledState(expEnabled bool) error {
 			}
 		case <-timer.C: // time is up, bail after one final check
 			if c.inExpectedOpMode(expEnabled) {
-				return nil
-			}
-			return api.ErrTimeout
-		}
-	}
-}
-
-func (c *Easee) waitForOpMode(mode int) error {
-	check := func() bool {
-		c.mux.RLock()
-		defer c.mux.RUnlock()
-		return c.opMode == mode
-	}
-	if check() {
-		return nil
-	}
-	timer := time.NewTimer(c.Client.Timeout)
-	for {
-		select {
-		case obs := <-c.obsC:
-			if obs.ID == easee.CHARGER_OP_MODE && check() {
-				return nil
-			}
-		case <-timer.C:
-			if check() {
 				return nil
 			}
 			return api.ErrTimeout
