@@ -69,9 +69,28 @@ func NewFromConfig(ctx context.Context, other map[string]any, s site.API) (*Smar
 	}, nil
 }
 
-// ConsumptionLimit implements hems.API. Octopus smart charge does not impose a consumption limit.
-func (s *SmartCharge) ConsumptionLimit() float64 {
-	return 0
+// SetUpdated implements api.HEMS.
+func (s *SmartCharge) SetUpdated(func()) {
+}
+
+// Curtailed implements hems.API. Octopus smart charge does not curtail.
+func (s *SmartCharge) Curtailed() *bool {
+    return nil
+}
+
+// Dimmed implements hems.API.
+func (s *SmartCharge) Dimmed() *bool {
+    return nil
+}
+
+// MaxConsumptionPower implements api.HEMS.
+func (s *SmartCharge) MaxConsumptionPower() float64 {
+    return 0
+}
+
+// MaxProductionPower implements api.HEMS.
+func (s *SmartCharge) MaxProductionPower() *float64 {
+    return nil
 }
 
 // Run implements hems.API.
