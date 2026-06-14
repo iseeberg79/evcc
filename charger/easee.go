@@ -554,28 +554,6 @@ func (c *Easee) Enable(enable bool) (err error) {
 	}
 
 	if enable {
-		if c.current > 0 && c.current < 7 {
-			override := 7.0
-			chargerData := easee.ChargerSettings{
-				DynamicChargerCurrent: &override,
-			}
-			chargerURI := fmt.Sprintf("%s/chargers/%s/settings", easee.API, c.charger)
-			noop, sendErr := c.dispatcher.Send(chargerURI, chargerData)
-			if sendErr != nil {
-				c.log.WARN.Printf("enable: failed to set charger current override: %v", sendErr)
-			} else if !noop {
-				if waitErr := c.waitForDynamicChargerCurrent(override); waitErr != nil {
-					c.log.WARN.Printf("enable: charger current override confirmation timeout: %v", waitErr)
-				}
-			}
-
-			c.mux.Lock()
-			c.current = override
-			c.mux.Unlock()
-
-			return nil
-		}
-
 		// reset currents after enable, as easee automatically resets to maxA
 		return c.MaxCurrent(int64(c.current))
 	}
@@ -793,10 +771,9 @@ func (c *Easee) Phases1p3p(phases int) error {
 			c.dispatcher.CancelOrphan(easee.CIRCUIT_MAX_CURRENT_P1)
 		}
 
-		// Newer firmware delays ~5 min when charging starts at 6A.
-		// Send DCC:7 after any phase switch so the charger starts immediately.
+		// Sending DCC:7 to skip charge pause after scaling down to 1p.
 		// The loadpoint's next control interval will send the real target current.
-		if err == nil {
+		if err == nil && phases == 1 {
 			override := 7.0
 			chargerData := easee.ChargerSettings{
 				DynamicChargerCurrent: &override,
