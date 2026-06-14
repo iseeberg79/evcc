@@ -162,6 +162,18 @@ render: |
           source: error
           error: ErrNotAvailable
           {{- end }}
+      - case: 4 # holdcharge
+        set:
+          source: http
+          uri: http://{{ .host }}/rest/channel/{{ .battery }}/SetActivePowerGreaterOrEquals
+          auth:
+            type: basic
+            user: x
+            password: {{ .password }}
+          method: POST
+          headers:
+          - content-type: application/json
+          body: '{"value": 0}'
   {{- end }}
   {{- include "battery-params" . }}
   {{- end }}
