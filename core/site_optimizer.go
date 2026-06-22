@@ -822,13 +822,19 @@ func apiError(resp *optimizer.PostOptimizeChargeScheduleResponse) error {
 // applyHoldChargePower calculates the hold charge power for all batteries and publishes as array
 func (site *Site) applyHoldChargePower(dev config.Device[api.Meter]) {
 	totalDeficit := site.calculateTotalDeficit()
+	site.log.INFO.Printf("DEBUG: totalDeficit = %.0f Wh", totalDeficit)
+
 	if totalDeficit <= 0 {
+		site.log.INFO.Printf("DEBUG: totalDeficit <= 0, publishing zeros")
 		site.publish(keys.BatteryHoldChargePower, make([]float64, len(site.batteryMeters)))
 		return
 	}
 
 	estimatedTotalPower := site.estimateTotalHoldChargePower()
+	site.log.INFO.Printf("DEBUG: estimatedTotalPower = %.0f W", estimatedTotalPower)
+
 	if estimatedTotalPower <= 0 {
+		site.log.INFO.Printf("DEBUG: estimatedTotalPower <= 0, publishing zeros")
 		site.publish(keys.BatteryHoldChargePower, make([]float64, len(site.batteryMeters)))
 		return
 	}
@@ -837,14 +843,15 @@ func (site *Site) applyHoldChargePower(dev config.Device[api.Meter]) {
 	for i, battery := range site.batteryMeters {
 		deficit := site.calculateBatteryDeficit(battery)
 		allocatedPower := (deficit / totalDeficit) * estimatedTotalPower
+		site.log.INFO.Printf("DEBUG: battery[%d] deficit=%.0f Wh, allocated=%.0f W", i, deficit, allocatedPower)
 
 		if allocatedPower < 200 {
 			allocatedPower = 0
 		}
-
 		powers[i] = allocatedPower
 	}
 
+	site.log.INFO.Printf("DEBUG: final powers = %v", powers)
 	site.publish(keys.BatteryHoldChargePower, powers)
 
 	for i, battery := range site.batteryMeters {
