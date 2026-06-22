@@ -31,6 +31,13 @@ params:
     choice: ["little", "big"]
     default: little
     advanced: true
+  - name: batteryIndex
+    description:
+      de: Batterie-Index für verteilte Ladeleistung
+      en: Battery index for distributed charge power
+    type: int
+    default: 0
+    advanced: true
   - name: maxacpower
     service: modbus/read?address=531&type=holding&encoding=uint16&{modbus}
   - preset: battery-params
@@ -131,8 +138,9 @@ render: |
           {{- end }}
       - case: 4 # holdcharge
         set:
-          source: const
-          value: 0 # W
+          source: http
+          uri: http://localhost:7070/api/state
+          jq: .batteryHoldChargePower[{{ .batteryIndex }}] // 0
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}

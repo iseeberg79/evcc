@@ -33,6 +33,7 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 		Soc                *plugin.Config // optional
 		LimitSoc           *plugin.Config // optional
 		BatteryMode        *plugin.Config // optional
+
 	}{
 		batterySocLimits: batterySocLimits{
 			MinSoc: 20,

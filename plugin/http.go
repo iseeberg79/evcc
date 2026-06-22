@@ -20,12 +20,14 @@ import (
 
 // HTTP implements HTTP request provider
 type HTTP struct {
+	ctx context.Context
 	*getter
 	*request.Helper
 	url, method string
 	headers     map[string]string
 	body        string
 	pipeline    *pipeline.Pipeline
+	setConfig   *Config
 	mu          *sync.Mutex
 }
 
@@ -47,6 +49,7 @@ func NewHTTPPluginFromConfig(ctx context.Context, other map[string]any) (Plugin,
 		Auth              Auth
 		Timeout           time.Duration
 		Cache             time.Duration
+		Set               *Config
 	}{
 		Headers: make(map[string]string),
 		Method:  http.MethodGet,
@@ -73,9 +76,11 @@ func NewHTTPPluginFromConfig(ctx context.Context, other map[string]any) (Plugin,
 		WithHeaders(cc.Headers).
 		WithBody(cc.Body)
 
+	p.ctx = ctx
 	p.Client.Timeout = cc.Timeout
 
 	p.getter = defaultGetters(p, cc.Scale)
+	p.setConfig = cc.Set
 
 	if cc.Auth.Type != "" || cc.Auth.Source != "" {
 		transport, err := cc.Auth.Transport(ctx, log, p.Client.Transport)
@@ -276,8 +281,28 @@ func (p *HTTP) IntSetter(param string) (func(int64) error, error) {
 
 var _ FloatSetter = (*HTTP)(nil)
 
-// FloatSetter sends int request
+// FloatSetter sends float request or reads float from HTTP and forwards to nested setter
 func (p *HTTP) FloatSetter(param string) (func(float64) error, error) {
+	if p.setConfig != nil {
+		get, err := p.FloatGetter()
+		if err != nil {
+			return nil, err
+		}
+
+		set, err := p.setConfig.FloatSetter(p.ctx, param)
+		if err != nil {
+			return nil, err
+		}
+
+		return func(_ float64) error {
+			val, err := get()
+			if err != nil {
+				return err
+			}
+			return set(val)
+		}, nil
+	}
+
 	return func(val float64) error {
 		return p.set(param, val)
 	}, nil

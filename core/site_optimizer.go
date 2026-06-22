@@ -818,3 +818,195 @@ func apiError(resp *optimizer.PostOptimizeChargeScheduleResponse) error {
 
 	return errors.New(errObj.Message)
 }
+
+// applyHoldChargePower calculates the hold charge power for all batteries and publishes as array
+func (site *Site) applyHoldChargePower(dev config.Device[api.Meter]) {
+	totalDeficit := site.calculateTotalDeficit()
+	site.log.INFO.Printf("DEBUG: totalDeficit = %.0f Wh", totalDeficit)
+
+	if totalDeficit <= 0 {
+		site.log.INFO.Printf("DEBUG: totalDeficit <= 0, publishing zeros")
+		site.publish(keys.BatteryHoldChargePower, make([]float64, len(site.batteryMeters)))
+		return
+	}
+
+	estimatedTotalPower := site.estimateTotalHoldChargePower()
+	site.log.INFO.Printf("DEBUG: estimatedTotalPower = %.0f W", estimatedTotalPower)
+
+	if estimatedTotalPower <= 0 {
+		site.log.INFO.Printf("DEBUG: estimatedTotalPower <= 0, publishing zeros")
+		site.publish(keys.BatteryHoldChargePower, make([]float64, len(site.batteryMeters)))
+		return
+	}
+
+	powers := make([]float64, len(site.batteryMeters))
+	for i, battery := range site.batteryMeters {
+		deficit := site.calculateBatteryDeficit(battery)
+		allocatedPower := (deficit / totalDeficit) * estimatedTotalPower
+		site.log.INFO.Printf("DEBUG: battery[%d] deficit=%.0f Wh, allocated=%.0f W", i, deficit, allocatedPower)
+
+		if allocatedPower < 200 {
+			allocatedPower = 0
+		}
+		powers[i] = allocatedPower
+	}
+
+	site.log.INFO.Printf("DEBUG: final powers = %v", powers)
+	site.publish(keys.BatteryHoldChargePower, powers)
+
+	for i, battery := range site.batteryMeters {
+		if powers[i] > 0 {
+			site.log.DEBUG.Printf("battery %d (%s) hold charge power: %.0f W", i, deviceTitleOrName(battery), powers[i])
+		}
+	}
+}
+
+// calculateTotalDeficit calculates the sum of energy deficits for all batteries
+func (site *Site) calculateTotalDeficit() float64 {
+	var totalDeficit float64
+
+	for _, dev := range site.batteryMeters {
+		deficit := site.calculateBatteryDeficit(dev)
+		totalDeficit += deficit
+	}
+
+	return totalDeficit
+}
+
+// calculateBatteryDeficit calculates the energy deficit for a single battery
+func (site *Site) calculateBatteryDeficit(dev config.Device[api.Meter]) float64 {
+	meter := dev.Instance()
+
+	batSoc, ok := api.Cap[api.Battery](meter)
+	if !ok {
+		return 0
+	}
+
+	currentSoc, err := batSoc.Soc()
+	if err != nil {
+		return 0
+	}
+
+	batCap, ok := api.Cap[api.BatteryCapacity](meter)
+	if !ok {
+		return 0
+	}
+
+	capacity := batCap.Capacity()
+	if capacity == 0 {
+		return 0
+	}
+
+	batLimiter, ok := api.Cap[api.BatterySocLimiter](meter)
+	if !ok {
+		return 0
+	}
+
+	_, maxSoc := batLimiter.GetSocLimits()
+	if maxSoc <= 0 || maxSoc > 100 {
+		maxSoc = 100
+	}
+
+	deficit := capacity * (maxSoc - currentSoc) / 100
+	if deficit <= 0 {
+		return 0
+	}
+
+	return deficit
+}
+
+// estimateTotalHoldChargePower estimates the total required charge power from grid to reach maxSoc by end of PV generation
+func (site *Site) estimateTotalHoldChargePower() float64 {
+	totalDeficit := site.calculateTotalDeficit()
+	if totalDeficit <= 0 {
+		return 0
+	}
+
+	totalMaxChargePower := site.getTotalMaxChargePower()
+	if totalMaxChargePower <= 0 {
+		return 0
+	}
+
+	// get solar forecast rates
+	solarTariff := site.GetTariff(api.TariffUsageSolar)
+	if solarTariff == nil {
+		return 0
+	}
+
+	allRates, err := solarTariff.Rates()
+	if err != nil || len(allRates) == 0 {
+		return 0
+	}
+
+	// filter to future rates only
+	now := time.Now()
+	rates := lo.Filter(allRates, func(r api.Rate, _ int) bool {
+		return r.End.After(now)
+	})
+
+	if len(rates) == 0 {
+		return 0
+	}
+
+	// find cutoff point: when solar power drops below 50W
+	var cutoffTime time.Time
+	for _, r := range rates {
+		if r.Value < 50 {
+			cutoffTime = r.Start
+			break
+		}
+	}
+
+	// if no cutoff found, use last rate
+	if cutoffTime.IsZero() {
+		cutoffTime = rates[len(rates)-1].End
+	}
+
+	// calculate available time for charging
+	availableHours := cutoffTime.Sub(now).Hours()
+	if availableHours <= 0 {
+		return 0
+	}
+
+	// calculate expected solar energy in the available time
+	expectedSolarEnergy := solarEnergy(rates, now, cutoffTime)
+
+	// calculate required charge power (Wh / hours = W)
+	requiredPower := (totalDeficit - expectedSolarEnergy) / availableHours
+
+	// cap at max charge power
+	if requiredPower > totalMaxChargePower {
+		requiredPower = totalMaxChargePower
+	}
+
+	// ensure positive
+	if requiredPower < 0 {
+		requiredPower = 0
+	}
+
+	site.log.DEBUG.Printf(
+		"battery hold charge: deficit=%.0fWh solar=%.0fWh available=%.1fh power=%.0fW max=%.0fW",
+		totalDeficit, expectedSolarEnergy, availableHours, requiredPower, totalMaxChargePower,
+	)
+
+	return requiredPower
+}
+
+// getTotalMaxChargePower returns the sum of max charge power for all batteries
+func (site *Site) getTotalMaxChargePower() float64 {
+	var totalMax float64
+
+	for _, dev := range site.batteryMeters {
+		meter := dev.Instance()
+
+		powerLimiter, ok := api.Cap[api.BatteryPowerLimiter](meter)
+		if !ok {
+			continue
+		}
+
+		maxChargePower, _ := powerLimiter.GetPowerLimits()
+		totalMax += maxChargePower
+	}
+
+	return totalMax
+}

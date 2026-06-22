@@ -45,6 +45,13 @@ params:
       en: active battery control (REST/JSON Write Access)
     usages: ["battery"]
     advanced: true
+  - name: batteryIndex
+    description:
+      de: Batterie-Index für verteilte Ladeleistung
+      en: Battery index for distributed charge power
+    type: int
+    default: 0
+    advanced: true
   - name: watchdog
     default: 60s
     description:
@@ -163,15 +170,19 @@ render: |
       - case: 4 # holdcharge
         set:
           source: http
-          uri: http://{{ .host }}/rest/channel/{{ .battery }}/SetActivePowerGreaterOrEquals
-          auth:
-            type: basic
-            user: x
-            password: {{ .password }}
-          method: POST
-          headers:
-          - content-type: application/json
-          body: '{"value": 0}'
+          uri: http://localhost:7070/api/state
+          jq: .batteryHoldChargePower[{{ .batteryIndex }}] // 0
+          set:
+            source: http
+            uri: http://{{ .host }}/rest/channel/{{ .battery }}/SetActivePowerGreaterOrEquals
+            auth:
+              type: basic
+              user: x
+              password: {{ .password }}
+            method: POST
+            headers:
+            - content-type: application/json
+            body: '{"value": %v}'
   {{- end }}
   {{- include "battery-params" . }}
   {{- end }}
