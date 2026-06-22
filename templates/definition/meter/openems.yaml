@@ -160,6 +160,22 @@ render: |
           source: error
           error: ErrNotAvailable
           {{- end }}
+      - case: 4 # holdcharge
+        set:
+          source: http
+          uri: http://localhost:7070/api/state
+          jq: .batteryHoldChargePower[{{ .batteryIndex }}] // 0
+          set:
+            source: http
+            uri: http://{{ .host }}/rest/channel/{{ .battery }}/SetActivePowerGreaterOrEquals
+            auth:
+              type: basic
+              user: x
+              password: {{ .password }}
+            method: POST
+            headers:
+            - content-type: application/json
+            body: '{"value": {{ . }}}'
   {{- end }}
   {{- include "battery-params" . }}
   {{- end }}

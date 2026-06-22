@@ -140,7 +140,7 @@ render: |
         set:
           source: http
           uri: http://localhost:7070/api/state
-          jq: .batteryHoldChargePower[{{ .batteryIndex }}]
+          jq: .batteryHoldChargePower[{{ .batteryIndex }}] // 0
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}
