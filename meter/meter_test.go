@@ -41,28 +41,3 @@ func TestBattery(t *testing.T) {
 	_, ok = api.Cap[api.BatteryCapacity](m)
 	assert.True(t, ok, "BatteryCapacity")
 }
-func TestHoldChargePower(t *testing.T) {
-	m, err := NewConfigurableFromConfig(t.Context(), map[string]any{
-		"power": map[string]any{
-			"source": "const",
-			"value":  1000,
-		},
-		"capacity": 23,
-		"soc": map[string]any{
-			"source": "const",
-			"value":  47,
-		},
-		"batterymode": map[string]any{
-			"source": "http",
-			"uri":    "http://localhost/batterymode",
-		},
-		"holdchargepower": map[string]any{
-			"source": "http",
-			"uri":    "http://localhost/holdchargepower",
-		},
-	})
-	require.NoError(t, err)
-
-	_, ok := api.Cap[api.BatteryHoldChargePowerLimiter](m)
-	assert.True(t, ok, "BatteryHoldChargePowerLimiter")
-}

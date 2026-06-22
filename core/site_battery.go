@@ -62,8 +62,8 @@ func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate)
 		batteryMode = api.BatteryHold
 	}
 
-	// NOTE: applyBatteryMode is always called when charge mode is active to validate max soc
-	if modeChanged := batteryMode != api.BatteryUnknown; modeChanged || site.batteryMode == api.BatteryCharge {
+	// NOTE: applyBatteryMode is always called when charge mode is active to validate max soc or when in holdcharge mode
+	if modeChanged := batteryMode != api.BatteryUnknown; modeChanged || site.batteryMode == api.BatteryCharge || site.batteryMode == api.BatteryHoldCharge {
 		if err := site.applyBatteryMode(batteryMode); err == nil {
 			if modeChanged {
 				site.SetBatteryMode(batteryMode)

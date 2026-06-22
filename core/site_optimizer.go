@@ -819,37 +819,57 @@ func apiError(resp *optimizer.PostOptimizeChargeScheduleResponse) error {
 	return errors.New(errObj.Message)
 }
 
-// applyHoldChargePower calculates and sets the hold charge power for a battery
+// applyHoldChargePower calculates the hold charge power for all batteries and publishes as array
 func (site *Site) applyHoldChargePower(dev config.Device[api.Meter]) {
-	meter := dev.Instance()
-
-	powerLimiter, ok := api.Cap[api.BatteryHoldChargePowerLimiter](meter)
-	if !ok {
+	totalDeficit := site.calculateTotalDeficit()
+	if totalDeficit <= 0 {
+		site.publish(keys.BatteryHoldChargePower, make([]float64, len(site.batteryMeters)))
 		return
 	}
 
-	chargePower := site.estimateHoldChargePower(dev)
-	if chargePower < 200 {
-		// below 200W is inefficient for hybrid inverters - don't set power (register reset/previous state)
-		site.log.DEBUG.Printf("battery %s hold charge power too low (%.0f W < 200W), skipping", deviceTitleOrName(dev), chargePower)
+	estimatedTotalPower := site.estimateTotalHoldChargePower()
+	if estimatedTotalPower <= 0 {
+		site.publish(keys.BatteryHoldChargePower, make([]float64, len(site.batteryMeters)))
 		return
 	}
 
-	// API convention: negative = charging, positive = discharging
-	power := -chargePower
+	powers := make([]float64, len(site.batteryMeters))
+	for i, battery := range site.batteryMeters {
+		deficit := site.calculateBatteryDeficit(battery)
+		allocatedPower := (deficit / totalDeficit) * estimatedTotalPower
 
-	if err := powerLimiter.SetHoldChargePower(power); err == nil {
-		site.log.DEBUG.Printf("set battery %s hold charge power: %.0f W", deviceTitleOrName(dev), chargePower)
-	} else if !errors.Is(err, api.ErrNotAvailable) {
-		site.log.ERROR.Printf("set battery %s hold charge power: %v", deviceTitleOrName(dev), err)
+		if allocatedPower < 200 {
+			allocatedPower = 0
+		}
+
+		powers[i] = allocatedPower
+	}
+
+	site.publish(keys.BatteryHoldChargePower, powers)
+
+	for i, battery := range site.batteryMeters {
+		if powers[i] > 0 {
+			site.log.DEBUG.Printf("battery %d (%s) hold charge power: %.0f W", i, deviceTitleOrName(battery), powers[i])
+		}
 	}
 }
 
-// estimateHoldChargePower estimates the required charge power to reach maxSoc by end of PV generation
-func (site *Site) estimateHoldChargePower(dev config.Device[api.Meter]) float64 {
+// calculateTotalDeficit calculates the sum of energy deficits for all batteries
+func (site *Site) calculateTotalDeficit() float64 {
+	var totalDeficit float64
+
+	for _, dev := range site.batteryMeters {
+		deficit := site.calculateBatteryDeficit(dev)
+		totalDeficit += deficit
+	}
+
+	return totalDeficit
+}
+
+// calculateBatteryDeficit calculates the energy deficit for a single battery
+func (site *Site) calculateBatteryDeficit(dev config.Device[api.Meter]) float64 {
 	meter := dev.Instance()
 
-	// get current soc and capacity
 	batSoc, ok := api.Cap[api.Battery](meter)
 	if !ok {
 		return 0
@@ -857,7 +877,6 @@ func (site *Site) estimateHoldChargePower(dev config.Device[api.Meter]) float64 
 
 	currentSoc, err := batSoc.Soc()
 	if err != nil {
-		site.log.ERROR.Printf("battery %s soc: %v", deviceTitleOrName(dev), err)
 		return 0
 	}
 
@@ -871,7 +890,6 @@ func (site *Site) estimateHoldChargePower(dev config.Device[api.Meter]) float64 
 		return 0
 	}
 
-	// get max soc limit
 	batLimiter, ok := api.Cap[api.BatterySocLimiter](meter)
 	if !ok {
 		return 0
@@ -882,14 +900,42 @@ func (site *Site) estimateHoldChargePower(dev config.Device[api.Meter]) float64 
 		maxSoc = 100
 	}
 
-	// get max charge power
-	powerLimiter, ok := api.Cap[api.BatteryPowerLimiter](meter)
-	if !ok {
+	deficit := capacity * (maxSoc - currentSoc) / 100
+	if deficit <= 0 {
 		return 0
 	}
 
-	maxChargePower, _ := powerLimiter.GetPowerLimits()
-	if maxChargePower <= 0 {
+	return deficit
+}
+
+// getTotalBatteryCapacity calculates the sum of capacities for all batteries
+func (site *Site) getTotalBatteryCapacity() float64 {
+	var totalCapacity float64
+
+	for _, dev := range site.batteryMeters {
+		meter := dev.Instance()
+
+		batCap, ok := api.Cap[api.BatteryCapacity](meter)
+		if !ok {
+			continue
+		}
+
+		capacity := batCap.Capacity()
+		totalCapacity += capacity
+	}
+
+	return totalCapacity
+}
+
+// estimateTotalHoldChargePower estimates the total required charge power from grid to reach maxSoc by end of PV generation
+func (site *Site) estimateTotalHoldChargePower() float64 {
+	totalDeficit := site.calculateTotalDeficit()
+	if totalDeficit <= 0 {
+		return 0
+	}
+
+	totalMaxChargePower := site.getTotalMaxChargePower()
+	if totalMaxChargePower <= 0 {
 		return 0
 	}
 
@@ -934,21 +980,15 @@ func (site *Site) estimateHoldChargePower(dev config.Device[api.Meter]) float64 
 		return 0
 	}
 
-	// calculate energy deficit
-	energyDeficit := capacity * (maxSoc - currentSoc) / 100
-	if energyDeficit <= 0 {
-		return 0
-	}
-
 	// calculate expected solar energy in the available time
 	expectedSolarEnergy := solarEnergy(rates, now, cutoffTime)
 
 	// calculate required charge power (Wh / hours = W)
-	requiredPower := (energyDeficit - expectedSolarEnergy) / availableHours
+	requiredPower := (totalDeficit - expectedSolarEnergy) / availableHours
 
 	// cap at max charge power
-	if requiredPower > maxChargePower {
-		requiredPower = maxChargePower
+	if requiredPower > totalMaxChargePower {
+		requiredPower = totalMaxChargePower
 	}
 
 	// ensure positive
@@ -957,9 +997,28 @@ func (site *Site) estimateHoldChargePower(dev config.Device[api.Meter]) float64 
 	}
 
 	site.log.DEBUG.Printf(
-		"battery %s hold charge: soc=%.0f%% target=%.0f%% available=%.1fh deficit=%.0fWh solar=%.0fWh power=%.0fW",
-		deviceTitleOrName(dev), currentSoc, maxSoc, availableHours, energyDeficit, expectedSolarEnergy, requiredPower,
+		"battery hold charge: deficit=%.0fWh solar=%.0fWh available=%.1fh power=%.0fW max=%.0fW",
+		totalDeficit, expectedSolarEnergy, availableHours, requiredPower, totalMaxChargePower,
 	)
 
 	return requiredPower
+}
+
+// getTotalMaxChargePower returns the sum of max charge power for all batteries
+func (site *Site) getTotalMaxChargePower() float64 {
+	var totalMax float64
+
+	for _, dev := range site.batteryMeters {
+		meter := dev.Instance()
+
+		powerLimiter, ok := api.Cap[api.BatteryPowerLimiter](meter)
+		if !ok {
+			continue
+		}
+
+		maxChargePower, _ := powerLimiter.GetPowerLimits()
+		totalMax += maxChargePower
+	}
+
+	return totalMax
 }
