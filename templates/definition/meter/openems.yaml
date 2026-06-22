@@ -45,6 +45,13 @@ params:
       en: active battery control (REST/JSON Write Access)
     usages: ["battery"]
     advanced: true
+  - name: batteryIndex
+    description:
+      de: Batterie-Index für verteilte Ladeleistung
+      en: Battery index for distributed charge power
+    type: int
+    default: 0
+    advanced: true
   - name: watchdog
     default: 60s
     description:
