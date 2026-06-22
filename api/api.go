@@ -9,7 +9,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-//go:generate go tool mockgen -package api -destination mock.go github.com/evcc-io/evcc/api Charger,ChargeState,CurrentLimiter,CurrentGetter,PhaseSwitcher,PhaseGetter,FeatureDescriber,Identifier,Meter,MeterEnergy,MeterReturnEnergy,PhaseCurrents,Vehicle,ConnectionTimer,ChargeRater,Battery,BatteryController,BatterySocLimiter,Circuit,Dimmer,HEMS,Tariff
+//go:generate go tool mockgen -package api -destination mock.go github.com/evcc-io/evcc/api Charger,ChargeState,CurrentLimiter,CurrentGetter,PhaseSwitcher,PhaseGetter,FeatureDescriber,Identifier,Meter,MeterEnergy,MeterReturnEnergy,PhaseCurrents,Vehicle,ConnectionTimer,ChargeRater,Battery,BatteryController,BatterySocLimiter,BatteryHoldChargePowerLimiter,Circuit,Dimmer,HEMS,Tariff
 
 // Meter provides total active power in W
 type Meter interface {
@@ -49,6 +49,13 @@ type Battery interface {
 // BatteryCapacity provides a capacity in kWh
 type BatteryCapacity interface {
 	Capacity() float64
+}
+
+// BatteryHoldChargePowerLimiter optionally allows to set a target charge power
+// while the battery is in hold-charge mode (api.BatteryHoldCharge).
+// Power is in W; negative = charging, positive = discharging
+type BatteryHoldChargePowerLimiter interface {
+	SetHoldChargePower(power float64) error
 }
 
 // BatteryPowerLimiter provides max AC charge- and discharge power in W

@@ -178,6 +178,11 @@ func (site *Site) applyBatteryMode(mode api.BatteryMode) error {
 				return err
 			}
 		}
+
+		// set charge power for hold charge mode
+		if mode == api.BatteryHoldCharge {
+			site.applyHoldChargePower(dev)
+		}
 	}
 
 	return nil

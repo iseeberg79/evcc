@@ -33,6 +33,8 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 		Soc                *plugin.Config // optional
 		LimitSoc           *plugin.Config // optional
 		BatteryMode        *plugin.Config // optional
+		HoldChargePower    *plugin.Config // optional: power in watts for holdcharge (setter will negate for API)
+		
 	}{
 		batterySocLimits: batterySocLimits{
 			MinSoc: 20,
@@ -91,6 +93,14 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 			implement.Has(m, implement.BatteryController(func(mode api.BatteryMode) error {
 				return modeS(int64(mode))
 			}))
+
+			if cc.HoldChargePower != nil {
+				holdChargePowerS, err := cc.HoldChargePower.FloatSetter(ctx, "holdChargePower")
+				if err != nil {
+					return nil, fmt.Errorf("battery hold charge power: %w", err)
+				}
+				implement.May(m, implement.BatteryHoldChargePowerLimiter(holdChargePowerS))
+			}
 		}
 
 		return m, nil

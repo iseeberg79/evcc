@@ -818,3 +818,148 @@ func apiError(resp *optimizer.PostOptimizeChargeScheduleResponse) error {
 
 	return errors.New(errObj.Message)
 }
+
+// applyHoldChargePower calculates and sets the hold charge power for a battery
+func (site *Site) applyHoldChargePower(dev config.Device[api.Meter]) {
+	meter := dev.Instance()
+
+	powerLimiter, ok := api.Cap[api.BatteryHoldChargePowerLimiter](meter)
+	if !ok {
+		return
+	}
+
+	chargePower := site.estimateHoldChargePower(dev)
+	if chargePower < 200 {
+		// below 200W is inefficient for hybrid inverters - don't set power (register reset/previous state)
+		site.log.DEBUG.Printf("battery %s hold charge power too low (%.0f W < 200W), skipping", deviceTitleOrName(dev), chargePower)
+		return
+	}
+
+	// API convention: negative = charging, positive = discharging
+	power := -chargePower
+
+	if err := powerLimiter.SetHoldChargePower(power); err == nil {
+		site.log.DEBUG.Printf("set battery %s hold charge power: %.0f W", deviceTitleOrName(dev), chargePower)
+	} else if !errors.Is(err, api.ErrNotAvailable) {
+		site.log.ERROR.Printf("set battery %s hold charge power: %v", deviceTitleOrName(dev), err)
+	}
+}
+
+// estimateHoldChargePower estimates the required charge power to reach maxSoc by end of PV generation
+func (site *Site) estimateHoldChargePower(dev config.Device[api.Meter]) float64 {
+	meter := dev.Instance()
+
+	// get current soc and capacity
+	batSoc, ok := api.Cap[api.Battery](meter)
+	if !ok {
+		return 0
+	}
+
+	currentSoc, err := batSoc.Soc()
+	if err != nil {
+		site.log.ERROR.Printf("battery %s soc: %v", deviceTitleOrName(dev), err)
+		return 0
+	}
+
+	batCap, ok := api.Cap[api.BatteryCapacity](meter)
+	if !ok {
+		return 0
+	}
+
+	capacity := batCap.Capacity()
+	if capacity == 0 {
+		return 0
+	}
+
+	// get max soc limit
+	batLimiter, ok := api.Cap[api.BatterySocLimiter](meter)
+	if !ok {
+		return 0
+	}
+
+	_, maxSoc := batLimiter.GetSocLimits()
+	if maxSoc <= 0 || maxSoc > 100 {
+		maxSoc = 100
+	}
+
+	// get max charge power
+	powerLimiter, ok := api.Cap[api.BatteryPowerLimiter](meter)
+	if !ok {
+		return 0
+	}
+
+	maxChargePower, _ := powerLimiter.GetPowerLimits()
+	if maxChargePower <= 0 {
+		return 0
+	}
+
+	// get solar forecast rates
+	solarTariff := site.GetTariff(api.TariffUsageSolar)
+	if solarTariff == nil {
+		return 0
+	}
+
+	allRates, err := solarTariff.Rates()
+	if err != nil || len(allRates) == 0 {
+		return 0
+	}
+
+	// filter to future rates only
+	now := time.Now()
+	rates := lo.Filter(allRates, func(r api.Rate, _ int) bool {
+		return r.End.After(now)
+	})
+
+	if len(rates) == 0 {
+		return 0
+	}
+
+	// find cutoff point: when solar power drops below 50W
+	var cutoffTime time.Time
+	for _, r := range rates {
+		if r.Value < 50 {
+			cutoffTime = r.Start
+			break
+		}
+	}
+
+	// if no cutoff found, use last rate
+	if cutoffTime.IsZero() {
+		cutoffTime = rates[len(rates)-1].End
+	}
+
+	// calculate available time for charging
+	availableHours := cutoffTime.Sub(now).Hours()
+	if availableHours <= 0 {
+		return 0
+	}
+
+	// calculate energy deficit
+	energyDeficit := capacity * (maxSoc - currentSoc) / 100
+	if energyDeficit <= 0 {
+		return 0
+	}
+
+	// calculate expected solar energy in the available time
+	expectedSolarEnergy := solarEnergy(rates, now, cutoffTime)
+
+	// calculate required charge power (Wh / hours = W)
+	requiredPower := (energyDeficit - expectedSolarEnergy) / availableHours
+
+	// cap at max charge power
+	if requiredPower > maxChargePower {
+		requiredPower = maxChargePower
+	}
+
+	// ensure positive
+	if requiredPower < 0 {
+		requiredPower = 0
+	}
+
+	site.log.DEBUG.Printf(
+		"battery %s hold charge: soc=%.0f%% target=%.0f%% available=%.1fh deficit=%.0fWh solar=%.0fWh power=%.0fW",
+		deviceTitleOrName(dev), currentSoc, maxSoc, availableHours, energyDeficit, expectedSolarEnergy, requiredPower,
+	)
+
+	return requiredPower
+}
