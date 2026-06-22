@@ -33,8 +33,8 @@ params:
     advanced: true
   - name: batteryIndex
     description:
-      de: Batterie-Index für verteilte Ladeleistung (0, 1, 2, ...)
-      en: Battery index for distributed charge power (0, 1, 2, ...)
+      de: Batterie-Index für verteilte Ladeleistung
+      en: Battery index for distributed charge power
     type: int
     default: 0
     advanced: true
