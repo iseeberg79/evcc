@@ -20,7 +20,7 @@ import (
 
 // HTTP implements HTTP request provider
 type HTTP struct {
-	ctx         context.Context
+	ctx context.Context
 	*getter
 	*request.Helper
 	url, method string

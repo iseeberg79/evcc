@@ -908,25 +908,6 @@ func (site *Site) calculateBatteryDeficit(dev config.Device[api.Meter]) float64 
 	return deficit
 }
 
-// getTotalBatteryCapacity calculates the sum of capacities for all batteries
-func (site *Site) getTotalBatteryCapacity() float64 {
-	var totalCapacity float64
-
-	for _, dev := range site.batteryMeters {
-		meter := dev.Instance()
-
-		batCap, ok := api.Cap[api.BatteryCapacity](meter)
-		if !ok {
-			continue
-		}
-
-		capacity := batCap.Capacity()
-		totalCapacity += capacity
-	}
-
-	return totalCapacity
-}
-
 // estimateTotalHoldChargePower estimates the total required charge power from grid to reach maxSoc by end of PV generation
 func (site *Site) estimateTotalHoldChargePower() float64 {
 	totalDeficit := site.calculateTotalDeficit()
