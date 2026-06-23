@@ -822,19 +822,18 @@ func apiError(resp *optimizer.PostOptimizeChargeScheduleResponse) error {
 // applyHoldChargePower calculates the hold charge power for all batteries and publishes as array
 func (site *Site) applyHoldChargePower(dev config.Device[api.Meter]) {
 	totalDeficit := site.calculateTotalDeficit()
-	site.log.INFO.Printf("DEBUG: applyHoldChargePower - totalDeficit = %.2f kWh = %.0f Wh", totalDeficit, totalDeficit*1000)
+	site.log.TRACE.Printf("applyHoldChargePower: totalDeficit = %.2f kWh", totalDeficit)
 
 	if totalDeficit <= 0 {
-		site.log.INFO.Printf("DEBUG: totalDeficit <= 0, publishing zeros")
+		site.log.TRACE.Printf("applyHoldChargePower: totalDeficit <= 0, publishing zeros")
 		site.publish(keys.BatteryHoldChargePower, make([]float64, len(site.batteryMeters)))
 		return
 	}
 
 	estimatedTotalPower := site.estimateTotalHoldChargePower()
-	site.log.INFO.Printf("DEBUG: estimatedTotalPower = %.0f W", estimatedTotalPower)
 
 	if estimatedTotalPower <= 0 {
-		site.log.INFO.Printf("DEBUG: estimatedTotalPower <= 0, publishing zeros")
+		site.log.TRACE.Printf("applyHoldChargePower: estimatedTotalPower <= 0, publishing zeros")
 		site.publish(keys.BatteryHoldChargePower, make([]float64, len(site.batteryMeters)))
 		return
 	}
@@ -843,7 +842,7 @@ func (site *Site) applyHoldChargePower(dev config.Device[api.Meter]) {
 	for i, battery := range site.batteryMeters {
 		deficit := site.calculateBatteryDeficit(battery)
 		allocatedPower := (deficit / totalDeficit) * estimatedTotalPower
-		site.log.INFO.Printf("DEBUG: battery[%d] deficit=%.0f Wh, allocated=%.0f W", i, deficit, allocatedPower)
+		site.log.TRACE.Printf("battery[%d] deficit=%.0f Wh, allocated=%.0f W", i, deficit, allocatedPower)
 
 		if allocatedPower < 200 {
 			allocatedPower = 0
@@ -851,7 +850,7 @@ func (site *Site) applyHoldChargePower(dev config.Device[api.Meter]) {
 		powers[i] = allocatedPower
 	}
 
-	site.log.INFO.Printf("DEBUG: final powers = %v", powers)
+	site.log.TRACE.Printf("applyHoldChargePower: final powers = %v", powers)
 	site.publish(keys.BatteryHoldChargePower, powers)
 
 	for i, battery := range site.batteryMeters {
@@ -929,9 +928,8 @@ func (site *Site) calculateBatteryDeficit(dev config.Device[api.Meter]) float64 
 // estimateTotalHoldChargePower estimates the total required charge power from grid to reach maxSoc by end of PV generation
 func (site *Site) estimateTotalHoldChargePower() float64 {
 	totalDeficit := site.calculateTotalDeficit()
-	site.log.INFO.Printf("DEBUG: estimateTotalHoldChargePower - totalDeficit = %.2f kWh = %.0f Wh", totalDeficit, totalDeficit*1000)
+	site.log.TRACE.Printf("estimateTotalHoldChargePower: totalDeficit = %.2f kWh", totalDeficit)
 	if totalDeficit <= 0 {
-		site.log.INFO.Printf("DEBUG: totalDeficit <= 0, returning 0")
 		return 0
 	}
 
@@ -942,34 +940,28 @@ func (site *Site) estimateTotalHoldChargePower() float64 {
 		if maxACPowerGetter, ok := api.Cap[api.MaxACPowerGetter](meter); ok {
 			maxAC := maxACPowerGetter.MaxACPower()
 			totalMaxACPower += maxAC
-			site.log.INFO.Printf("DEBUG: pv[%d] maxACPower = %.0f W", i, maxAC)
+			site.log.TRACE.Printf("pv[%d] maxACPower = %.0f W", i, maxAC)
 		}
 	}
 	if totalMaxACPower <= 0 {
-		site.log.INFO.Printf("DEBUG: totalMaxACPower <= 0, returning 0")
 		return 0
 	}
-	site.log.INFO.Printf("DEBUG: totalMaxACPower = %.0f W", totalMaxACPower)
+	site.log.TRACE.Printf("totalMaxACPower = %.0f W", totalMaxACPower)
 
 	totalMaxChargePower := site.getTotalMaxChargePower()
-	site.log.INFO.Printf("DEBUG: totalMaxChargePower (battery) = %.0f W", totalMaxChargePower)
+	site.log.TRACE.Printf("totalMaxChargePower (battery) = %.0f W", totalMaxChargePower)
 	if totalMaxChargePower <= 0 {
-		site.log.INFO.Printf("DEBUG: totalMaxChargePower <= 0, returning 0")
 		return 0
 	}
 
 	// get solar forecast rates
 	solarTariff := site.GetTariff(api.TariffUsageSolar)
-	site.log.INFO.Printf("DEBUG: solarTariff = %v", solarTariff != nil)
 	if solarTariff == nil {
-		site.log.INFO.Printf("DEBUG: solarTariff is nil, returning 0")
 		return 0
 	}
 
 	allRates, err := solarTariff.Rates()
-	site.log.INFO.Printf("DEBUG: allRates count = %d, err = %v", len(allRates), err)
 	if err != nil || len(allRates) == 0 {
-		site.log.INFO.Printf("DEBUG: no rates, returning 0")
 		return 0
 	}
 
@@ -979,9 +971,8 @@ func (site *Site) estimateTotalHoldChargePower() float64 {
 		return r.End.After(now)
 	})
 
-	site.log.INFO.Printf("DEBUG: future rates count = %d", len(rates))
+	site.log.TRACE.Printf("future rates count = %d", len(rates))
 	if len(rates) == 0 {
-		site.log.INFO.Printf("DEBUG: no future rates, returning 0")
 		return 0
 	}
 
@@ -1016,7 +1007,7 @@ func (site *Site) estimateTotalHoldChargePower() float64 {
 		safeAvailableHours = 0.5 // fallback: minimum 0.5h even with large buffer
 	}
 
-	site.log.INFO.Printf("DEBUG: available=%.1fh buffer=%.1fh safe=%.1fh", availableHours, bufferHours, safeAvailableHours)
+	site.log.TRACE.Printf("available=%.1fh buffer=%.1fh safe=%.1fh cutoff=%s", availableHours, bufferHours, safeAvailableHours, cutoffTime.Format("15:04"))
 
 	// safety failsafe: if buffer time is active (remaining time <= buffer), use max charge power
 	// this ensures battery reaches maxSoC even if forecast was too pessimistic
@@ -1024,7 +1015,7 @@ func (site *Site) estimateTotalHoldChargePower() float64 {
 	if availableHours <= bufferHours && totalDeficit > 0 {
 		// buffer time active - boost to maximum charge power
 		requiredPower = min(totalMaxACPower, totalMaxChargePower)
-		site.log.INFO.Printf("DEBUG: buffer time active (%.1fh remaining <= %.1fh buffer), boosting to max: %.0f W", availableHours, bufferHours, requiredPower)
+		site.log.DEBUG.Printf("battery hold charge: buffer time active (%.1fh remaining <= %.1fh buffer), boosting to max: %.0f W", availableHours, bufferHours, requiredPower)
 	} else {
 		// calculate required charge power for even charging throughout the day
 		// Power = (TotalDeficit[kWh] * 1000 [Wh/kWh]) / SafeAvailableHours [h] = [W]
@@ -1042,7 +1033,6 @@ func (site *Site) estimateTotalHoldChargePower() float64 {
 		// cap at maxACPower (system grid limit) - primary goal is battery full, secondary is grid protection
 		if requiredPower > totalMaxACPower {
 			requiredPower = totalMaxACPower
-			site.log.INFO.Printf("DEBUG: capped requiredPower to maxACPower: %.0f W", requiredPower)
 		}
 
 		// ensure not negative (PV might be < netLimit)
@@ -1056,10 +1046,7 @@ func (site *Site) estimateTotalHoldChargePower() float64 {
 		}
 	}
 
-	site.log.DEBUG.Printf(
-		"battery hold charge: deficit=%.0f Wh available=%.1fh power=%.0f W (max=%.0f W)",
-		totalDeficit*1000, availableHours, requiredPower, totalMaxChargePower,
-	)
+	site.log.TRACE.Printf("battery hold charge calc: deficit=%.0f Wh available=%.1fh power=%.0f W", totalDeficit*1000, availableHours, requiredPower)
 
 	return requiredPower
 }
