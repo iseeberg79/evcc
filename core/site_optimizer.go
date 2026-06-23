@@ -866,7 +866,7 @@ func (site *Site) calculateTotalDeficit() float64 {
 
 	for i, dev := range site.batteryMeters {
 		deficit := site.calculateBatteryDeficit(dev)
-		site.log.INFO.Printf("DEBUG: battery[%d] deficit = %.2f kWh = %.0f Wh", i, deficit, deficit*1000)
+		site.log.DEBUG.Printf("battery[%d] deficit = %.2f kWh = %.0f Wh", i, deficit, deficit*1000)
 		totalDeficit += deficit
 	}
 
@@ -880,31 +880,31 @@ func (site *Site) calculateBatteryDeficit(dev config.Device[api.Meter]) float64 
 
 	batSoc, ok := api.Cap[api.Battery](meter)
 	if !ok {
-		site.log.INFO.Printf("DEBUG: battery %s - no Battery cap", deviceTitleOrName(dev))
+		site.log.DEBUG.Printf("battery %s - no Battery cap", deviceTitleOrName(dev))
 		return 0
 	}
 
 	currentSoc, err := batSoc.Soc()
 	if err != nil {
-		site.log.INFO.Printf("DEBUG: battery %s - soc error: %v", deviceTitleOrName(dev), err)
+		site.log.DEBUG.Printf("battery %s - soc error: %v", deviceTitleOrName(dev), err)
 		return 0
 	}
 
 	batCap, ok := api.Cap[api.BatteryCapacity](meter)
 	if !ok {
-		site.log.INFO.Printf("DEBUG: battery %s - no Capacity cap", deviceTitleOrName(dev))
+		site.log.DEBUG.Printf("battery %s - no Capacity cap", deviceTitleOrName(dev))
 		return 0
 	}
 
 	capacity := batCap.Capacity()
 	if capacity == 0 {
-		site.log.INFO.Printf("DEBUG: battery %s - capacity = 0", deviceTitleOrName(dev))
+		site.log.DEBUG.Printf("battery %s - capacity = 0", deviceTitleOrName(dev))
 		return 0
 	}
 
 	batLimiter, ok := api.Cap[api.BatterySocLimiter](meter)
 	if !ok {
-		site.log.INFO.Printf("DEBUG: battery %s - no SocLimiter cap", deviceTitleOrName(dev))
+		site.log.DEBUG.Printf("battery %s - no SocLimiter cap", deviceTitleOrName(dev))
 		return 0
 	}
 
@@ -913,12 +913,12 @@ func (site *Site) calculateBatteryDeficit(dev config.Device[api.Meter]) float64 
 		maxSoc = 100
 	}
 
-	site.log.INFO.Printf("DEBUG: battery %s - soc=%.0f%% maxSoc=%.0f%% capacity=%.0f kWh", deviceTitleOrName(dev), currentSoc, maxSoc, capacity)
+	site.log.DEBUG.Printf("battery %s - soc=%.0f%% maxSoc=%.0f%% capacity=%.0f kWh", deviceTitleOrName(dev), currentSoc, maxSoc, capacity)
 
 	deficit := capacity * (maxSoc - currentSoc) / 100
-	site.log.INFO.Printf("DEBUG: battery %s - deficit = %.2f kWh = %.0f Wh", deviceTitleOrName(dev), deficit, deficit*1000)
+	site.log.DEBUG.Printf("battery %s - deficit = %.2f kWh = %.0f Wh", deviceTitleOrName(dev), deficit, deficit*1000)
 	if deficit <= 0 {
-		site.log.INFO.Printf("DEBUG: battery %s - deficit <= 0, returning 0", deviceTitleOrName(dev))
+		site.log.DEBUG.Printf("battery %s - deficit <= 0, returning 0", deviceTitleOrName(dev))
 		return 0
 	}
 
