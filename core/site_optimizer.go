@@ -870,7 +870,7 @@ func (site *Site) calculateTotalDeficit() float64 {
 		totalDeficit += deficit
 	}
 
-	site.log.INFO.Printf("DEBUG: totalDeficit sum = %.2f kWh = %.0f Wh", totalDeficit, totalDeficit*1000)
+	site.log.DEBUG.Printf("totalDeficit sum = %.2f kWh = %.0f Wh", totalDeficit, totalDeficit*1000)
 	return totalDeficit
 }
 
