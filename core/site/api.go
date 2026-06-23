@@ -83,6 +83,15 @@ type API interface {
 	GetBatteryDischargeControl() bool
 	SetBatteryDischargeControl(bool) error
 
+	// GetBatteryAutoHoldCharge returns the auto hold charge mode
+	GetBatteryAutoHoldCharge() bool
+	// SetBatteryAutoHoldCharge sets the auto hold charge mode
+	SetBatteryAutoHoldCharge(bool) error
+	// GetBatteryAutoHoldChargeFactor returns the auto hold charge factor
+	GetBatteryAutoHoldChargeFactor() float64
+	// SetBatteryAutoHoldChargeFactor sets the auto hold charge factor
+	SetBatteryAutoHoldChargeFactor(float64) error
+
 	//
 	// battery control external
 	//

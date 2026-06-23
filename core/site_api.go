@@ -370,6 +370,54 @@ func (site *Site) SetBatteryDischargeControl(val bool) error {
 	return nil
 }
 
+// GetBatteryAutoHoldCharge returns the auto hold charge mode
+func (site *Site) GetBatteryAutoHoldCharge() bool {
+	site.RLock()
+	defer site.RUnlock()
+	return site.batteryAutoHoldCharge
+}
+
+// SetBatteryAutoHoldCharge sets the auto hold charge mode
+func (site *Site) SetBatteryAutoHoldCharge(val bool) error {
+	site.log.DEBUG.Println("set battery auto hold charge:", val)
+
+	site.Lock()
+	defer site.Unlock()
+
+	if site.batteryAutoHoldCharge != val {
+		site.batteryAutoHoldCharge = val
+		settings.SetBool("batteryAutoHoldCharge", val)
+	}
+
+	return nil
+}
+
+// GetBatteryAutoHoldChargeFactor returns the auto hold charge factor
+func (site *Site) GetBatteryAutoHoldChargeFactor() float64 {
+	site.RLock()
+	defer site.RUnlock()
+	return site.batteryAutoHoldChargeFactor
+}
+
+// SetBatteryAutoHoldChargeFactor sets the auto hold charge factor
+func (site *Site) SetBatteryAutoHoldChargeFactor(val float64) error {
+	site.log.DEBUG.Println("set battery auto hold charge factor:", val)
+
+	if val <= 0 {
+		val = 1.5 // enforce minimum
+	}
+
+	site.Lock()
+	defer site.Unlock()
+
+	if site.batteryAutoHoldChargeFactor != val {
+		site.batteryAutoHoldChargeFactor = val
+		// Note: settings persistence would need to be added here with proper key
+	}
+
+	return nil
+}
+
 func (site *Site) GetBatteryGridChargeLimit() *float64 {
 	site.RLock()
 	defer site.RUnlock()

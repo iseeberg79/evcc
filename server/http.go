@@ -144,6 +144,8 @@ func (s *HTTPd) RegisterSiteHandlers(site site.API) {
 		"buffersoc":               {"POST", "/buffersoc/{value:[0-9.]+}", floatHandler(site.SetBufferSoc, site.GetBufferSoc)},
 		"bufferstartsoc":          {"POST", "/bufferstartsoc/{value:[0-9.]+}", floatHandler(site.SetBufferStartSoc, site.GetBufferStartSoc)},
 		"batterydischargecontrol": {"POST", "/batterydischargecontrol/{value:[01truefalse]+}", boolHandler(site.SetBatteryDischargeControl, site.GetBatteryDischargeControl)},
+		"batteryautoholdcharge":   {"POST", "/batteryautoholdcharge/{value:[01truefalse]+}", boolHandler(site.SetBatteryAutoHoldCharge, site.GetBatteryAutoHoldCharge)},
+		"batteryautoholdchargefactor": {"POST", "/batteryautoholdchargefactor/{value:[0-9.]+}", floatHandler(site.SetBatteryAutoHoldChargeFactor, site.GetBatteryAutoHoldChargeFactor)},
 		"batterygridcharge":       {"POST", "/batterygridchargelimit/{value:-?[0-9.]+}", floatPtrHandler(site.SetBatteryGridChargeLimit, site.GetBatteryGridChargeLimit)},
 		"batterygridchargedelete": {"DELETE", "/batterygridchargelimit", floatPtrHandler(site.SetBatteryGridChargeLimit, site.GetBatteryGridChargeLimit)},
 		"batterymode":             {"POST", "/batterymode/{value:[a-z]+}", updateBatteryMode(site)},
