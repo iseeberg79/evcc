@@ -197,6 +197,35 @@
 					</label>
 				</div>
 			</div>
+
+			<div class="form-check form-switch mt-3">
+				<input
+					id="batteryAutoHoldCharge"
+					:checked="batteryAutoHoldCharge"
+					class="form-check-input"
+					type="checkbox"
+					role="switch"
+					@change="changeAutoHoldCharge"
+				/>
+				<div class="form-check-label">
+					<label for="batteryAutoHoldCharge">
+						{{ $t("batterySettings.autoHoldCharge") }}
+					</label>
+					<small v-if="batteryAutoHoldCharge" class="d-block mt-2">
+						{{ $t("batterySettings.autoHoldChargeFactor") }}:
+						<input
+							v-model.number="selectedAutoHoldChargeFactor"
+							type="number"
+							step="0.1"
+							min="1"
+							max="5"
+							class="form-control form-control-sm"
+							style="width: 80px; display: inline-block"
+							@change="changeAutoHoldChargeFactor"
+						/>
+					</small>
+				</div>
+			</div>
 		</div>
 	</div>
 </template>
@@ -220,6 +249,8 @@ export default defineComponent({
 		prioritySoc: { type: Number, default: 0 },
 		bufferStartSoc: { type: Number, default: 0 },
 		batteryDischargeControl: Boolean,
+		batteryAutoHoldCharge: Boolean,
+		batteryAutoHoldChargeFactor: { type: Number, default: 1.5 },
 		battery: { type: Object as PropType<Battery> },
 	},
 	data() {
@@ -227,6 +258,7 @@ export default defineComponent({
 			selectedBufferSoc: 100,
 			selectedPrioritySoc: 0,
 			selectedBufferStartSoc: 0,
+			selectedAutoHoldChargeFactor: 1.5,
 		};
 	},
 	computed: {
@@ -346,11 +378,15 @@ export default defineComponent({
 		bufferStartSoc(soc) {
 			this.selectedBufferStartSoc = soc;
 		},
+		batteryAutoHoldChargeFactor(factor) {
+			this.selectedAutoHoldChargeFactor = factor;
+		},
 	},
 	mounted() {
 		this.selectedBufferSoc = this.bufferSoc || 100;
 		this.selectedPrioritySoc = this.prioritySoc;
 		this.selectedBufferStartSoc = this.bufferStartSoc;
+		this.selectedAutoHoldChargeFactor = this.batteryAutoHoldChargeFactor;
 	},
 	methods: {
 		changeBufferStart($event: Event) {
@@ -423,6 +459,22 @@ export default defineComponent({
 				await api.post(
 					`batterydischargecontrol/${(e.target as HTMLInputElement).checked ? "true" : "false"}`
 				);
+			} catch (err) {
+				console.error(err);
+			}
+		},
+		async changeAutoHoldCharge(e: Event) {
+			try {
+				await api.post(
+					`batteryautoholdcharge/${(e.target as HTMLInputElement).checked ? "true" : "false"}`
+				);
+			} catch (err) {
+				console.error(err);
+			}
+		},
+		async changeAutoHoldChargeFactor() {
+			try {
+				await api.post(`batteryautoholdchargefactor/${this.selectedAutoHoldChargeFactor}`);
 			} catch (err) {
 				console.error(err);
 			}

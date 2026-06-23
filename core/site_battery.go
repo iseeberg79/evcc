@@ -118,7 +118,18 @@ func (site *Site) isBufferTimeActiveAndBatteryFull() bool {
 
 func (site *Site) shouldUseHoldChargePower() bool {
 	// auto-activate BatteryHoldCharge mode when sufficient PV forecast available
-	// condition: daily PV forecast > (daily consumption * 1.5)
+	// skip if auto hold charge is disabled
+	if !site.batteryAutoHoldCharge {
+		return false
+	}
+
+	// get configured factor (default 1.5)
+	factor := site.batteryAutoHoldChargeFactor
+	if factor <= 0 {
+		factor = 1.5
+	}
+
+	// condition: daily PV forecast > (daily consumption * factor)
 
 	solarTariff := site.GetTariff(api.TariffUsageSolar)
 	if solarTariff == nil {
@@ -168,11 +179,11 @@ func (site *Site) shouldUseHoldChargePower() bool {
 		dailyConsumption = 0 // negative grid = export, no consumption
 	}
 
-	site.log.TRACE.Printf("hold charge auto-check: PV forecast %.0f Wh > consumption %.0f Wh * 1.5 = %.0f Wh?",
-		dailyPVForecast, dailyConsumption, dailyConsumption*1.5)
+	site.log.TRACE.Printf("hold charge auto-check: PV forecast %.0f Wh > consumption %.0f Wh * %.2f = %.0f Wh?",
+		dailyPVForecast, dailyConsumption, factor, dailyConsumption*factor)
 
-	// condition: PV forecast > consumption * 1.5
-	return dailyPVForecast > (dailyConsumption * 1.5)
+	// condition: PV forecast > consumption * factor
+	return dailyPVForecast > (dailyConsumption * factor)
 }
 
 func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate) {
