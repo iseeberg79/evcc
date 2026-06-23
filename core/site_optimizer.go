@@ -1018,33 +1018,42 @@ func (site *Site) estimateTotalHoldChargePower() float64 {
 
 	site.log.INFO.Printf("DEBUG: available=%.1fh buffer=%.1fh safe=%.1fh", availableHours, bufferHours, safeAvailableHours)
 
-	// calculate required charge power for even charging throughout the day
-	// Power = (TotalDeficit[kWh] * 1000 [Wh/kWh]) / SafeAvailableHours [h] = [W]
-	requiredPower := (totalDeficit * 1000) / safeAvailableHours
+	// safety failsafe: if buffer time is active (remaining time <= buffer), use max charge power
+	// this ensures battery reaches maxSoC even if forecast was too pessimistic
+	var requiredPower float64
+	if availableHours <= bufferHours && totalDeficit > 0 {
+		// buffer time active - boost to maximum charge power
+		requiredPower = min(totalMaxACPower, totalMaxChargePower)
+		site.log.INFO.Printf("DEBUG: buffer time active (%.1fh remaining <= %.1fh buffer), boosting to max: %.0f W", availableHours, bufferHours, requiredPower)
+	} else {
+		// calculate required charge power for even charging throughout the day
+		// Power = (TotalDeficit[kWh] * 1000 [Wh/kWh]) / SafeAvailableHours [h] = [W]
+		requiredPower = (totalDeficit * 1000) / safeAvailableHours
 
-	// cap at system limits (PV AC power and Battery charge power)
-	maxPower := totalMaxACPower
-	if totalMaxChargePower < maxPower {
-		maxPower = totalMaxChargePower
-	}
-	if requiredPower > maxPower {
-		requiredPower = maxPower
-	}
+		// cap at system limits (PV AC power and Battery charge power)
+		maxPower := totalMaxACPower
+		if totalMaxChargePower < maxPower {
+			maxPower = totalMaxChargePower
+		}
+		if requiredPower > maxPower {
+			requiredPower = maxPower
+		}
 
-	// cap at maxACPower (system grid limit) - primary goal is battery full, secondary is grid protection
-	if requiredPower > totalMaxACPower {
-		requiredPower = totalMaxACPower
-		site.log.INFO.Printf("DEBUG: capped requiredPower to maxACPower: %.0f W", requiredPower)
-	}
+		// cap at maxACPower (system grid limit) - primary goal is battery full, secondary is grid protection
+		if requiredPower > totalMaxACPower {
+			requiredPower = totalMaxACPower
+			site.log.INFO.Printf("DEBUG: capped requiredPower to maxACPower: %.0f W", requiredPower)
+		}
 
-	// ensure not negative (PV might be < netLimit)
-	if requiredPower < 0 {
-		requiredPower = 0
-	}
+		// ensure not negative (PV might be < netLimit)
+		if requiredPower < 0 {
+			requiredPower = 0
+		}
 
-	// below 500W is inefficient - don't charge
-	if requiredPower < 500.0 {
-		requiredPower = 0
+		// below 500W is inefficient - don't charge
+		if requiredPower < 500.0 {
+			requiredPower = 0
+		}
 	}
 
 	site.log.DEBUG.Printf(
