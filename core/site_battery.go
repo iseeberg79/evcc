@@ -52,8 +52,143 @@ func (site *Site) SetBatteryMode(batMode api.BatteryMode) {
 	}
 }
 
+func (site *Site) isBufferTimeActiveAndBatteryFull() bool {
+	// disable HoldCharge when buffer time is active and battery is full
+	// this allows free discharge of fully charged battery during buffer time
+
+	// check battery soc against maxSoC limit (with 0.5% tolerance)
+	// get maxSoC from first battery's limiter, fallback to 100%
+	maxSoC := 100.0
+	if len(site.batteryMeters) > 0 {
+		meter := site.batteryMeters[0].Instance()
+		if batLimiter, ok := api.Cap[api.BatterySocLimiter](meter); ok {
+			if _, max := batLimiter.GetSocLimits(); max > 0 && max < 100 {
+				maxSoC = float64(max)
+			}
+		}
+	}
+	if site.battery.Soc < maxSoC-0.5 {
+		return false // not full yet
+	}
+
+	// check if buffer time is active by examining solar forecast
+	solarTariff := site.GetTariff(api.TariffUsageSolar)
+	if solarTariff == nil {
+		return false
+	}
+
+	rates, err := solarTariff.Rates()
+	if err != nil || len(rates) == 0 {
+		return false
+	}
+
+	// find cutoff time (when solar < 50W)
+	now := time.Now()
+	var cutoffTime time.Time
+	for _, r := range rates {
+		if r.Start.After(now) && r.Value < 50 {
+			cutoffTime = r.Start
+			break
+		}
+	}
+	if cutoffTime.IsZero() {
+		cutoffTime = rates[len(rates)-1].End
+	}
+
+	// calculate available time and buffer
+	availableHours := cutoffTime.Sub(now).Hours()
+	if availableHours <= 0 {
+		return true // already past cutoff, battery should be released
+	}
+
+	bufferHours := availableHours * 0.25
+	if bufferHours > 2.0 {
+		bufferHours = 2.0
+	}
+
+	// buffer time is active when remaining time <= buffer time
+	bufferActive := availableHours <= bufferHours
+	if bufferActive {
+		site.log.TRACE.Printf("buffer time active: %.1fh remaining <= %.1fh buffer, battery full at %.1f%%",
+			availableHours, bufferHours, site.battery.Soc)
+	}
+
+	return bufferActive
+}
+
+func (site *Site) shouldUseHoldChargePower() bool {
+	// auto-activate BatteryHoldCharge mode when sufficient PV forecast available
+	// condition: daily PV forecast > (daily consumption * 1.5)
+
+	solarTariff := site.GetTariff(api.TariffUsageSolar)
+	if solarTariff == nil {
+		return false
+	}
+
+	rates, err := solarTariff.Rates()
+	if err != nil || len(rates) == 0 {
+		return false
+	}
+
+	// sum today's PV forecast (in Wh)
+	now := time.Now()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	todayEnd := todayStart.AddDate(0, 0, 1)
+
+	var dailyPVForecast float64
+	for _, r := range rates {
+		if r.Start.After(todayEnd) {
+			break
+		}
+		if r.End.Before(todayStart) {
+			continue
+		}
+		// normalize overlap to today's window
+		start := r.Start
+		if start.Before(todayStart) {
+			start = todayStart
+		}
+		end := r.End
+		if end.After(todayEnd) {
+			end = todayEnd
+		}
+		durationHours := end.Sub(start).Hours()
+		dailyPVForecast += r.Value * durationHours
+	}
+
+	// estimate daily consumption from accumulated power data
+	// use ratio of current gridPower to extrapolate consumption
+	currentHour := float64(time.Now().Hour())
+	if currentHour == 0 {
+		currentHour = 1 // avoid division by zero at midnight
+	}
+	// rough estimate: grid import up to now, extrapolated to full day
+	dailyConsumption := site.gridPower * 24 / currentHour
+	if dailyConsumption < 0 {
+		dailyConsumption = 0 // negative grid = export, no consumption
+	}
+
+	site.log.TRACE.Printf("hold charge auto-check: PV forecast %.0f Wh > consumption %.0f Wh * 1.5 = %.0f Wh?",
+		dailyPVForecast, dailyConsumption, dailyConsumption*1.5)
+
+	// condition: PV forecast > consumption * 1.5
+	return dailyPVForecast > (dailyConsumption * 1.5)
+}
+
 func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate) {
 	batteryMode := site.requiredBatteryMode(batteryGridChargeActive, rate)
+
+	// auto-enable hold charge mode if sufficient PV forecast (only from Unknown or Normal)
+	if (batteryMode == api.BatteryUnknown || batteryMode == api.BatteryNormal) && site.shouldUseHoldChargePower() {
+		site.log.DEBUG.Println("battery mode: auto-enable HoldCharge (sufficient PV forecast)")
+		batteryMode = api.BatteryHoldCharge
+	}
+
+	// auto-disable hold charge mode when buffer time active and battery full - allow free discharge
+	if batteryMode == api.BatteryHoldCharge && site.isBufferTimeActiveAndBatteryFull() {
+		site.log.DEBUG.Println("battery mode: buffer time active and battery full, disabling HoldCharge")
+		batteryMode = api.BatteryNormal
+	}
 
 	// put battery into hold mode when charging is active and HEMS dimmed
 	fromToCharge := batteryMode == api.BatteryCharge || batteryMode == api.BatteryUnknown && site.batteryMode == api.BatteryCharge
