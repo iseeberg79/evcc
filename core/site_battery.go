@@ -86,8 +86,12 @@ func (site *Site) isBufferTimeActiveAndBatteryFull() bool {
 	now := time.Now()
 	var cutoffTime time.Time
 	for _, r := range rates {
-		if r.Start.After(now) && r.Value < 50 {
-			cutoffTime = r.Start
+		if r.End.After(now) && r.Value < 50 {
+			if r.Start.Before(now) {
+				cutoffTime = now
+			} else {
+				cutoffTime = r.Start
+			}
 			break
 		}
 	}
@@ -133,12 +137,17 @@ func (site *Site) shouldUseHoldChargePower() bool {
 		return false
 	}
 
-	// find cutoff time (when solar < 50W) - disable if no PV left today
+	// find cutoff time: first rate (current or future) with Value < 50W
 	now := time.Now()
 	var cutoffTime time.Time
 	for _, r := range rates {
-		if r.Start.After(now) && r.Value < 50 {
-			cutoffTime = r.Start
+		if r.End.After(now) && r.Value < 50 {
+			// if this rate is already running, cutoff is now
+			if r.Start.Before(now) {
+				cutoffTime = now
+			} else {
+				cutoffTime = r.Start
+			}
 			break
 		}
 	}
