@@ -72,6 +72,11 @@ func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate)
 			site.log.ERROR.Println("battery mode:", err)
 		}
 	}
+
+	// TEMPORARY: calculate hold charge power for all batteries (for simulation/debugging)
+	for _, dev := range site.batteryMeters {
+		site.applyHoldChargePower(dev)
+	}
 }
 
 // requiredBatteryMode determines required battery mode based on grid charge and rate
