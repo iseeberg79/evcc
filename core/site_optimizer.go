@@ -1009,6 +1009,10 @@ func (site *Site) estimateTotalHoldChargePower() float64 {
 
 	site.log.TRACE.Printf("available=%.1fh buffer=%.1fh safe=%.1fh cutoff=%s", availableHours, bufferHours, safeAvailableHours, cutoffTime.Format("15:04"))
 
+	// calculate available PV power after household consumption
+	// only the surplus of PV can charge the battery efficiently
+	availablePVForBattery := max(0, site.pvPower-max(0, site.gridPower))
+
 	// safety failsafe: if buffer time is active (remaining time <= buffer), use max charge power
 	// this ensures battery reaches maxSoC even if forecast was too pessimistic
 	var requiredPower float64
@@ -1044,6 +1048,13 @@ func (site *Site) estimateTotalHoldChargePower() float64 {
 		if requiredPower < 500.0 {
 			requiredPower = 0
 		}
+	}
+
+	// limit to available PV surplus after household consumption
+	// this ensures we don't force grid import for battery charging
+	if availablePVForBattery > 0 && requiredPower > availablePVForBattery {
+		site.log.TRACE.Printf("battery hold charge: limiting to available PV surplus %.0f W (PV %.0f W - grid import %.0f W)", availablePVForBattery, site.pvPower, max(0, site.gridPower))
+		requiredPower = availablePVForBattery
 	}
 
 	site.log.TRACE.Printf("battery hold charge calc: deficit=%.0f Wh available=%.1fh power=%.0f W", totalDeficit*1000, availableHours, requiredPower)
