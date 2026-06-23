@@ -386,7 +386,8 @@ func (site *Site) SetBatteryAutoHoldCharge(val bool) error {
 
 	if site.batteryAutoHoldCharge != val {
 		site.batteryAutoHoldCharge = val
-		settings.SetBool("batteryAutoHoldCharge", val)
+		settings.SetBool(keys.BatteryAutoHoldCharge, val)
+		site.publish(keys.BatteryAutoHoldCharge, val)
 	}
 
 	return nil
@@ -412,7 +413,8 @@ func (site *Site) SetBatteryAutoHoldChargeFactor(val float64) error {
 
 	if site.batteryAutoHoldChargeFactor != val {
 		site.batteryAutoHoldChargeFactor = val
-		// Note: settings persistence would need to be added here with proper key
+		settings.SetFloat(keys.BatteryAutoHoldChargeFactor, val)
+		site.publish(keys.BatteryAutoHoldChargeFactor, val)
 	}
 
 	return nil

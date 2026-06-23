@@ -123,14 +123,6 @@ func (site *Site) shouldUseHoldChargePower() bool {
 		return false
 	}
 
-	// get configured factor (default 1.5)
-	factor := site.batteryAutoHoldChargeFactor
-	if factor <= 0 {
-		factor = 1.5
-	}
-
-	// condition: daily PV forecast > (daily consumption * factor)
-
 	solarTariff := site.GetTariff(api.TariffUsageSolar)
 	if solarTariff == nil {
 		return false
@@ -141,49 +133,66 @@ func (site *Site) shouldUseHoldChargePower() bool {
 		return false
 	}
 
-	// sum today's PV forecast (in Wh)
+	// find cutoff time (when solar < 50W) - disable if no PV left today
 	now := time.Now()
-	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	todayEnd := todayStart.AddDate(0, 0, 1)
-
-	var dailyPVForecast float64
+	var cutoffTime time.Time
 	for _, r := range rates {
-		if r.Start.After(todayEnd) {
+		if r.Start.After(now) && r.Value < 50 {
+			cutoffTime = r.Start
 			break
 		}
-		if r.End.Before(todayStart) {
+	}
+	if cutoffTime.IsZero() {
+		cutoffTime = rates[len(rates)-1].End
+	}
+
+	// disable HoldCharge if cutoff already passed or very soon (less than 10 min remaining)
+	remainingTime := cutoffTime.Sub(now)
+	if remainingTime < 10*time.Minute {
+		site.log.TRACE.Printf("hold charge: insufficient time to sunset (%.0f min remaining), disabling",
+			remainingTime.Minutes())
+		return false
+	}
+
+	// check: remaining PV forecast > remaining consumption * factor
+	factor := site.batteryAutoHoldChargeFactor
+	if factor <= 0 {
+		factor = 1.5
+	}
+
+	// sum remaining PV forecast from now until cutoff
+	var remainingPVForecast float64
+	for _, r := range rates {
+		if r.Start.After(cutoffTime) {
+			break
+		}
+		if r.End.Before(now) {
 			continue
 		}
-		// normalize overlap to today's window
 		start := r.Start
-		if start.Before(todayStart) {
-			start = todayStart
+		if start.Before(now) {
+			start = now
 		}
 		end := r.End
-		if end.After(todayEnd) {
-			end = todayEnd
+		if end.After(cutoffTime) {
+			end = cutoffTime
 		}
 		durationHours := end.Sub(start).Hours()
-		dailyPVForecast += r.Value * durationHours
+		remainingPVForecast += r.Value * durationHours
 	}
 
-	// estimate daily consumption from accumulated power data
-	// use ratio of current gridPower to extrapolate consumption
-	currentHour := float64(time.Now().Hour())
-	if currentHour == 0 {
-		currentHour = 1 // avoid division by zero at midnight
-	}
-	// rough estimate: grid import up to now, extrapolated to full day
-	dailyConsumption := site.gridPower * 24 / currentHour
-	if dailyConsumption < 0 {
-		dailyConsumption = 0 // negative grid = export, no consumption
+	// estimate remaining consumption until midnight
+	// use current gridPower extrapolated to full remaining day
+	hoursUntilMidnight := float64((24 - now.Hour()))
+	remainingConsumption := site.gridPower * hoursUntilMidnight
+	if remainingConsumption < 0 {
+		remainingConsumption = 0
 	}
 
-	site.log.TRACE.Printf("hold charge auto-check: PV forecast %.0f Wh > consumption %.0f Wh * %.2f = %.0f Wh?",
-		dailyPVForecast, dailyConsumption, factor, dailyConsumption*factor)
+	site.log.TRACE.Printf("hold charge auto-check: remaining PV %.0f Wh > consumption %.0f Wh * %.2f = %.0f Wh? cutoff=%.0f min",
+		remainingPVForecast, remainingConsumption, factor, remainingConsumption*factor, remainingTime.Minutes())
 
-	// condition: PV forecast > consumption * factor
-	return dailyPVForecast > (dailyConsumption * factor)
+	return remainingPVForecast > (remainingConsumption * factor)
 }
 
 func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate) {

@@ -362,6 +362,16 @@ func (site *Site) restoreSettings() error {
 			return err
 		}
 	}
+	if v, err := settings.Bool(keys.BatteryAutoHoldCharge); err == nil {
+		if err := site.SetBatteryAutoHoldCharge(v); err != nil {
+			return err
+		}
+	}
+	if v, err := settings.Float(keys.BatteryAutoHoldChargeFactor); err == nil {
+		if err := site.SetBatteryAutoHoldChargeFactor(v); err != nil {
+			return err
+		}
+	}
 	if v, err := settings.Float(keys.ResidualPower); err == nil {
 		if err := site.SetResidualPower(v); err != nil {
 			return err
@@ -1106,6 +1116,8 @@ func (site *Site) prepare() {
 	site.publish(keys.BufferStartSoc, site.bufferStartSoc)
 	site.publish(keys.BatteryMode, site.batteryMode)
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
+	site.publish(keys.BatteryAutoHoldCharge, site.batteryAutoHoldCharge)
+	site.publish(keys.BatteryAutoHoldChargeFactor, site.batteryAutoHoldChargeFactor)
 	site.publish(keys.ResidualPower, site.GetResidualPower())
 	site.publish(keys.SmartCostAvailable, site.isDynamicTariff(api.TariffUsagePlanner))
 	site.publish(keys.SmartFeedInPriorityAvailable, site.isDynamicTariff(api.TariffUsageFeedIn))
