@@ -182,7 +182,7 @@ render: |
             method: POST
             headers:
             - content-type: application/json
-            body: '{"value": %v}'
+            body: '{"value": {{ mul %v -1 }}}'
   {{- end }}
   {{- include "battery-params" . }}
   {{- end }}
