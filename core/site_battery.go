@@ -52,52 +52,6 @@ func (site *Site) SetBatteryMode(batMode api.BatteryMode) {
 	}
 }
 
-// solarCutoffTime finds the first point in rates where solar drops below 50W.
-// If the matching rate is already running, cutoff is now. If no such point exists,
-// the end of the last rate is used.
-func solarCutoffTime(rates api.Rates, now time.Time) time.Time {
-	for _, r := range rates {
-		if r.End.After(now) && r.Value < 50 {
-			if r.Start.Before(now) {
-				return now
-			}
-			return r.Start
-		}
-	}
-	return rates[len(rates)-1].End
-}
-
-// holdChargeTargetTime parses the configured target time and returns it as today's time.Time.
-// Returns zero if the target time has already passed or is not set (falls back to "18:00").
-func (site *Site) holdChargeTargetTime() time.Time {
-	s := site.batteryAutoHoldChargeTargetTime
-	if s == "" {
-		s = "18:00"
-	}
-	t, err := time.ParseInLocation("15:04", s, time.Local)
-	if err != nil {
-		return time.Time{}
-	}
-	now := time.Now()
-	target := time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, time.Local)
-	if target.Before(now) {
-		return time.Time{} // already past today's target - no constraint
-	}
-	return target
-}
-
-// effectiveCutoffTime returns the earlier of the solar cutoff and the configured target time.
-// This ensures the battery reaches maxSoC by the target time even if the sun sets later.
-func (site *Site) effectiveCutoffTime(rates api.Rates) time.Time {
-	now := time.Now()
-	solar := solarCutoffTime(rates, now)
-	target := site.holdChargeTargetTime()
-	if !target.IsZero() && target.Before(solar) {
-		return target
-	}
-	return solar
-}
-
 func (site *Site) isBufferTimeActiveAndBatteryFull() bool {
 	// disable HoldCharge when buffer time is active and battery is full
 	// this allows free discharge of fully charged battery during buffer time
@@ -128,10 +82,24 @@ func (site *Site) isBufferTimeActiveAndBatteryFull() bool {
 		return false
 	}
 
-	cutoffTime := site.effectiveCutoffTime(rates)
+	// find cutoff time (when solar < 50W)
+	now := time.Now()
+	var cutoffTime time.Time
+	for _, r := range rates {
+		if r.End.After(now) && r.Value < 50 {
+			if r.Start.Before(now) {
+				cutoffTime = now
+			} else {
+				cutoffTime = r.Start
+			}
+			break
+		}
+	}
+	if cutoffTime.IsZero() {
+		cutoffTime = rates[len(rates)-1].End
+	}
 
 	// calculate available time and buffer
-	now := time.Now()
 	availableHours := cutoffTime.Sub(now).Hours()
 	if availableHours <= 0 {
 		return true // already past cutoff, battery should be released
@@ -169,8 +137,23 @@ func (site *Site) shouldUseHoldChargePower() bool {
 		return false
 	}
 
+	// find cutoff time: first rate (current or future) with Value < 50W
 	now := time.Now()
-	cutoffTime := site.effectiveCutoffTime(rates)
+	var cutoffTime time.Time
+	for _, r := range rates {
+		if r.End.After(now) && r.Value < 50 {
+			// if this rate is already running, cutoff is now
+			if r.Start.Before(now) {
+				cutoffTime = now
+			} else {
+				cutoffTime = r.Start
+			}
+			break
+		}
+	}
+	if cutoffTime.IsZero() {
+		cutoffTime = rates[len(rates)-1].End
+	}
 
 	// disable HoldCharge if cutoff already passed or very soon (less than 10 min remaining)
 	remainingTime := cutoffTime.Sub(now)

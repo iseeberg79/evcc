@@ -80,9 +80,8 @@ type Site struct {
 	bufferStartSoc            float64  // start charging on battery above this Soc
 	batteryDischargeControl   bool     // prevent battery discharge for fast and planned charging
 	batteryGridChargeLimit    *float64 // grid charging limit
-	batteryAutoHoldCharge           bool    `mapstructure:"batteryAutoHoldCharge"`           // auto-enable HoldCharge mode when sufficient PV forecast
-	batteryAutoHoldChargeFactor     float64 `mapstructure:"batteryAutoHoldChargeFactor"`     // PV > consumption * factor to trigger auto-hold (default 1.5)
-	batteryAutoHoldChargeTargetTime string  `mapstructure:"batteryAutoHoldChargeTargetTime"` // target time (HH:MM) by which battery must be full (default 18:00)
+	batteryAutoHoldCharge     bool     `mapstructure:"batteryAutoHoldCharge"`     // auto-enable HoldCharge mode when sufficient PV forecast
+	batteryAutoHoldChargeFactor float64 `mapstructure:"batteryAutoHoldChargeFactor"` // PV > consumption * factor to trigger auto-hold (default 1.5)
 
 	// optimizer settings
 	optimizerChargingStrategy string // optimizer grid charging strategy
@@ -370,11 +369,6 @@ func (site *Site) restoreSettings() error {
 	}
 	if v, err := settings.Float(keys.BatteryAutoHoldChargeFactor); err == nil {
 		if err := site.SetBatteryAutoHoldChargeFactor(v); err != nil {
-			return err
-		}
-	}
-	if v, err := settings.String(keys.BatteryAutoHoldChargeTargetTime); err == nil {
-		if err := site.SetBatteryAutoHoldChargeTargetTime(v); err != nil {
 			return err
 		}
 	}
@@ -1124,7 +1118,6 @@ func (site *Site) prepare() {
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
 	site.publish(keys.BatteryAutoHoldCharge, site.batteryAutoHoldCharge)
 	site.publish(keys.BatteryAutoHoldChargeFactor, site.batteryAutoHoldChargeFactor)
-	site.publish(keys.BatteryAutoHoldChargeTargetTime, site.batteryAutoHoldChargeTargetTime)
 	site.publish(keys.ResidualPower, site.GetResidualPower())
 	site.publish(keys.SmartCostAvailable, site.isDynamicTariff(api.TariffUsagePlanner))
 	site.publish(keys.SmartFeedInPriorityAvailable, site.isDynamicTariff(api.TariffUsageFeedIn))

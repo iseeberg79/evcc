@@ -420,35 +420,6 @@ func (site *Site) SetBatteryAutoHoldChargeFactor(val float64) error {
 	return nil
 }
 
-// GetBatteryAutoHoldChargeTargetTime returns the target time for auto hold charge
-func (site *Site) GetBatteryAutoHoldChargeTargetTime() string {
-	site.RLock()
-	defer site.RUnlock()
-	return site.batteryAutoHoldChargeTargetTime
-}
-
-// SetBatteryAutoHoldChargeTargetTime sets the target time (HH:MM) by which the battery must be full
-func (site *Site) SetBatteryAutoHoldChargeTargetTime(val string) error {
-	site.log.DEBUG.Println("set battery auto hold charge target time:", val)
-
-	if val != "" {
-		if _, err := time.ParseInLocation("15:04", val, time.Local); err != nil {
-			return fmt.Errorf("invalid target time %q: expected HH:MM format", val)
-		}
-	}
-
-	site.Lock()
-	defer site.Unlock()
-
-	if site.batteryAutoHoldChargeTargetTime != val {
-		site.batteryAutoHoldChargeTargetTime = val
-		settings.SetString(keys.BatteryAutoHoldChargeTargetTime, val)
-		site.publish(keys.BatteryAutoHoldChargeTargetTime, val)
-	}
-
-	return nil
-}
-
 func (site *Site) GetBatteryGridChargeLimit() *float64 {
 	site.RLock()
 	defer site.RUnlock()
