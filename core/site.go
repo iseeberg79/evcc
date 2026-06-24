@@ -75,14 +75,14 @@ type Site struct {
 	consumerMeters []config.Device[api.Meter] // Consumer meters
 
 	// battery settings
-	prioritySoc               float64  // prefer battery up to this Soc
-	bufferSoc                 float64  // continue charging on battery above this Soc
-	bufferStartSoc            float64  // start charging on battery above this Soc
-	batteryDischargeControl   bool     // prevent battery discharge for fast and planned charging
-	batteryGridChargeLimit    *float64 // grid charging limit
-	batteryAutoHoldCharge           bool    `mapstructure:"batteryAutoHoldCharge"`           // auto-enable HoldCharge mode when sufficient PV forecast
-	batteryAutoHoldChargeFactor     float64 `mapstructure:"batteryAutoHoldChargeFactor"`     // PV > consumption * factor to trigger auto-hold (default 1.5)
-	batteryAutoHoldChargeTargetTime string  `mapstructure:"batteryAutoHoldChargeTargetTime"` // target time (HH:MM) by which battery must be full (default 18:00)
+	prioritySoc                     float64  // prefer battery up to this Soc
+	bufferSoc                       float64  // continue charging on battery above this Soc
+	bufferStartSoc                  float64  // start charging on battery above this Soc
+	batteryDischargeControl         bool     // prevent battery discharge for fast and planned charging
+	batteryGridChargeLimit          *float64 // grid charging limit
+	batteryAutoHoldCharge           bool     `mapstructure:"batteryAutoHoldCharge"`           // auto-enable HoldCharge mode when sufficient PV forecast
+	batteryAutoHoldChargeFactor     float64  `mapstructure:"batteryAutoHoldChargeFactor"`     // PV > consumption * factor to trigger auto-hold (default 1.5)
+	batteryAutoHoldChargeTargetTime string   `mapstructure:"batteryAutoHoldChargeTargetTime"` // target time (HH:MM) by which battery must be full (default 18:00)
 
 	// optimizer settings
 	optimizerChargingStrategy string // optimizer grid charging strategy

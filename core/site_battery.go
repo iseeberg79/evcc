@@ -76,6 +76,7 @@ func (site *Site) holdChargeTargetTime() time.Time {
 	}
 	t, err := time.ParseInLocation("15:04", s, time.Local)
 	if err != nil {
+		site.log.WARN.Printf("invalid batteryAutoHoldChargeTargetTime %q, using solar cutoff: %v", s, err)
 		return time.Time{}
 	}
 	now := time.Now()
@@ -207,10 +208,9 @@ func (site *Site) shouldUseHoldChargePower() bool {
 		remainingPVForecast += r.Value * durationHours
 	}
 
-	// estimate remaining consumption until midnight
-	// use current gridPower extrapolated to full remaining day
-	hoursUntilMidnight := float64((24 - now.Hour()))
-	remainingConsumption := site.gridPower * hoursUntilMidnight
+	// estimate remaining home consumption from now until cutoff
+	// use current gridPower extrapolated over the same window as the PV forecast
+	remainingConsumption := site.gridPower * remainingTime.Hours()
 	if remainingConsumption < 0 {
 		remainingConsumption = 0
 	}
@@ -254,9 +254,10 @@ func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate)
 		}
 	}
 
-	// TEMPORARY: calculate hold charge power for all batteries (for simulation/debugging)
-	for _, dev := range site.batteryMeters {
-		site.applyHoldChargePower(dev)
+	// update hold charge power for /api/state whenever hold charge is relevant
+	// (auto mode enabled or battery currently/about to be in hold charge)
+	if site.batteryAutoHoldCharge || batteryMode == api.BatteryHoldCharge || site.batteryMode == api.BatteryHoldCharge {
+		site.applyHoldChargePower()
 	}
 }
 
@@ -365,10 +366,6 @@ func (site *Site) applyBatteryMode(mode api.BatteryMode) error {
 			}
 		}
 
-		// set charge power for hold charge mode
-		if mode == api.BatteryHoldCharge {
-			site.applyHoldChargePower(dev)
-		}
 	}
 
 	return nil
