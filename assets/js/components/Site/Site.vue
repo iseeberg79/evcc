@@ -132,6 +132,7 @@ export default defineComponent({
 		batteryDischargeControl: Boolean,
 		batteryAutoHoldCharge: Boolean,
 		batteryAutoHoldChargeFactor: { type: Number, default: 1.5 },
+		batteryAutoHoldChargeTargetTime: { type: String, default: "18:00" },
 		batteryGridChargeLimit: { type: [Number, null] as PropType<number | null>, default: null },
 		batteryGridChargeActive: Boolean,
 		batteryMode: String as PropType<BATTERY_MODE>,

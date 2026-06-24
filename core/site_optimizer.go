@@ -820,7 +820,7 @@ func apiError(resp *optimizer.PostOptimizeChargeScheduleResponse) error {
 }
 
 // applyHoldChargePower calculates the hold charge power for all batteries and publishes as array
-func (site *Site) applyHoldChargePower(dev config.Device[api.Meter]) {
+func (site *Site) applyHoldChargePower() {
 	totalDeficit := site.calculateTotalDeficit()
 	site.log.TRACE.Printf("applyHoldChargePower: totalDeficit = %.2f kWh", totalDeficit)
 
