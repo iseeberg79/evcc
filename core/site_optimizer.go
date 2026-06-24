@@ -821,8 +821,14 @@ func apiError(resp *optimizer.PostOptimizeChargeScheduleResponse) error {
 
 // applyHoldChargePower calculates the hold charge power for all batteries and publishes as array
 func (site *Site) applyHoldChargePower() {
-	totalDeficit := site.calculateTotalDeficit()
-	site.log.TRACE.Printf("applyHoldChargePower: totalDeficit = %.2f kWh", totalDeficit)
+	// per-battery deficit is logged inside calculateBatteryDeficit
+	deficits := make([]float64, len(site.batteryMeters))
+	var totalDeficit float64
+	for i, battery := range site.batteryMeters {
+		deficits[i] = site.calculateBatteryDeficit(battery)
+		totalDeficit += deficits[i]
+	}
+	site.log.DEBUG.Printf("totalDeficit sum = %.2f kWh = %.0f Wh", totalDeficit, totalDeficit*1000)
 
 	if totalDeficit <= 0 {
 		site.log.TRACE.Printf("applyHoldChargePower: totalDeficit <= 0, publishing zeros")
@@ -830,7 +836,7 @@ func (site *Site) applyHoldChargePower() {
 		return
 	}
 
-	estimatedTotalPower := site.estimateTotalHoldChargePower()
+	estimatedTotalPower := site.estimateTotalHoldChargePower(totalDeficit)
 
 	if estimatedTotalPower <= 0 {
 		site.log.TRACE.Printf("applyHoldChargePower: estimatedTotalPower <= 0, publishing zeros")
@@ -839,18 +845,14 @@ func (site *Site) applyHoldChargePower() {
 	}
 
 	powers := make([]int64, len(site.batteryMeters))
-	for i, battery := range site.batteryMeters {
-		deficit := site.calculateBatteryDeficit(battery)
-		allocatedPower := (deficit / totalDeficit) * estimatedTotalPower
-		site.log.TRACE.Printf("battery[%d] deficit=%.0f Wh, allocated=%.0f W", i, deficit, allocatedPower)
-
+	for i := range site.batteryMeters {
+		allocatedPower := (deficits[i] / totalDeficit) * estimatedTotalPower
 		if allocatedPower < 200 {
 			allocatedPower = 0
 		}
 		powers[i] = int64(allocatedPower + 0.5) // round to nearest int
 	}
 
-	site.log.TRACE.Printf("applyHoldChargePower: final powers = %v", powers)
 	site.publish(keys.BatteryHoldChargePower, powers)
 
 	for i, battery := range site.batteryMeters {
@@ -858,20 +860,6 @@ func (site *Site) applyHoldChargePower() {
 			site.log.DEBUG.Printf("battery %d (%s) hold charge power: %d W", i, deviceTitleOrName(battery), powers[i])
 		}
 	}
-}
-
-// calculateTotalDeficit calculates the sum of energy deficits for all batteries
-func (site *Site) calculateTotalDeficit() float64 {
-	var totalDeficit float64
-
-	for i, dev := range site.batteryMeters {
-		deficit := site.calculateBatteryDeficit(dev)
-		site.log.DEBUG.Printf("battery[%d] deficit = %.2f kWh = %.0f Wh", i, deficit, deficit*1000)
-		totalDeficit += deficit
-	}
-
-	site.log.DEBUG.Printf("totalDeficit sum = %.2f kWh = %.0f Wh", totalDeficit, totalDeficit*1000)
-	return totalDeficit
 }
 
 // calculateBatteryDeficit calculates the energy deficit for a single battery
@@ -926,8 +914,7 @@ func (site *Site) calculateBatteryDeficit(dev config.Device[api.Meter]) float64 
 }
 
 // estimateTotalHoldChargePower estimates the total required charge power from grid to reach maxSoc by end of PV generation
-func (site *Site) estimateTotalHoldChargePower() float64 {
-	totalDeficit := site.calculateTotalDeficit()
+func (site *Site) estimateTotalHoldChargePower(totalDeficit float64) float64 {
 	site.log.TRACE.Printf("estimateTotalHoldChargePower: totalDeficit = %.2f kWh", totalDeficit)
 	if totalDeficit <= 0 {
 		return 0
