@@ -826,7 +826,7 @@ func (site *Site) applyHoldChargePower(dev config.Device[api.Meter]) {
 
 	if totalDeficit <= 0 {
 		site.log.TRACE.Printf("applyHoldChargePower: totalDeficit <= 0, publishing zeros")
-		site.publish(keys.BatteryHoldChargePower, make([]float64, len(site.batteryMeters)))
+		site.publish(keys.BatteryHoldChargePower, make([]int64, len(site.batteryMeters)))
 		return
 	}
 
@@ -834,11 +834,11 @@ func (site *Site) applyHoldChargePower(dev config.Device[api.Meter]) {
 
 	if estimatedTotalPower <= 0 {
 		site.log.TRACE.Printf("applyHoldChargePower: estimatedTotalPower <= 0, publishing zeros")
-		site.publish(keys.BatteryHoldChargePower, make([]float64, len(site.batteryMeters)))
+		site.publish(keys.BatteryHoldChargePower, make([]int64, len(site.batteryMeters)))
 		return
 	}
 
-	powers := make([]float64, len(site.batteryMeters))
+	powers := make([]int64, len(site.batteryMeters))
 	for i, battery := range site.batteryMeters {
 		deficit := site.calculateBatteryDeficit(battery)
 		allocatedPower := (deficit / totalDeficit) * estimatedTotalPower
@@ -847,7 +847,7 @@ func (site *Site) applyHoldChargePower(dev config.Device[api.Meter]) {
 		if allocatedPower < 200 {
 			allocatedPower = 0
 		}
-		powers[i] = allocatedPower
+		powers[i] = int64(allocatedPower + 0.5) // round to nearest int
 	}
 
 	site.log.TRACE.Printf("applyHoldChargePower: final powers = %v", powers)
@@ -855,7 +855,7 @@ func (site *Site) applyHoldChargePower(dev config.Device[api.Meter]) {
 
 	for i, battery := range site.batteryMeters {
 		if powers[i] > 0 {
-			site.log.DEBUG.Printf("battery %d (%s) hold charge power: %.0f W", i, deviceTitleOrName(battery), powers[i])
+			site.log.DEBUG.Printf("battery %d (%s) hold charge power: %d W", i, deviceTitleOrName(battery), powers[i])
 		}
 	}
 }
