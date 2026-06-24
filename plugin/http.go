@@ -272,28 +272,8 @@ func (p *HTTP) set(param string, val any) error {
 
 var _ IntSetter = (*HTTP)(nil)
 
-// IntSetter sends int request or reads float from HTTP and forwards to nested setter
+// IntSetter sends int request
 func (p *HTTP) IntSetter(param string) (func(int64) error, error) {
-	if p.setConfig != nil {
-		get, err := p.FloatGetter()
-		if err != nil {
-			return nil, err
-		}
-
-		set, err := p.setConfig.FloatSetter(p.ctx, param)
-		if err != nil {
-			return nil, err
-		}
-
-		return func(_ int64) error {
-			val, err := get()
-			if err != nil {
-				return err
-			}
-			return set(val)
-		}, nil
-	}
-
 	return func(val int64) error {
 		return p.set(param, val)
 	}, nil
