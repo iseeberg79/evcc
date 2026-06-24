@@ -32,6 +32,8 @@ var (
 	eta          = float32(0.9)  // efficiency of the battery charging/discharging
 	batteryPower = float32(6000) // default power of the battery in W
 
+	defaultSmoothChargingWeight = float32(1.0) // hold charge: ramp-smoothing weight passed to the optimizer
+
 	mu               sync.Mutex
 	optimizerUpdated time.Time
 )
@@ -190,10 +192,16 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 		ft = prorate(scaleAndPrune(solarEnergy, site.solarScale(), minLen), firstSlotDuration)
 	}
 
+	var smoothWeight float32
+	if site.batteryAutoHoldCharge {
+		smoothWeight = defaultSmoothChargingWeight
+	}
+
 	req := optimizer.OptimizationInput{
 		Strategy: optimizer.OptimizerStrategy{
-			ChargingStrategy:    optimizer.OptimizerStrategyChargingStrategy(site.GetOptimizerChargingStrategy()),
-			DischargingStrategy: optimizer.OptimizerStrategyDischargingStrategyDischargeBeforeImport,
+			ChargingStrategy:     optimizer.OptimizerStrategyChargingStrategy(site.GetOptimizerChargingStrategy()),
+			DischargingStrategy:  optimizer.OptimizerStrategyDischargingStrategyDischargeBeforeImport,
+			SmoothChargingWeight: smoothWeight,
 		},
 		EtaC: eta,
 		EtaD: eta,
@@ -289,12 +297,16 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 		return errors.New(string(resp.JSON200.Status))
 	}
 
-	site.publish("evopt", optimizerResult{
+	res := optimizerResult{
 		Updated: time.Now(),
 		Req:     req,
 		Res:     *resp.JSON200,
 		Details: details,
-	})
+	}
+	site.publish("evopt", res)
+	site.Lock()
+	site.lastOptimizerResult = &res
+	site.Unlock()
 
 	var batteries []batteryResult
 	for i, batReq := range req.Batteries {
@@ -504,6 +516,18 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 		minSoc, maxSoc := m.GetSocLimits()
 		bat.SMin = float32(*b.Capacity * minSoc * 10) // Wh
 		bat.SMax = float32(*b.Capacity * maxSoc * 10) // Wh
+	}
+
+	// hold charge: require maxSoC by the configured target time; the optimizer
+	// smooths the resulting charge curve via SmoothChargingWeight
+	if site.batteryAutoHoldCharge && bat.SMax > 0 {
+		if target := site.holdChargeTargetTime(); !target.IsZero() {
+			slot := int(time.Until(target) / tariff.SlotDuration)
+			if slot >= 0 && slot < minLen {
+				bat.SGoal = make([]float32, minLen)
+				bat.SGoal[slot] = bat.SMax
+			}
+		}
 	}
 
 	detail := batteryDetail{

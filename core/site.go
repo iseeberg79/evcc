@@ -85,7 +85,8 @@ type Site struct {
 	batteryAutoHoldChargeTargetTime string   `mapstructure:"batteryAutoHoldChargeTargetTime"` // target time (HH:MM) by which battery must be full (default 18:00)
 
 	// optimizer settings
-	optimizerChargingStrategy string // optimizer grid charging strategy
+	optimizerChargingStrategy string           // optimizer grid charging strategy
+	lastOptimizerResult       *optimizerResult // last successful optimizer result (nil until first run)
 
 	loadpoints  []*Loadpoint             // Loadpoints
 	tariffs     *tariff.Tariffs          // Tariffs
