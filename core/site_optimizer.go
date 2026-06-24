@@ -976,23 +976,7 @@ func (site *Site) estimateTotalHoldChargePower() float64 {
 		return 0
 	}
 
-	// find cutoff point: first current or future rate with solar < 50W
-	var cutoffTime time.Time
-	for _, r := range rates {
-		if r.End.After(now) && r.Value < 50 {
-			if r.Start.Before(now) {
-				cutoffTime = now
-			} else {
-				cutoffTime = r.Start
-			}
-			break
-		}
-	}
-
-	// if no cutoff found, use last rate
-	if cutoffTime.IsZero() {
-		cutoffTime = rates[len(rates)-1].End
-	}
+	cutoffTime := site.effectiveCutoffTime(rates)
 
 	// calculate available time for charging
 	availableHours := cutoffTime.Sub(now).Hours()
