@@ -7,6 +7,7 @@ import (
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/keys"
 	"github.com/evcc-io/evcc/core/loadpoint"
+	"github.com/evcc-io/evcc/tariff"
 	"github.com/evcc-io/evcc/util/config"
 )
 
@@ -208,11 +209,19 @@ func (site *Site) shouldUseHoldChargePower() bool {
 		remainingPVForecast += r.Value * durationHours
 	}
 
-	// estimate remaining home consumption from now until cutoff
-	// use current gridPower extrapolated over the same window as the PV forecast
-	remainingConsumption := site.gridPower * remainingTime.Hours()
-	if remainingConsumption < 0 {
-		remainingConsumption = 0
+	// estimate remaining home consumption from now until cutoff using the
+	// 30-day home load profile; fall back to a flat 15 kWh/day estimate
+	const fallbackDailyConsumption = 15000.0 // Wh
+	remainingConsumption := fallbackDailyConsumption * remainingTime.Hours() / 24
+	slots := int(remainingTime/tariff.SlotDuration) + 1
+	if profile, err := site.homeProfile(slots); err == nil {
+		var sum float64
+		for _, v := range profile {
+			sum += v
+		}
+		remainingConsumption = sum
+	} else {
+		site.log.TRACE.Printf("hold charge: no home profile (%v), using 15 kWh/day fallback", err)
 	}
 
 	site.log.TRACE.Printf("hold charge auto-check: remaining PV %.0f Wh > consumption %.0f Wh * %.2f = %.0f Wh? cutoff=%.0f min",

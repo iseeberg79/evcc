@@ -166,6 +166,51 @@ func TestWatchdogDelayBackwardCompatibility(t *testing.T) {
 	require.Equal(t, []int{1, 3, 2, 4}, calls, "Value 4 should be set immediately (no delay)")
 }
 
+func TestWatchdogForwardsNestedHTTPValue(t *testing.T) {
+	// The watchdog wraps a nested http plugin that reads a dynamic value and
+	// forwards it to a nested setter (Kostal holdcharge scenario). Each watchdog
+	// tick must re-read the current value and write it, so a value that changes
+	// over time is reflected in the inverter register without a mode change.
+	srv := newForwardServer("1500")
+	defer srv.Close()
+
+	p := &watchdogPlugin{
+		ctx:     t.Context(),
+		log:     util.NewLogger("test"),
+		timeout: 40 * time.Millisecond,
+		clock:   clock.New(),
+		set: Config{
+			Source: "http",
+			Other: map[string]any{
+				"uri": srv.URL + "/value",
+				"set": map[string]any{
+					"source": "http",
+					"uri":    srv.URL + "/write?v={{.foo}}",
+				},
+			},
+		},
+	}
+
+	set, err := p.IntSetter("foo")
+	require.NoError(t, err)
+	defer func() {
+		if p.cancel != nil {
+			p.cancel()
+		}
+	}()
+
+	// initial write forwards the current value; the incoming value is ignored
+	require.NoError(t, set(2))
+	require.Equal(t, []float64{1500}, srv.writes())
+
+	// value changes; the watchdog tick must pick it up and re-write it
+	srv.setValue("2000")
+	require.Eventually(t, func() bool {
+		w := srv.writes()
+		return len(w) > 1 && w[len(w)-1] == 2000
+	}, 2*time.Second, 10*time.Millisecond, "watchdog did not re-write the updated value")
+}
+
 func TestWatchdogResetStopsInflightTick(t *testing.T) {
 	// Switching to the reset value must stop the watchdog: an in-flight tick
 	// must not re-assert the old value after the reset value was written.

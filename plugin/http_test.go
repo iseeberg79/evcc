@@ -3,11 +3,14 @@ package plugin
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/evcc-io/evcc/util"
 	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -124,6 +127,104 @@ func (suite *httpTestSuite) TestSetPath() {
 	suite.Require().NoError(err)
 	suite.Require().NoError(s("4711"))
 	suite.Require().Equal("/foo/bar/4711", suite.h.req.URL.String())
+}
+
+// forwardServer is a test http server that serves a dynamic value on /value and
+// records values written to /write. It models the nested-setter chain where an
+// http plugin reads a value (e.g. from /api/state) and forwards it to a nested
+// setter (e.g. modbus).
+type forwardServer struct {
+	*httptest.Server
+	mu      sync.Mutex
+	value   string
+	written []string
+}
+
+func newForwardServer(value string) *forwardServer {
+	s := &forwardServer{value: value}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/value", func(w http.ResponseWriter, _ *http.Request) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		_, _ = w.Write([]byte(s.value))
+	})
+	mux.HandleFunc("/write", func(_ http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.written = append(s.written, r.URL.Query().Get("v"))
+	})
+
+	s.Server = httptest.NewServer(mux)
+	return s
+}
+
+func (s *forwardServer) setValue(v string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.value = v
+}
+
+func (s *forwardServer) writes() []float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res := make([]float64, 0, len(s.written))
+	for _, w := range s.written {
+		f, _ := strconv.ParseFloat(w, 64)
+		res = append(res, f)
+	}
+	return res
+}
+
+// newForwardingHTTP builds an http plugin that reads from /value and forwards
+// the value to a nested http setter writing to /write?v={{.foo}}.
+func newForwardingHTTP(t *testing.T, srv *forwardServer) Plugin {
+	t.Helper()
+	p, err := NewHTTPPluginFromConfig(t.Context(), map[string]any{
+		"uri": srv.URL + "/value",
+		"set": map[string]any{
+			"source": "http",
+			"uri":    srv.URL + "/write?v={{.foo}}",
+		},
+	})
+	require.NoError(t, err)
+	return p
+}
+
+// TestIntSetterForward verifies the nested-setter path: the incoming int is
+// ignored, the current value is read via GET and forwarded to the nested setter.
+func TestIntSetterForward(t *testing.T) {
+	srv := newForwardServer("1500")
+	defer srv.Close()
+
+	set, err := newForwardingHTTP(t, srv).(IntSetter).IntSetter("foo")
+	require.NoError(t, err)
+
+	// incoming value (99) is ignored; current GET value (1500) is forwarded
+	require.NoError(t, set(99))
+	require.Equal(t, []float64{1500}, srv.writes())
+
+	// a changed value is picked up on the next call (the dynamic behaviour the
+	// watchdog relies on for periodic re-writes)
+	srv.setValue("2000")
+	require.NoError(t, set(99))
+	require.Equal(t, []float64{1500, 2000}, srv.writes())
+}
+
+// TestFloatSetterForward verifies the symmetric nested-setter path for floats.
+func TestFloatSetterForward(t *testing.T) {
+	srv := newForwardServer("1500")
+	defer srv.Close()
+
+	set, err := newForwardingHTTP(t, srv).(FloatSetter).FloatSetter("foo")
+	require.NoError(t, err)
+
+	require.NoError(t, set(99))
+	require.Equal(t, []float64{1500}, srv.writes())
+
+	srv.setValue("2000")
+	require.NoError(t, set(99))
+	require.Equal(t, []float64{1500, 2000}, srv.writes())
 }
 
 func (suite *httpTestSuite) TestNoCacheClockSkew() {
