@@ -29,6 +29,7 @@
     "capacity": "{energy} of {total}",
     "control": "Battery control",
     "autoHoldCharge": "Automatic charging power optimization.",
+    "experimental": "Experimental",
     "autoHoldChargeMinPower": "Minimum charge power (W)",
     "autoHoldChargeTargetTime": "Target time (battery full by)",
     "discharge": "Prevent discharge in fast mode and planned charging.",

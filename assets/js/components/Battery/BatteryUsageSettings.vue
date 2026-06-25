@@ -198,7 +198,7 @@
 				</div>
 			</div>
 
-			<div class="form-check form-switch mt-3">
+			<div v-if="experimental" class="form-check form-switch mt-3">
 				<input
 					id="batteryAutoHoldCharge"
 					:checked="batteryAutoHoldCharge"
@@ -210,6 +210,9 @@
 				<div class="form-check-label">
 					<label for="batteryAutoHoldCharge">
 						{{ $t("batterySettings.autoHoldCharge") }}
+						<span class="badge text-bg-warning ms-1">{{
+							$t("batterySettings.experimental")
+						}}</span>
 					</label>
 					<small v-if="batteryAutoHoldCharge" class="d-block mt-2">
 						{{ $t("batterySettings.autoHoldChargeMinPower") }}:
@@ -259,6 +262,7 @@ export default defineComponent({
 		prioritySoc: { type: Number, default: 0 },
 		bufferStartSoc: { type: Number, default: 0 },
 		batteryDischargeControl: Boolean,
+		experimental: Boolean,
 		batteryAutoHoldCharge: Boolean,
 		batteryAutoHoldChargeMinPower: { type: Number, default: 200 },
 		batteryAutoHoldChargeTargetTime: { type: String, default: "18:00" },
