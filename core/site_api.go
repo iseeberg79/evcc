@@ -393,28 +393,28 @@ func (site *Site) SetBatteryAutoHoldCharge(val bool) error {
 	return nil
 }
 
-// GetBatteryAutoHoldChargeFactor returns the auto hold charge factor
-func (site *Site) GetBatteryAutoHoldChargeFactor() float64 {
+// GetBatteryAutoHoldChargeMinPower returns the minimum planned charge power (W) to activate HoldCharge
+func (site *Site) GetBatteryAutoHoldChargeMinPower() float64 {
 	site.RLock()
 	defer site.RUnlock()
-	return site.batteryAutoHoldChargeFactor
+	return site.batteryAutoHoldChargeMinPower
 }
 
-// SetBatteryAutoHoldChargeFactor sets the auto hold charge factor
-func (site *Site) SetBatteryAutoHoldChargeFactor(val float64) error {
-	site.log.DEBUG.Println("set battery auto hold charge factor:", val)
+// SetBatteryAutoHoldChargeMinPower sets the minimum planned charge power (W) to activate HoldCharge
+func (site *Site) SetBatteryAutoHoldChargeMinPower(val float64) error {
+	site.log.DEBUG.Println("set battery auto hold charge min power:", val)
 
-	if val <= 0 {
-		val = 1.5 // enforce minimum
+	if val < 0 {
+		val = 0
 	}
 
 	site.Lock()
 	defer site.Unlock()
 
-	if site.batteryAutoHoldChargeFactor != val {
-		site.batteryAutoHoldChargeFactor = val
-		settings.SetFloat(keys.BatteryAutoHoldChargeFactor, val)
-		site.publish(keys.BatteryAutoHoldChargeFactor, val)
+	if site.batteryAutoHoldChargeMinPower != val {
+		site.batteryAutoHoldChargeMinPower = val
+		settings.SetFloat(keys.BatteryAutoHoldChargeMinPower, val)
+		site.publish(keys.BatteryAutoHoldChargeMinPower, val)
 	}
 
 	return nil

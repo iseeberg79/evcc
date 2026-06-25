@@ -145,7 +145,7 @@ func (s *HTTPd) RegisterSiteHandlers(site site.API) {
 		"bufferstartsoc":                  {"POST", "/bufferstartsoc/{value:[0-9.]+}", floatHandler(site.SetBufferStartSoc, site.GetBufferStartSoc)},
 		"batterydischargecontrol":         {"POST", "/batterydischargecontrol/{value:[01truefalse]+}", boolHandler(site.SetBatteryDischargeControl, site.GetBatteryDischargeControl)},
 		"batteryautoholdcharge":           {"POST", "/batteryautoholdcharge/{value:[01truefalse]+}", boolHandler(site.SetBatteryAutoHoldCharge, site.GetBatteryAutoHoldCharge)},
-		"batteryautoholdchargefactor":     {"POST", "/batteryautoholdchargefactor/{value:[0-9.]+}", floatHandler(site.SetBatteryAutoHoldChargeFactor, site.GetBatteryAutoHoldChargeFactor)},
+		"batteryautoholdchargeminpower":   {"POST", "/batteryautoholdchargeminpower/{value:[0-9.]+}", floatHandler(site.SetBatteryAutoHoldChargeMinPower, site.GetBatteryAutoHoldChargeMinPower)},
 		"batteryautoholdchargetargettime": {"POST", "/batteryautoholdchargetargettime/{value:[0-9:]+}", stringHandler(site.SetBatteryAutoHoldChargeTargetTime, site.GetBatteryAutoHoldChargeTargetTime)},
 		"batterygridcharge":               {"POST", "/batterygridchargelimit/{value:-?[0-9.]+}", floatPtrHandler(site.SetBatteryGridChargeLimit, site.GetBatteryGridChargeLimit)},
 		"batterygridchargedelete":         {"DELETE", "/batterygridchargelimit", floatPtrHandler(site.SetBatteryGridChargeLimit, site.GetBatteryGridChargeLimit)},

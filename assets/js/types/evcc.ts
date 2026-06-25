@@ -116,7 +116,7 @@ export interface State {
   bufferStartSoc?: number;
   batteryDischargeControl?: boolean;
   batteryAutoHoldCharge?: boolean;
-  batteryAutoHoldChargeFactor?: number;
+  batteryAutoHoldChargeMinPower?: number;
   batteryAutoHoldChargeTargetTime?: string;
   batteryGridChargeLimit?: number | null;
   smartCostAvailable?: boolean;

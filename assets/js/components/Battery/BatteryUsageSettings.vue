@@ -212,16 +212,16 @@
 						{{ $t("batterySettings.autoHoldCharge") }}
 					</label>
 					<small v-if="batteryAutoHoldCharge" class="d-block mt-2">
-						{{ $t("batterySettings.autoHoldChargeFactor") }}:
+						{{ $t("batterySettings.autoHoldChargeMinPower") }}:
 						<input
-							v-model.number="selectedAutoHoldChargeFactor"
+							v-model.number="selectedAutoHoldChargeMinPower"
 							type="number"
-							step="0.1"
-							min="1"
-							max="5"
+							step="50"
+							min="0"
+							max="5000"
 							class="form-control form-control-sm"
-							style="width: 80px; display: inline-block"
-							@change="changeAutoHoldChargeFactor"
+							style="width: 90px; display: inline-block"
+							@change="changeAutoHoldChargeMinPower"
 						/>
 					</small>
 					<small v-if="batteryAutoHoldCharge" class="d-block mt-2">
@@ -260,7 +260,7 @@ export default defineComponent({
 		bufferStartSoc: { type: Number, default: 0 },
 		batteryDischargeControl: Boolean,
 		batteryAutoHoldCharge: Boolean,
-		batteryAutoHoldChargeFactor: { type: Number, default: 1.5 },
+		batteryAutoHoldChargeMinPower: { type: Number, default: 200 },
 		batteryAutoHoldChargeTargetTime: { type: String, default: "18:00" },
 		battery: { type: Object as PropType<Battery> },
 	},
@@ -269,7 +269,7 @@ export default defineComponent({
 			selectedBufferSoc: 100,
 			selectedPrioritySoc: 0,
 			selectedBufferStartSoc: 0,
-			selectedAutoHoldChargeFactor: 1.5,
+			selectedAutoHoldChargeMinPower: 200,
 			selectedAutoHoldChargeTargetTime: "18:00",
 		};
 	},
@@ -390,8 +390,8 @@ export default defineComponent({
 		bufferStartSoc(soc) {
 			this.selectedBufferStartSoc = soc;
 		},
-		batteryAutoHoldChargeFactor(factor) {
-			this.selectedAutoHoldChargeFactor = factor;
+		batteryAutoHoldChargeMinPower(power) {
+			this.selectedAutoHoldChargeMinPower = power;
 		},
 		batteryAutoHoldChargeTargetTime(val) {
 			this.selectedAutoHoldChargeTargetTime = val || "18:00";
@@ -401,7 +401,7 @@ export default defineComponent({
 		this.selectedBufferSoc = this.bufferSoc || 100;
 		this.selectedPrioritySoc = this.prioritySoc;
 		this.selectedBufferStartSoc = this.bufferStartSoc;
-		this.selectedAutoHoldChargeFactor = this.batteryAutoHoldChargeFactor;
+		this.selectedAutoHoldChargeMinPower = this.batteryAutoHoldChargeMinPower;
 		this.selectedAutoHoldChargeTargetTime = this.batteryAutoHoldChargeTargetTime || "18:00";
 	},
 	methods: {
@@ -488,9 +488,9 @@ export default defineComponent({
 				console.error(err);
 			}
 		},
-		async changeAutoHoldChargeFactor() {
+		async changeAutoHoldChargeMinPower() {
 			try {
-				await api.post(`batteryautoholdchargefactor/${this.selectedAutoHoldChargeFactor}`);
+				await api.post(`batteryautoholdchargeminpower/${this.selectedAutoHoldChargeMinPower}`);
 			} catch (err) {
 				console.error(err);
 			}

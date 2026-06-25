@@ -29,7 +29,7 @@
     "capacity": "{energy} of {total}",
     "control": "Battery control",
     "autoHoldCharge": "Automatic charging power optimization.",
-    "autoHoldChargeFactor": "Factor of home consumption (x-times)",
+    "autoHoldChargeMinPower": "Minimum charge power (W)",
     "autoHoldChargeTargetTime": "Target time (battery full by)",
     "discharge": "Prevent discharge in fast mode and planned charging.",
     "disclaimerHint": "Note:",

@@ -81,7 +81,7 @@ type Site struct {
 	batteryDischargeControl         bool     // prevent battery discharge for fast and planned charging
 	batteryGridChargeLimit          *float64 // grid charging limit
 	batteryAutoHoldCharge           bool     `mapstructure:"batteryAutoHoldCharge"`           // auto-enable HoldCharge mode when sufficient PV forecast
-	batteryAutoHoldChargeFactor     float64  `mapstructure:"batteryAutoHoldChargeFactor"`     // PV > consumption * factor to trigger auto-hold (default 1.5)
+	batteryAutoHoldChargeMinPower   float64  `mapstructure:"batteryAutoHoldChargeMinPower"`   // minimum planned charge power (W) to activate HoldCharge (default 200)
 	batteryAutoHoldChargeTargetTime string   `mapstructure:"batteryAutoHoldChargeTargetTime"` // target time (HH:MM) by which battery must be full (default 18:00)
 
 	// optimizer settings
@@ -369,8 +369,8 @@ func (site *Site) restoreSettings() error {
 			return err
 		}
 	}
-	if v, err := settings.Float(keys.BatteryAutoHoldChargeFactor); err == nil {
-		if err := site.SetBatteryAutoHoldChargeFactor(v); err != nil {
+	if v, err := settings.Float(keys.BatteryAutoHoldChargeMinPower); err == nil {
+		if err := site.SetBatteryAutoHoldChargeMinPower(v); err != nil {
 			return err
 		}
 	}
@@ -1124,7 +1124,7 @@ func (site *Site) prepare() {
 	site.publish(keys.BatteryMode, site.batteryMode)
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
 	site.publish(keys.BatteryAutoHoldCharge, site.batteryAutoHoldCharge)
-	site.publish(keys.BatteryAutoHoldChargeFactor, site.batteryAutoHoldChargeFactor)
+	site.publish(keys.BatteryAutoHoldChargeMinPower, site.batteryAutoHoldChargeMinPower)
 	site.publish(keys.BatteryAutoHoldChargeTargetTime, site.batteryAutoHoldChargeTargetTime)
 	site.publish(keys.ResidualPower, site.GetResidualPower())
 	site.publish(keys.SmartCostAvailable, site.isDynamicTariff(api.TariffUsagePlanner))

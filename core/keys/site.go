@@ -44,7 +44,7 @@ const (
 	BatteryGridChargeLimit          = "batteryGridChargeLimit"
 	BatteryGridChargeActive         = "batteryGridChargeActive"
 	BatteryAutoHoldCharge           = "batteryAutoHoldCharge"
-	BatteryAutoHoldChargeFactor     = "batteryAutoHoldChargeFactor"
+	BatteryAutoHoldChargeMinPower   = "batteryAutoHoldChargeMinPower"
 	BatteryAutoHoldChargeTargetTime = "batteryAutoHoldChargeTargetTime"
 	BufferSoc                       = "bufferSoc"
 	BufferStartSoc                  = "bufferStartSoc"

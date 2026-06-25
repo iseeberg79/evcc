@@ -131,7 +131,7 @@ export default defineComponent({
 		consumers: { type: Array as PropType<Meter[]>, default: () => [] },
 		batteryDischargeControl: Boolean,
 		batteryAutoHoldCharge: Boolean,
-		batteryAutoHoldChargeFactor: { type: Number, default: 1.5 },
+		batteryAutoHoldChargeMinPower: { type: Number, default: 200 },
 		batteryAutoHoldChargeTargetTime: { type: String, default: "18:00" },
 		batteryGridChargeLimit: { type: [Number, null] as PropType<number | null>, default: null },
 		batteryGridChargeActive: Boolean,
