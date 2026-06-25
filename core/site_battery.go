@@ -76,16 +76,10 @@ func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate)
 	batteryMode := site.requiredBatteryMode(batteryGridChargeActive, rate)
 
 	// derive and publish the optimizer-planned hold charge power; activate HoldCharge
-	// when a meaningful charge is planned (only from Unknown or Normal). HoldCharge
-	// only limits the charge power - discharge stays allowed.
-	holdPowers := site.applyHoldChargePower()
-	holdChargeActive := false
-	for _, p := range holdPowers {
-		if p > 0 {
-			holdChargeActive = true
-			break
-		}
-	}
+	// while the plan still charges at/above the threshold somewhere in the remaining
+	// day (only from Unknown or Normal). HoldCharge only limits the charge power -
+	// discharge stays allowed.
+	holdChargeActive := site.applyHoldChargePower()
 	if (batteryMode == api.BatteryUnknown || batteryMode == api.BatteryNormal) && holdChargeActive {
 		site.log.DEBUG.Println("battery mode: auto-enable HoldCharge (optimizer plans surplus charging)")
 		batteryMode = api.BatteryHoldCharge

@@ -192,6 +192,9 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 		ft = prorate(scaleAndPrune(solarEnergy, site.solarScale(), minLen), firstSlotDuration)
 	}
 
+	// hold charge smooths the charge curve (orthogonal to the user-configured
+	// charging strategy); to follow the HTW model (delay morning charging, cap the
+	// midday peak) the user selects the attenuate_grid_peaks strategy themselves
 	var smoothWeight float32
 	if site.batteryAutoHoldCharge {
 		smoothWeight = defaultSmoothChargingWeight
@@ -843,14 +846,17 @@ func apiError(resp *optimizer.PostOptimizeChargeScheduleResponse) error {
 	return errors.New(errObj.Message)
 }
 
-// applyHoldChargePower derives the per-battery hold charge power from the latest
-// optimizer result, publishes it as an array, and returns the values so the caller
-// can decide whether to activate HoldCharge. The value is the optimizer's planned
-// charging power for the current slot (Wh per slot) converted to W; the meter
-// template writes it to the inverter's max charge power limit. Per-battery values
-// below the configured minimum power (default 200 W) are zeroed. Returns all-zero
-// when the feature is disabled or no usable optimizer plan exists.
-func (site *Site) applyHoldChargePower() []int64 {
+// applyHoldChargePower derives the per-battery hold charge power for the current
+// slot from the latest optimizer result and publishes it as an array (W). The meter
+// template writes it to the inverter's max charge power limit; per-battery values
+// below the configured minimum power (default 200 W) are zeroed.
+//
+// It returns whether HoldCharge should be active: true while the plan still charges
+// at or above the threshold at ANY point in the remaining day. This delays morning
+// charging (current limit may be 0 while charging is planned for midday) and frees
+// the battery once no meaningful charging is planned anymore (evening / bad weather).
+// Returns false when the feature is disabled or no usable optimizer plan exists.
+func (site *Site) applyHoldChargePower() bool {
 	powers := make([]int64, len(site.batteryMeters))
 
 	site.RLock()
@@ -861,7 +867,7 @@ func (site *Site) applyHoldChargePower() []int64 {
 
 	if !enabled || res == nil {
 		site.publish(keys.BatteryHoldChargePower, powers)
-		return powers
+		return false
 	}
 
 	if minPower <= 0 {
@@ -885,9 +891,10 @@ func (site *Site) applyHoldChargePower() []int64 {
 	}
 	if slot < 0 {
 		site.publish(keys.BatteryHoldChargePower, powers)
-		return powers
+		return false
 	}
 
+	holdChargeActive := false
 	for j, dev := range site.batteryMeters {
 		// map this home battery to its optimizer result entry by name
 		name := dev.Config().Name
@@ -905,12 +912,23 @@ func (site *Site) applyHoldChargePower() []int64 {
 		if slot >= len(cp) {
 			continue
 		}
-		// Wh per slot -> W (dt in seconds); WR-side charge power, no eta correction
+
+		// current slot limit: Wh per slot -> W (dt in seconds); WR-side charge
+		// power, no eta correction. Below the threshold -> 0 (no micro-charging).
 		powerW := float64(cp[slot]) * 3600 / float64(dt[slot])
 		if powerW < minPower {
 			powerW = 0
 		}
 		powers[j] = int64(powerW + 0.5)
+
+		// HoldCharge stays active while the plan still charges >= threshold at any
+		// remaining slot, so morning charging is delayed instead of running free
+		for s := slot; s < len(cp) && s < len(dt); s++ {
+			if float64(cp[s])*3600/float64(dt[s]) >= minPower {
+				holdChargeActive = true
+				break
+			}
+		}
 	}
 
 	site.publish(keys.BatteryHoldChargePower, powers)
@@ -921,5 +939,5 @@ func (site *Site) applyHoldChargePower() []int64 {
 		}
 	}
 
-	return powers
+	return holdChargeActive
 }
