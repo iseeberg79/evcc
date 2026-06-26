@@ -45,6 +45,13 @@ params:
       en: active battery control (REST/JSON Write Access)
     usages: ["battery"]
     advanced: true
+  - name: batteryIndex
+    description:
+      de: Batterie-Index für verteilte Ladeleistung
+      en: Battery index for distributed charge power
+    type: int
+    default: 0
+    advanced: true
   - name: watchdog
     default: 60s
     description:
@@ -160,6 +167,23 @@ render: |
           source: error
           error: ErrNotAvailable
           {{- end }}
+      - case: 4 # holdcharge
+        set:
+          source: state
+          key: batteryHoldChargePower
+          index: {{ .batteryIndex }}
+          scale: -1 # OpenEMS charge power is negative
+          set:
+            source: http
+            uri: http://{{ .host }}/rest/channel/{{ .battery }}/SetActivePowerGreaterOrEquals
+            auth:
+              type: basic
+              user: x
+              password: {{ .password }}
+            method: POST
+            headers:
+            - content-type: application/json
+            body: '{"value": %v}'
   {{- end }}
   {{- include "battery-params" . }}
   {{- end }}
