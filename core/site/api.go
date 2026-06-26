@@ -55,6 +55,10 @@ type API interface {
 	GetBatteryGridChargeLimit() *float64
 	// SetBatteryGridChargeLimit sets the grid charge limit
 	SetBatteryGridChargeLimit(limit *float64) error
+	// GetGridExportLimit gets the grid export/feed-in limit (W), nil if unlimited
+	GetGridExportLimit() *float64
+	// SetGridExportLimit sets the grid export/feed-in limit (W) for optimizer peak shaving
+	SetGridExportLimit(limit *float64) error
 
 	// GetOptimizerChargingStrategy gets the optimizer grid charging strategy
 	GetOptimizerChargingStrategy() string
