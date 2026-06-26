@@ -208,7 +208,6 @@ func (site *Site) applyBatteryMode(mode api.BatteryMode) error {
 				return err
 			}
 		}
-
 	}
 
 	return nil
