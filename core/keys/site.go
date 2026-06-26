@@ -17,6 +17,7 @@ const (
 	PvEnergy              = "pvEnergy"
 	PvPower               = "pvPower"
 	ResidualPower         = "residualPower"
+	GridExportLimit       = "gridExportLimit"
 	SiteTitle             = "siteTitle"
 	SmartCostType         = "smartCostType"
 	Statistics            = "statistics"
