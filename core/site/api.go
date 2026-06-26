@@ -83,6 +83,19 @@ type API interface {
 	GetBatteryDischargeControl() bool
 	SetBatteryDischargeControl(bool) error
 
+	// GetBatteryAutoHoldCharge returns the auto hold charge mode
+	GetBatteryAutoHoldCharge() bool
+	// SetBatteryAutoHoldCharge sets the auto hold charge mode
+	SetBatteryAutoHoldCharge(bool) error
+	// GetBatteryAutoHoldChargeMinPower returns the minimum planned charge power (W) to activate HoldCharge
+	GetBatteryAutoHoldChargeMinPower() float64
+	// SetBatteryAutoHoldChargeMinPower sets the minimum planned charge power (W) to activate HoldCharge
+	SetBatteryAutoHoldChargeMinPower(float64) error
+	// GetBatteryAutoHoldChargeTargetTime returns the target time (HH:MM) for auto hold charge
+	GetBatteryAutoHoldChargeTargetTime() string
+	// SetBatteryAutoHoldChargeTargetTime sets the target time (HH:MM) by which the battery must be full
+	SetBatteryAutoHoldChargeTargetTime(string) error
+
 	//
 	// battery control external
 	//

@@ -164,6 +164,10 @@ func (s *HTTPd) RegisterSiteHandlers(site site.API) {
 		"telemetry2":              {"POST", "/settings/telemetry/{value:[01truefalse]+}", boolHandler(telemetry.Enable, telemetry.Enabled)},
 		"devicecolors":            {"PUT", "/devicecolors", updateDeviceColor(site)},
 
+		"batteryautoholdcharge":           {"POST", "/batteryautoholdcharge/{value:[01truefalse]+}", boolHandler(site.SetBatteryAutoHoldCharge, site.GetBatteryAutoHoldCharge)},
+		"batteryautoholdchargeminpower":   {"POST", "/batteryautoholdchargeminpower/{value:[0-9.]+}", floatHandler(site.SetBatteryAutoHoldChargeMinPower, site.GetBatteryAutoHoldChargeMinPower)},
+		"batteryautoholdchargetargettime": {"POST", "/batteryautoholdchargetargettime/{value:[0-9:]+}", stringHandler(site.SetBatteryAutoHoldChargeTargetTime, site.GetBatteryAutoHoldChargeTargetTime)},
+
 		"optimizerchargingstrategy": {"POST", "/optimizerchargingstrategy/{value:[a-z_]+}", stringHandler(site.SetOptimizerChargingStrategy, site.GetOptimizerChargingStrategy)},
 	}
 

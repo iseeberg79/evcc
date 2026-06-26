@@ -40,19 +40,23 @@ const (
 	ConsumerMeters = "consumerMeters"
 
 	// battery settings
-	BatteryDischargeControl = "batteryDischargeControl"
-	BatteryGridChargeLimit  = "batteryGridChargeLimit"
-	BatteryGridChargeActive = "batteryGridChargeActive"
-	BufferSoc               = "bufferSoc"
-	BufferStartSoc          = "bufferStartSoc"
+	BatteryDischargeControl         = "batteryDischargeControl"
+	BatteryGridChargeLimit          = "batteryGridChargeLimit"
+	BatteryGridChargeActive         = "batteryGridChargeActive"
+	BatteryAutoHoldCharge           = "batteryAutoHoldCharge"
+	BatteryAutoHoldChargeMinPower   = "batteryAutoHoldChargeMinPower"
+	BatteryAutoHoldChargeTargetTime = "batteryAutoHoldChargeTargetTime"
+	BufferSoc                       = "bufferSoc"
+	BufferStartSoc                  = "bufferStartSoc"
 
 	// optimizer
 	OptimizerChargingStrategy   = "optimizerChargingStrategy"
 	OptimizerChargingStrategies = "optimizerChargingStrategies"
 
 	// battery status
-	Battery     = "battery"
-	BatteryMode = "batteryMode"
+	Battery                = "battery"
+	BatteryMode            = "batteryMode"
+	BatteryHoldChargePower = "batteryHoldChargePower"
 
 	// external battery control
 	BatteryModeExternal = "batteryModeExternal"
