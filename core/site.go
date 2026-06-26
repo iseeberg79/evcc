@@ -81,7 +81,7 @@ type Site struct {
 	batteryDischargeControl         bool     // prevent battery discharge for fast and planned charging
 	batteryGridChargeLimit          *float64 // grid charging limit
 	batteryAutoHoldCharge           bool     `mapstructure:"batteryAutoHoldCharge"`           // auto-enable HoldCharge mode when sufficient PV forecast
-	batteryAutoHoldChargeMinPower   float64  `mapstructure:"batteryAutoHoldChargeMinPower"`   // minimum planned charge power (W) to activate HoldCharge (default 200)
+	batteryAutoHoldChargeMinPower   float64  `mapstructure:"batteryAutoHoldChargeMinPower"`   // HoldCharge activates only while the optimizer plans at least this charge power (W) somewhere in the remaining day; per-slot limits below it are zeroed (no micro-charging). 0 or unset falls back to 200.
 	batteryAutoHoldChargeTargetTime string   `mapstructure:"batteryAutoHoldChargeTargetTime"` // target time (HH:MM) by which battery must be full (default 18:00)
 
 	// optimizer settings
