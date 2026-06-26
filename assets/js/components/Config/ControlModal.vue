@@ -53,6 +53,26 @@
 				</div>
 			</FormRow>
 
+			<FormRow
+				id="controlGridExportLimit"
+				:label="$t('config.control.labelGridExportLimit')"
+				:help="$t('config.control.descriptionGridExportLimit')"
+				example="7000 W"
+			>
+				<div class="input-group input-width">
+					<input
+						id="controlGridExportLimit"
+						v-model="values.gridExportLimit"
+						type="number"
+						step="1"
+						min="0"
+						aria-describedby="controlGridExportLimitUnit"
+						class="form-control text-end"
+					/>
+					<span id="controlGridExportLimitUnit" class="input-group-text">W</span>
+				</div>
+			</FormRow>
+
 			<div class="mt-4 d-flex justify-content-between gap-2 flex-column flex-sm-row">
 				<button
 					type="button"
@@ -105,16 +125,21 @@ export default {
 		residualPowerChanged() {
 			return this.values.residualPower !== this.serverValues.residualPower;
 		},
+		gridExportLimitChanged() {
+			return this.values.gridExportLimit !== this.serverValues.gridExportLimit;
+		},
 		nothingChanged() {
-			return !this.intervalChanged && !this.residualPowerChanged;
+			return (
+				!this.intervalChanged && !this.residualPowerChanged && !this.gridExportLimitChanged
+			);
 		},
 	},
 	methods: {
 		reset() {
-			const { interval, residualPower } = store?.state || {};
+			const { interval, residualPower, gridExportLimit } = store?.state || {};
 			this.saving = false;
 			this.error = "";
-			this.values = { interval, residualPower };
+			this.values = { interval, residualPower, gridExportLimit };
 			this.serverValues = { ...this.values };
 		},
 		async open() {
@@ -126,6 +151,13 @@ export default {
 				url = `/config/interval/${encodeURIComponent(this.values.interval)}`;
 			} else if (name === "residualPower") {
 				url = `/residualpower/${encodeURIComponent(this.values.residualPower)}`;
+			} else if (name === "gridExportLimit") {
+				const v = this.values.gridExportLimit;
+				if (v === "" || v === null || v === undefined) {
+					await api.delete("/gridexportlimit");
+					return;
+				}
+				url = `/gridexportlimit/${encodeURIComponent(v)}`;
 			}
 			await api.post(url);
 		},
@@ -138,6 +170,9 @@ export default {
 				}
 				if (this.residualPowerChanged) {
 					await this.saveValue("residualPower");
+				}
+				if (this.gridExportLimitChanged) {
+					await this.saveValue("gridExportLimit");
 				}
 				this.$emit("changed");
 				this.$refs.modal.close();

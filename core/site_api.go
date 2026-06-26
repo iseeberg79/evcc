@@ -401,6 +401,35 @@ func (site *Site) SetBatteryGridChargeLimit(val *float64) error {
 	return nil
 }
 
+// GetGridExportLimit returns the grid export/feed-in limit (W), nil if unlimited
+func (site *Site) GetGridExportLimit() *float64 {
+	site.RLock()
+	defer site.RUnlock()
+	return site.gridExportLimit
+}
+
+// SetGridExportLimit sets the grid export/feed-in limit (W) used for optimizer peak shaving
+func (site *Site) SetGridExportLimit(val *float64) error {
+	site.log.DEBUG.Println("set grid export limit:", printPtr("%.0f", val))
+
+	site.Lock()
+	defer site.Unlock()
+
+	if !ptrValueEqual(site.gridExportLimit, val) {
+		site.gridExportLimit = val
+
+		if val == nil {
+			settings.SetString(keys.GridExportLimit, "")
+			site.publish(keys.GridExportLimit, nil)
+		} else {
+			settings.SetFloat(keys.GridExportLimit, *val)
+			site.publish(keys.GridExportLimit, *val)
+		}
+	}
+
+	return nil
+}
+
 // GetOptimizerChargingStrategy returns the optimizer grid charging strategy,
 // falling back to the default when unset.
 func (site *Site) GetOptimizerChargingStrategy() string {
