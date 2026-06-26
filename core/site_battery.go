@@ -7,7 +7,6 @@ import (
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/keys"
 	"github.com/evcc-io/evcc/core/loadpoint"
-	"github.com/evcc-io/evcc/tariff"
 	"github.com/evcc-io/evcc/util/config"
 )
 
@@ -53,197 +52,8 @@ func (site *Site) SetBatteryMode(batMode api.BatteryMode) {
 	}
 }
 
-// solarCutoffTime finds the first point in rates where solar drops below 50W.
-// If the matching rate is already running, cutoff is now. If no such point exists,
-// the end of the last rate is used.
-func solarCutoffTime(rates api.Rates, now time.Time) time.Time {
-	for _, r := range rates {
-		if r.End.After(now) && r.Value < 50 {
-			if r.Start.Before(now) {
-				return now
-			}
-			return r.Start
-		}
-	}
-	return rates[len(rates)-1].End
-}
-
-// holdChargeTargetTime parses the configured target time and returns it as today's time.Time.
-// Returns zero if the target time has already passed or is not set (falls back to "18:00").
-func (site *Site) holdChargeTargetTime() time.Time {
-	s := site.batteryAutoHoldChargeTargetTime
-	if s == "" {
-		s = "18:00"
-	}
-	t, err := time.ParseInLocation("15:04", s, time.Local)
-	if err != nil {
-		site.log.WARN.Printf("invalid batteryAutoHoldChargeTargetTime %q, using solar cutoff: %v", s, err)
-		return time.Time{}
-	}
-	now := time.Now()
-	target := time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, time.Local)
-	if target.Before(now) {
-		return time.Time{} // already past today's target - no constraint
-	}
-	return target
-}
-
-// effectiveCutoffTime returns the earlier of the solar cutoff and the configured target time.
-// This ensures the battery reaches maxSoC by the target time even if the sun sets later.
-func (site *Site) effectiveCutoffTime(rates api.Rates) time.Time {
-	now := time.Now()
-	solar := solarCutoffTime(rates, now)
-	target := site.holdChargeTargetTime()
-	if !target.IsZero() && target.Before(solar) {
-		return target
-	}
-	return solar
-}
-
-func (site *Site) isBufferTimeActiveAndBatteryFull() bool {
-	// disable HoldCharge when buffer time is active and battery is full
-	// this allows free discharge of fully charged battery during buffer time
-
-	// check battery soc against maxSoC limit (with 0.5% tolerance)
-	// get maxSoC from first battery's limiter, fallback to 100%
-	maxSoC := 100.0
-	if len(site.batteryMeters) > 0 {
-		meter := site.batteryMeters[0].Instance()
-		if batLimiter, ok := api.Cap[api.BatterySocLimiter](meter); ok {
-			if _, max := batLimiter.GetSocLimits(); max > 0 && max < 100 {
-				maxSoC = float64(max)
-			}
-		}
-	}
-	if site.battery.Soc < maxSoC-0.5 {
-		return false // not full yet
-	}
-
-	// check if buffer time is active by examining solar forecast
-	solarTariff := site.GetTariff(api.TariffUsageSolar)
-	if solarTariff == nil {
-		return false
-	}
-
-	rates, err := solarTariff.Rates()
-	if err != nil || len(rates) == 0 {
-		return false
-	}
-
-	cutoffTime := site.effectiveCutoffTime(rates)
-
-	// calculate available time and buffer
-	now := time.Now()
-	availableHours := cutoffTime.Sub(now).Hours()
-	if availableHours <= 0 {
-		return true // already past cutoff, battery should be released
-	}
-
-	bufferHours := availableHours * 0.25
-	if bufferHours > 2.0 {
-		bufferHours = 2.0
-	}
-
-	// buffer time is active when remaining time <= buffer time
-	bufferActive := availableHours <= bufferHours
-	if bufferActive {
-		site.log.TRACE.Printf("buffer time active: %.1fh remaining <= %.1fh buffer, battery full at %.1f%%",
-			availableHours, bufferHours, site.battery.Soc)
-	}
-
-	return bufferActive
-}
-
-func (site *Site) shouldUseHoldChargePower() bool {
-	// auto-activate BatteryHoldCharge mode when sufficient PV forecast available
-	// skip if auto hold charge is disabled
-	if !site.batteryAutoHoldCharge {
-		return false
-	}
-
-	solarTariff := site.GetTariff(api.TariffUsageSolar)
-	if solarTariff == nil {
-		return false
-	}
-
-	rates, err := solarTariff.Rates()
-	if err != nil || len(rates) == 0 {
-		return false
-	}
-
-	now := time.Now()
-	cutoffTime := site.effectiveCutoffTime(rates)
-
-	// disable HoldCharge if cutoff already passed or very soon (less than 10 min remaining)
-	remainingTime := cutoffTime.Sub(now)
-	if remainingTime < 10*time.Minute {
-		site.log.TRACE.Printf("hold charge: insufficient time to sunset (%.0f min remaining), disabling",
-			remainingTime.Minutes())
-		return false
-	}
-
-	// check: remaining PV forecast > remaining consumption * factor
-	factor := site.batteryAutoHoldChargeFactor
-	if factor <= 0 {
-		factor = 1.5
-	}
-
-	// sum remaining PV forecast from now until cutoff
-	var remainingPVForecast float64
-	for _, r := range rates {
-		if r.Start.After(cutoffTime) {
-			break
-		}
-		if r.End.Before(now) {
-			continue
-		}
-		start := r.Start
-		if start.Before(now) {
-			start = now
-		}
-		end := r.End
-		if end.After(cutoffTime) {
-			end = cutoffTime
-		}
-		durationHours := end.Sub(start).Hours()
-		remainingPVForecast += r.Value * durationHours
-	}
-
-	// estimate remaining home consumption from now until cutoff using the
-	// 30-day home load profile; fall back to a flat 15 kWh/day estimate
-	const fallbackDailyConsumption = 15000.0 // Wh
-	remainingConsumption := fallbackDailyConsumption * remainingTime.Hours() / 24
-	slots := int(remainingTime/tariff.SlotDuration) + 1
-	if profile, err := site.homeProfile(slots); err == nil {
-		var sum float64
-		for _, v := range profile {
-			sum += v
-		}
-		remainingConsumption = sum
-	} else {
-		site.log.TRACE.Printf("hold charge: no home profile (%v), using 15 kWh/day fallback", err)
-	}
-
-	site.log.TRACE.Printf("hold charge auto-check: remaining PV %.0f Wh > consumption %.0f Wh * %.2f = %.0f Wh? cutoff=%.0f min",
-		remainingPVForecast, remainingConsumption, factor, remainingConsumption*factor, remainingTime.Minutes())
-
-	return remainingPVForecast > (remainingConsumption * factor)
-}
-
 func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate) {
 	batteryMode := site.requiredBatteryMode(batteryGridChargeActive, rate)
-
-	// auto-enable hold charge mode if sufficient PV forecast (only from Unknown or Normal)
-	if (batteryMode == api.BatteryUnknown || batteryMode == api.BatteryNormal) && site.shouldUseHoldChargePower() {
-		site.log.DEBUG.Println("battery mode: auto-enable HoldCharge (sufficient PV forecast)")
-		batteryMode = api.BatteryHoldCharge
-	}
-
-	// auto-disable hold charge mode when buffer time active and battery full - allow free discharge
-	if batteryMode == api.BatteryHoldCharge && site.isBufferTimeActiveAndBatteryFull() {
-		site.log.DEBUG.Println("battery mode: buffer time active and battery full, disabling HoldCharge")
-		batteryMode = api.BatteryNormal
-	}
 
 	// put battery into hold mode when charging is active and HEMS dimmed
 	fromToCharge := batteryMode == api.BatteryCharge || batteryMode == api.BatteryUnknown && site.batteryMode == api.BatteryCharge
@@ -252,8 +62,8 @@ func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate)
 		batteryMode = api.BatteryHold
 	}
 
-	// NOTE: applyBatteryMode is always called when charge mode is active to validate max soc or when in holdcharge mode
-	if modeChanged := batteryMode != api.BatteryUnknown; modeChanged || site.batteryMode == api.BatteryCharge || site.batteryMode == api.BatteryHoldCharge {
+	// NOTE: applyBatteryMode is always called when charge mode is active to validate max soc
+	if modeChanged := batteryMode != api.BatteryUnknown; modeChanged || site.batteryMode == api.BatteryCharge {
 		if err := site.applyBatteryMode(batteryMode); err == nil {
 			if modeChanged {
 				site.SetBatteryMode(batteryMode)
@@ -261,12 +71,6 @@ func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate)
 		} else {
 			site.log.ERROR.Println("battery mode:", err)
 		}
-	}
-
-	// update hold charge power for /api/state whenever hold charge is relevant
-	// (auto mode enabled or battery currently/about to be in hold charge)
-	if site.batteryAutoHoldCharge || batteryMode == api.BatteryHoldCharge || site.batteryMode == api.BatteryHoldCharge {
-		site.applyHoldChargePower()
 	}
 }
 
@@ -374,7 +178,6 @@ func (site *Site) applyBatteryMode(mode api.BatteryMode) error {
 				return err
 			}
 		}
-
 	}
 
 	return nil
