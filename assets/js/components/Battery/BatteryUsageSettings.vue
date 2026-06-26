@@ -197,6 +197,48 @@
 					</label>
 				</div>
 			</div>
+
+			<div v-if="experimental" class="form-check form-switch mt-3">
+				<input
+					id="batteryAutoHoldCharge"
+					:checked="batteryAutoHoldCharge"
+					class="form-check-input"
+					type="checkbox"
+					role="switch"
+					@change="changeAutoHoldCharge"
+				/>
+				<div class="form-check-label">
+					<label for="batteryAutoHoldCharge">
+						{{ $t("batterySettings.autoHoldCharge") }}
+						<span class="badge text-bg-warning ms-1">{{
+							$t("batterySettings.experimental")
+						}}</span>
+					</label>
+					<small v-if="batteryAutoHoldCharge" class="d-block mt-2">
+						{{ $t("batterySettings.autoHoldChargeMinPower") }}:
+						<input
+							v-model.number="selectedAutoHoldChargeMinPower"
+							type="number"
+							step="50"
+							min="0"
+							max="5000"
+							class="form-control form-control-sm"
+							style="width: 90px; display: inline-block"
+							@change="changeAutoHoldChargeMinPower"
+						/>
+					</small>
+					<small v-if="batteryAutoHoldCharge" class="d-block mt-2">
+						{{ $t("batterySettings.autoHoldChargeTargetTime") }}:
+						<input
+							v-model="selectedAutoHoldChargeTargetTime"
+							type="time"
+							class="form-control form-control-sm"
+							style="width: 110px; display: inline-block"
+							@change="changeAutoHoldChargeTargetTime"
+						/>
+					</small>
+				</div>
+			</div>
 		</div>
 	</div>
 </template>
@@ -220,6 +262,10 @@ export default defineComponent({
 		prioritySoc: { type: Number, default: 0 },
 		bufferStartSoc: { type: Number, default: 0 },
 		batteryDischargeControl: Boolean,
+		experimental: Boolean,
+		batteryAutoHoldCharge: Boolean,
+		batteryAutoHoldChargeMinPower: { type: Number, default: 200 },
+		batteryAutoHoldChargeTargetTime: { type: String, default: "18:00" },
 		battery: { type: Object as PropType<Battery> },
 	},
 	data() {
@@ -227,6 +273,8 @@ export default defineComponent({
 			selectedBufferSoc: 100,
 			selectedPrioritySoc: 0,
 			selectedBufferStartSoc: 0,
+			selectedAutoHoldChargeMinPower: 200,
+			selectedAutoHoldChargeTargetTime: "18:00",
 		};
 	},
 	computed: {
@@ -346,11 +394,19 @@ export default defineComponent({
 		bufferStartSoc(soc) {
 			this.selectedBufferStartSoc = soc;
 		},
+		batteryAutoHoldChargeMinPower(power) {
+			this.selectedAutoHoldChargeMinPower = power;
+		},
+		batteryAutoHoldChargeTargetTime(val) {
+			this.selectedAutoHoldChargeTargetTime = val || "18:00";
+		},
 	},
 	mounted() {
 		this.selectedBufferSoc = this.bufferSoc || 100;
 		this.selectedPrioritySoc = this.prioritySoc;
 		this.selectedBufferStartSoc = this.bufferStartSoc;
+		this.selectedAutoHoldChargeMinPower = this.batteryAutoHoldChargeMinPower;
+		this.selectedAutoHoldChargeTargetTime = this.batteryAutoHoldChargeTargetTime || "18:00";
 	},
 	methods: {
 		changeBufferStart($event: Event) {
@@ -422,6 +478,31 @@ export default defineComponent({
 			try {
 				await api.post(
 					`batterydischargecontrol/${(e.target as HTMLInputElement).checked ? "true" : "false"}`
+				);
+			} catch (err) {
+				console.error(err);
+			}
+		},
+		async changeAutoHoldCharge(e: Event) {
+			try {
+				await api.post(
+					`batteryautoholdcharge/${(e.target as HTMLInputElement).checked ? "true" : "false"}`
+				);
+			} catch (err) {
+				console.error(err);
+			}
+		},
+		async changeAutoHoldChargeMinPower() {
+			try {
+				await api.post(`batteryautoholdchargeminpower/${this.selectedAutoHoldChargeMinPower}`);
+			} catch (err) {
+				console.error(err);
+			}
+		},
+		async changeAutoHoldChargeTargetTime() {
+			try {
+				await api.post(
+					`batteryautoholdchargetargettime/${encodeURIComponent(this.selectedAutoHoldChargeTargetTime)}`
 				);
 			} catch (err) {
 				console.error(err);
