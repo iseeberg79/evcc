@@ -52,8 +52,38 @@ func (site *Site) SetBatteryMode(batMode api.BatteryMode) {
 	}
 }
 
+// holdChargeTargetTime parses the configured target time and returns it as today's time.Time.
+// Returns zero if the target time has already passed or is not set (falls back to "18:00").
+func (site *Site) holdChargeTargetTime() time.Time {
+	s := site.batteryAutoHoldChargeTargetTime
+	if s == "" {
+		s = "18:00"
+	}
+	t, err := time.ParseInLocation("15:04", s, time.Local)
+	if err != nil {
+		site.log.WARN.Printf("invalid batteryAutoHoldChargeTargetTime %q, using solar cutoff: %v", s, err)
+		return time.Time{}
+	}
+	now := time.Now()
+	target := time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, time.Local)
+	if target.Before(now) {
+		return time.Time{} // already past today's target - no constraint
+	}
+	return target
+}
+
 func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate) {
 	batteryMode := site.requiredBatteryMode(batteryGridChargeActive, rate)
+
+	// derive and publish the optimizer-planned hold charge power; activate HoldCharge
+	// while the plan still charges at/above the threshold somewhere in the remaining
+	// day (only from Unknown or Normal). HoldCharge only limits the charge power -
+	// discharge stays allowed.
+	holdChargeActive := site.applyHoldChargePower()
+	if (batteryMode == api.BatteryUnknown || batteryMode == api.BatteryNormal) && holdChargeActive {
+		site.log.DEBUG.Println("battery mode: auto-enable HoldCharge (optimizer plans surplus charging)")
+		batteryMode = api.BatteryHoldCharge
+	}
 
 	// put battery into hold mode when charging is active and HEMS dimmed
 	fromToCharge := batteryMode == api.BatteryCharge || batteryMode == api.BatteryUnknown && site.batteryMode == api.BatteryCharge
@@ -62,8 +92,8 @@ func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate)
 		batteryMode = api.BatteryHold
 	}
 
-	// NOTE: applyBatteryMode is always called when charge mode is active to validate max soc
-	if modeChanged := batteryMode != api.BatteryUnknown; modeChanged || site.batteryMode == api.BatteryCharge {
+	// NOTE: applyBatteryMode is always called when charge mode is active to validate max soc or when in holdcharge mode
+	if modeChanged := batteryMode != api.BatteryUnknown; modeChanged || site.batteryMode == api.BatteryCharge || site.batteryMode == api.BatteryHoldCharge {
 		if err := site.applyBatteryMode(batteryMode); err == nil {
 			if modeChanged {
 				site.SetBatteryMode(batteryMode)
