@@ -138,9 +138,9 @@ render: |
           {{- end }}
       - case: 4 # holdcharge
         set:
-          source: http
-          uri: http://localhost:7070/api/state
-          jq: .batteryHoldChargePower[{{ .batteryIndex }}] // 0
+          source: state
+          key: batteryHoldChargePower
+          index: {{ .batteryIndex }}
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}

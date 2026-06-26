@@ -169,9 +169,10 @@ render: |
           {{- end }}
       - case: 4 # holdcharge
         set:
-          source: http
-          uri: http://localhost:7070/api/state
-          jq: .batteryHoldChargePower[{{ .batteryIndex }}] // 0
+          source: state
+          key: batteryHoldChargePower
+          index: {{ .batteryIndex }}
+          scale: -1 # OpenEMS charge power is negative
           set:
             source: http
             uri: http://{{ .host }}/rest/channel/{{ .battery }}/SetActivePowerGreaterOrEquals
@@ -182,7 +183,7 @@ render: |
             method: POST
             headers:
             - content-type: application/json
-            body: '{"value": {{ mul %v -1 }}}'
+            body: '{"value": %v}'
   {{- end }}
   {{- include "battery-params" . }}
   {{- end }}
