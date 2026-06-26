@@ -522,6 +522,10 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 		}
 	}
 
+	// withhold_charge lets the optimizer pause charging below the solar peak under
+	// attenuate_grid_peaks so capacity stays free for the midday feed-in peak
+	bat.WithholdCharge = site.batteryAutoHoldCharge
+
 	return bat, detail
 }
 

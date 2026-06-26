@@ -106,6 +106,10 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive bool, rate api.Rat
 		res = keepUnlessModified(api.BatteryCharge)
 	case site.dischargeControlActive(rate):
 		res = keepUnlessModified(api.BatteryHold)
+	case site.GetBatteryAutoHoldCharge():
+		// optimizer-driven hold charge: limit charging to the planned per-slot power
+		// (read from the optimizer suggestion by the meter template); discharge stays allowed
+		res = keepUnlessModified(api.BatteryHoldCharge)
 	case batteryModeModified(batMode):
 		res = api.BatteryNormal
 	}

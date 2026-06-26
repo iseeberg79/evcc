@@ -29,6 +29,8 @@
     "capacity": "{energy} of {total}",
     "control": "Battery control",
     "discharge": "Prevent discharge in fast mode and planned charging.",
+    "experimental": "Experimental",
+    "holdCharge": "Limit charging to the optimizer plan (feed-in peak shaving). Requires the optimizer and a feed-in limit.",
     "disclaimerHint": "Note:",
     "disclaimerText": "These settings only affect solar mode. Charging behaviour is adjusted accordingly.",
     "gridChargeTab": "Grid charging",
