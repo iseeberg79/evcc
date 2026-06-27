@@ -370,6 +370,29 @@ func (site *Site) SetBatteryDischargeControl(val bool) error {
 	return nil
 }
 
+// GetBatteryAutoHoldCharge returns whether optimizer-driven hold charge is enabled
+func (site *Site) GetBatteryAutoHoldCharge() bool {
+	site.RLock()
+	defer site.RUnlock()
+	return site.batteryAutoHoldCharge
+}
+
+// SetBatteryAutoHoldCharge enables optimizer-driven hold charge (withhold charging for feed-in peak shaving)
+func (site *Site) SetBatteryAutoHoldCharge(val bool) error {
+	site.log.DEBUG.Println("set battery auto hold charge:", val)
+
+	site.Lock()
+	defer site.Unlock()
+
+	if site.batteryAutoHoldCharge != val {
+		site.batteryAutoHoldCharge = val
+		settings.SetBool(keys.BatteryAutoHoldCharge, val)
+		site.publish(keys.BatteryAutoHoldCharge, val)
+	}
+
+	return nil
+}
+
 func (site *Site) GetBatteryGridChargeLimit() *float64 {
 	site.RLock()
 	defer site.RUnlock()

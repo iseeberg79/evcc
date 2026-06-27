@@ -32,6 +32,7 @@
     "disclaimerHint": "Hinweis:",
     "disclaimerText": "Nur relevant im PV-Modus. Das Ladeverhalten wird entsprechend angepasst.",
     "gridChargeTab": "Netzladen",
+    "holdCharge": "Begrenzt das Laden auf den Optimizer-Plan (Einspeisespitzen kappen). Benötigt den Optimizer und eine Einspeisegrenze.",
     "legendBottomName": "Priorisiere die Hausbatterie",
     "legendBottomSubline": "bis sie {soc} erreicht hat.",
     "legendMiddleName": "Priorisiere Fahrzeugladen,",

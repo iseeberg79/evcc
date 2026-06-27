@@ -197,6 +197,21 @@
 					</label>
 				</div>
 			</div>
+			<div v-if="controllable && experimental" class="form-check form-switch mt-4">
+				<input
+					id="batteryAutoHoldCharge"
+					:checked="batteryAutoHoldCharge"
+					class="form-check-input"
+					type="checkbox"
+					role="switch"
+					@change="changeAutoHoldCharge"
+				/>
+				<div class="form-check-label">
+					<label for="batteryAutoHoldCharge">
+						{{ $t("batterySettings.holdCharge") }} 🧪
+					</label>
+				</div>
+			</div>
 		</div>
 	</div>
 </template>
@@ -220,6 +235,8 @@ export default defineComponent({
 		prioritySoc: { type: Number, default: 0 },
 		bufferStartSoc: { type: Number, default: 0 },
 		batteryDischargeControl: Boolean,
+		batteryAutoHoldCharge: Boolean,
+		experimental: Boolean,
 		battery: { type: Object as PropType<Battery> },
 	},
 	data() {
@@ -422,6 +439,15 @@ export default defineComponent({
 			try {
 				await api.post(
 					`batterydischargecontrol/${(e.target as HTMLInputElement).checked ? "true" : "false"}`
+				);
+			} catch (err) {
+				console.error(err);
+			}
+		},
+		async changeAutoHoldCharge(e: Event) {
+			try {
+				await api.post(
+					`batteryautoholdcharge/${(e.target as HTMLInputElement).checked ? "true" : "false"}`
 				);
 			} catch (err) {
 				console.error(err);
