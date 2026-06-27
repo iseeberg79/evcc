@@ -15,8 +15,13 @@ import (
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/loadpoint"
 	"github.com/evcc-io/evcc/core/site"
+	"github.com/evcc-io/evcc/hems/config"
 	"github.com/evcc-io/evcc/util"
 )
+
+func init() {
+	config.AddCtx("tibbergridreward", NewFromConfig)
+}
 
 const (
 	loginURL             = "https://app.tibber.com/v1/login.credentials"

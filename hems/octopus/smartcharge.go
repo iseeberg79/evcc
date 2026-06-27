@@ -11,8 +11,13 @@ import (
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/loadpoint"
 	"github.com/evcc-io/evcc/core/site"
+	"github.com/evcc-io/evcc/hems/config"
 	"github.com/evcc-io/evcc/util"
 )
+
+func init() {
+	config.AddCtx("octopussmartcharge", NewFromConfig)
+}
 
 const (
 	apiURL               = "https://api.oeg-kraken.energy/v1/graphql/"
