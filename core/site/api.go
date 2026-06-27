@@ -83,6 +83,11 @@ type API interface {
 	GetBatteryDischargeControl() bool
 	SetBatteryDischargeControl(bool) error
 
+	// GetBatteryAutoHoldCharge returns whether optimizer-driven hold charge is enabled
+	GetBatteryAutoHoldCharge() bool
+	// SetBatteryAutoHoldCharge enables optimizer-driven hold charge
+	SetBatteryAutoHoldCharge(bool) error
+
 	//
 	// battery control external
 	//
