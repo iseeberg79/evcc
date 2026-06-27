@@ -197,7 +197,7 @@
 					</label>
 				</div>
 			</div>
-			<div v-if="controllable" class="form-check form-switch mt-4">
+			<div v-if="controllable && experimental" class="form-check form-switch mt-4">
 				<input
 					id="batteryAutoHoldCharge"
 					:checked="batteryAutoHoldCharge"
@@ -208,10 +208,7 @@
 				/>
 				<div class="form-check-label">
 					<label for="batteryAutoHoldCharge">
-						{{ $t("batterySettings.holdCharge") }}
-						<span class="badge text-bg-warning ms-1">{{
-							$t("config.experimental.title")
-						}}</span>
+						{{ $t("batterySettings.holdCharge") }} 🧪
 					</label>
 				</div>
 			</div>
@@ -239,6 +236,7 @@ export default defineComponent({
 		bufferStartSoc: { type: Number, default: 0 },
 		batteryDischargeControl: Boolean,
 		batteryAutoHoldCharge: Boolean,
+		experimental: Boolean,
 		battery: { type: Object as PropType<Battery> },
 	},
 	data() {
