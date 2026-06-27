@@ -370,29 +370,6 @@ func (site *Site) SetBatteryDischargeControl(val bool) error {
 	return nil
 }
 
-// GetBatteryAutoHoldCharge returns whether optimizer-driven hold charge is enabled
-func (site *Site) GetBatteryAutoHoldCharge() bool {
-	site.RLock()
-	defer site.RUnlock()
-	return site.batteryAutoHoldCharge
-}
-
-// SetBatteryAutoHoldCharge enables optimizer-driven hold charge (withhold charging for feed-in peak shaving)
-func (site *Site) SetBatteryAutoHoldCharge(val bool) error {
-	site.log.DEBUG.Println("set battery auto hold charge:", val)
-
-	site.Lock()
-	defer site.Unlock()
-
-	if site.batteryAutoHoldCharge != val {
-		site.batteryAutoHoldCharge = val
-		settings.SetBool(keys.BatteryAutoHoldCharge, val)
-		site.publish(keys.BatteryAutoHoldCharge, val)
-	}
-
-	return nil
-}
-
 func (site *Site) GetBatteryGridChargeLimit() *float64 {
 	site.RLock()
 	defer site.RUnlock()
@@ -418,35 +395,6 @@ func (site *Site) SetBatteryGridChargeLimit(val *float64) error {
 		} else {
 			settings.SetFloat(keys.BatteryGridChargeLimit, *val)
 			site.publish(keys.BatteryGridChargeLimit, *val)
-		}
-	}
-
-	return nil
-}
-
-// GetGridExportLimit returns the grid export/feed-in limit (W), nil if unlimited
-func (site *Site) GetGridExportLimit() *float64 {
-	site.RLock()
-	defer site.RUnlock()
-	return site.gridExportLimit
-}
-
-// SetGridExportLimit sets the grid export/feed-in limit (W) used for optimizer peak shaving
-func (site *Site) SetGridExportLimit(val *float64) error {
-	site.log.DEBUG.Println("set grid export limit:", printPtr("%.0f", val))
-
-	site.Lock()
-	defer site.Unlock()
-
-	if !ptrValueEqual(site.gridExportLimit, val) {
-		site.gridExportLimit = val
-
-		if val == nil {
-			settings.SetString(keys.GridExportLimit, "")
-			site.publish(keys.GridExportLimit, nil)
-		} else {
-			settings.SetFloat(keys.GridExportLimit, *val)
-			site.publish(keys.GridExportLimit, *val)
 		}
 	}
 

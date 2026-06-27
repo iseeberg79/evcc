@@ -79,9 +79,7 @@ type Site struct {
 	bufferSoc               float64  // continue charging on battery above this Soc
 	bufferStartSoc          float64  // start charging on battery above this Soc
 	batteryDischargeControl bool     // prevent battery discharge for fast and planned charging
-	batteryAutoHoldCharge   bool     // optimizer-driven hold charge: withhold charging for feed-in peak shaving
 	batteryGridChargeLimit  *float64 // grid charging limit
-	gridExportLimit         *float64 // grid export/feed-in limit (W) for optimizer peak shaving; nil = unlimited
 
 	// optimizer settings
 	optimizerChargingStrategy string // optimizer grid charging strategy
@@ -362,11 +360,6 @@ func (site *Site) restoreSettings() error {
 			return err
 		}
 	}
-	if v, err := settings.Bool(keys.BatteryAutoHoldCharge); err == nil {
-		if err := site.SetBatteryAutoHoldCharge(v); err != nil {
-			return err
-		}
-	}
 	if v, err := settings.Float(keys.ResidualPower); err == nil {
 		if err := site.SetResidualPower(v); err != nil {
 			return err
@@ -374,11 +367,6 @@ func (site *Site) restoreSettings() error {
 	}
 	if v, err := settings.Float(keys.BatteryGridChargeLimit); err == nil {
 		if err := site.SetBatteryGridChargeLimit(&v); err != nil && !errors.Is(err, ErrBatteryControlNotAvailable) {
-			return err
-		}
-	}
-	if v, err := settings.Float(keys.GridExportLimit); err == nil {
-		if err := site.SetGridExportLimit(&v); err != nil {
 			return err
 		}
 	}
@@ -1122,7 +1110,6 @@ func (site *Site) prepare() {
 	site.publish(keys.BufferStartSoc, site.bufferStartSoc)
 	site.publish(keys.BatteryMode, site.batteryMode)
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
-	site.publish(keys.BatteryAutoHoldCharge, site.batteryAutoHoldCharge)
 	site.publish(keys.ResidualPower, site.GetResidualPower())
 	site.publish(keys.SmartCostAvailable, site.isDynamicTariff(api.TariffUsagePlanner))
 	site.publish(keys.SmartFeedInPriorityAvailable, site.isDynamicTariff(api.TariffUsageFeedIn))

@@ -48,32 +48,6 @@ func NewParamCache() *ParamCache {
 	}
 }
 
-// process-wide value cache, registered once at startup so plugins can read
-// published values in-process (the same store that backs /api/state)
-var (
-	defaultParamCacheMu sync.RWMutex
-	defaultParamCache   *ParamCache
-)
-
-// SetDefaultParamCache registers the process-wide value cache.
-func SetDefaultParamCache(c *ParamCache) {
-	defaultParamCacheMu.Lock()
-	defer defaultParamCacheMu.Unlock()
-	defaultParamCache = c
-}
-
-// DefaultParamCacheValue returns the cached value for key, or nil if no cache is
-// registered or the key is unknown.
-func DefaultParamCacheValue(key string) any {
-	defaultParamCacheMu.RLock()
-	c := defaultParamCache
-	defaultParamCacheMu.RUnlock()
-	if c == nil {
-		return nil
-	}
-	return c.Get(key).Val
-}
-
 // Run adds input channel's values to cache
 func (c *ParamCache) Run(in <-chan Param) {
 	for p := range in {

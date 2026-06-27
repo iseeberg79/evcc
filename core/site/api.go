@@ -55,10 +55,6 @@ type API interface {
 	GetBatteryGridChargeLimit() *float64
 	// SetBatteryGridChargeLimit sets the grid charge limit
 	SetBatteryGridChargeLimit(limit *float64) error
-	// GetGridExportLimit gets the grid export/feed-in limit (W), nil if unlimited
-	GetGridExportLimit() *float64
-	// SetGridExportLimit sets the grid export/feed-in limit (W) for optimizer peak shaving
-	SetGridExportLimit(limit *float64) error
 
 	// GetOptimizerChargingStrategy gets the optimizer grid charging strategy
 	GetOptimizerChargingStrategy() string
@@ -86,11 +82,6 @@ type API interface {
 
 	GetBatteryDischargeControl() bool
 	SetBatteryDischargeControl(bool) error
-
-	// GetBatteryAutoHoldCharge returns whether optimizer-driven hold charge is enabled
-	GetBatteryAutoHoldCharge() bool
-	// SetBatteryAutoHoldCharge enables optimizer-driven hold charge
-	SetBatteryAutoHoldCharge(bool) error
 
 	//
 	// battery control external

@@ -215,13 +215,11 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 
 	if site.circuit != nil {
 		if pMaxImp := site.circuit.GetMaxPower(); pMaxImp > 0 {
-			// hard grid import limit if no price penalty is set by PrcPExcImp
-			req.Grid.PMaxImp = float32(pMaxImp)
+			req.Grid = optimizer.GridConfig{
+				// hard grid import limit if no price penalty is set by PrcPExcImp
+				PMaxImp: float32(pMaxImp),
+			}
 		}
-	}
-	if limit := site.GetGridExportLimit(); limit != nil && *limit > 0 {
-		// grid export/feed-in limit so the optimizer charges surplus over the cap (peak shaving)
-		req.Grid.PMaxExp = float32(*limit)
 	}
 
 	add := func(battery optimizer.BatteryConfig, detail batteryDetail) {
@@ -521,10 +519,6 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 			bat.PDemand = prorate(demand, firstSlotDuration)
 		}
 	}
-
-	// withhold_charge lets the optimizer pause charging below the solar peak under
-	// attenuate_grid_peaks so capacity stays free for the midday feed-in peak
-	bat.WithholdCharge = site.batteryAutoHoldCharge
 
 	return bat, detail
 }
