@@ -101,22 +101,22 @@ func (g *GridReward) SetUpdated(func()) {
 
 // Curtailed implements hems.API. Tibber grid reward does not curtail.
 func (g *GridReward) Curtailed() *bool {
-    return nil
+	return nil
 }
 
 // Dimmed implements hems.API.
 func (g *GridReward) Dimmed() *bool {
-    return nil
+	return nil
 }
 
 // MaxConsumptionPower implements api.HEMS.
 func (g *GridReward) MaxConsumptionPower() float64 {
-    return 0
+	return 0
 }
 
 // MaxProductionPower implements api.HEMS.
 func (g *GridReward) MaxProductionPower() *float64 {
-    return nil
+	return nil
 }
 
 // Run implements hems.API.
