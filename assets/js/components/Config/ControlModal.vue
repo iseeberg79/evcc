@@ -129,7 +129,9 @@ export default {
 			return this.values.gridExportLimit !== this.serverValues.gridExportLimit;
 		},
 		nothingChanged() {
-			return !this.intervalChanged && !this.residualPowerChanged && !this.gridExportLimitChanged;
+			return (
+				!this.intervalChanged && !this.residualPowerChanged && !this.gridExportLimitChanged
+			);
 		},
 	},
 	methods: {
