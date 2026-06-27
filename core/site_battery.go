@@ -106,11 +106,53 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive bool, rate api.Rat
 		res = keepUnlessModified(api.BatteryCharge)
 	case site.dischargeControlActive(rate):
 		res = keepUnlessModified(api.BatteryHold)
+	case site.GetBatteryAutoHoldCharge() && site.holdChargePlanAvailable():
+		// follow the optimizer plan for the current slot
+		res = keepUnlessModified(site.holdChargeMode())
 	case batteryModeModified(batMode):
 		res = api.BatteryNormal
 	}
 
 	return res
+}
+
+// holdChargeStale bounds how long a stored optimizer plan is trusted
+const holdChargeStale = 30 * time.Minute
+
+// holdChargePlanAvailable reports whether a recent optimizer plan exists
+func (site *Site) holdChargePlanAvailable() bool {
+	site.RLock()
+	defer site.RUnlock()
+	return len(site.holdChargeSuggestions) > 0 && time.Since(site.holdChargeUpdated) < holdChargeStale
+}
+
+// holdChargeMode collapses the optimizer's current-slot per-battery suggestions
+// into the single global battery mode that applies to all home batteries. The
+// optimizer already classifies each battery (normal/hold/charge/holdcharge), so
+// we map that action directly instead of re-deriving it from raw charge power.
+// On conflicting suggestions the peak-shaving intent wins: holdcharge > hold >
+// charge > normal. Order-independent (holdcharge short-circuits; the rest only
+// upgrade the priority).
+func (site *Site) holdChargeMode() api.BatteryMode {
+	site.RLock()
+	defer site.RUnlock()
+
+	mode := api.BatteryNormal
+	for _, s := range site.holdChargeSuggestions {
+		switch s.Action {
+		case "holdcharge":
+			return api.BatteryHoldCharge
+		case "hold":
+			if mode != api.BatteryHoldCharge {
+				mode = api.BatteryHold
+			}
+		case "charge":
+			if mode == api.BatteryNormal {
+				mode = api.BatteryCharge
+			}
+		}
+	}
+	return mode
 }
 
 // batteryMaxSocReached checks is battery has exceed max soc limit

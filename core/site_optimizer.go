@@ -374,6 +374,18 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 
 	site.publish("evopt-batteries", batteries)
 
+	// store the current-slot plan per home battery so the battery mode can follow it
+	suggestions := make(map[string]batterySuggestion)
+	for _, b := range batteries {
+		if b.Type == batteryTypeBattery {
+			suggestions[b.Name] = b.Suggestion
+		}
+	}
+	site.Lock()
+	site.holdChargeSuggestions = suggestions
+	site.holdChargeUpdated = time.Now()
+	site.Unlock()
+
 	site.battery.Forecast = site.addBatteryForecastTotals(req.Batteries, resp.JSON200.Batteries)
 
 	site.publish(keys.Battery, site.battery)
