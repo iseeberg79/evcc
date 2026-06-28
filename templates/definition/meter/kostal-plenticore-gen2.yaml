@@ -139,7 +139,8 @@ render: |
           # (no batteryIndex). 0 while withholding, the planned limit during peak charging.
           source: state
           key: evopt-batteries
-          jq: '.[] | select(.name == "{{ .name }}").suggestion.charge'
+          # (...) // 0 so no match / empty / inactive optimizer falls back to 0
+          jq: '(.[] | select(.name == "{{ .name }}").suggestion.charge) // 0'
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}

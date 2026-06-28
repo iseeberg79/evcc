@@ -55,7 +55,7 @@ func TestStateGetter(t *testing.T) {
 // selects its own entry by name, independent of array position. The jq below is
 // exactly what the Kostal template renders after {{ .name }} -> db:35.
 func TestStateGetterSelfSelectByName(t *testing.T) {
-	const selfRefJQ = `.[] | select(.name == "db:35").suggestion.charge`
+	const selfRefJQ = `(.[] | select(.name == "db:35").suggestion.charge) // 0`
 
 	// realistic: a connected vehicle (db:10) sits at index 0, the home battery
 	// (db:35) at index 1 - a raw index would be wrong/fragile here.
@@ -146,4 +146,38 @@ func TestStateIntSetterForward(t *testing.T) {
 	got, _ := strconv.ParseFloat(written, 64)
 	mu.Unlock()
 	require.Equal(t, 1500.0, got)
+}
+
+// TestStateGetterSelfSelectSafeDefaults proves the self-referencing holdcharge
+// path degrades to 0 (block charge = safe default), never erroring/crashing,
+// when the optimizer is inactive or its data is absent/empty/non-matching.
+func TestStateGetterSelfSelectSafeDefaults(t *testing.T) {
+	p, err := NewStateFromConfig(t.Context(), map[string]any{
+		"key": "evopt-batteries",
+		"jq":  `(.[] | select(.name == "db:35").suggestion.charge) // 0`,
+	})
+	require.NoError(t, err)
+	g, err := p.(FloatGetter).FloatGetter()
+	require.NoError(t, err)
+
+	// optimizer never ran: key absent -> DefaultParamCacheValue nil -> 0
+	setCache(t, "unrelated", 1)
+	v, err := g()
+	require.NoError(t, err)
+	require.Equal(t, 0.0, v, "absent key")
+
+	for _, tc := range []struct {
+		name string
+		val  any
+	}{
+		{"nil value", nil},
+		{"empty array", []map[string]any{}},
+		{"vehicle only, no db:35", []map[string]any{{"type": "vehicle", "name": "db:10"}}},
+		{"battery present, withholding (no charge field)", []map[string]any{{"type": "battery", "name": "db:35", "suggestion": map[string]any{"action": "holdcharge"}}}},
+	} {
+		setCache(t, "evopt-batteries", tc.val)
+		v, err := g()
+		require.NoError(t, err, tc.name)
+		require.Equal(t, 0.0, v, tc.name)
+	}
 }
