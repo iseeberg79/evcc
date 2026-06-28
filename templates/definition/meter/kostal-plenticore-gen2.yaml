@@ -134,8 +134,12 @@ render: |
           {{- end }}
       - case: 4 # holdcharge
         set:
-          source: const
-          value: 0 # W (withhold charging - block charge so PV surplus is exported/peak-shaved)
+          # E2E TEST: self-referencing value path - read THIS battery's planned charge
+          # limit from published state, selected by the device's own injected name
+          # (no batteryIndex). 0 while withholding, the planned limit during peak charging.
+          source: state
+          key: evopt-batteries
+          jq: '.[] | select(.name == "{{ .name }}").suggestion.charge'
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}

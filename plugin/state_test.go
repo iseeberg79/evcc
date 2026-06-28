@@ -50,6 +50,41 @@ func TestStateGetter(t *testing.T) {
 	}
 }
 
+// TestStateGetterSelfSelectByName is the end-to-end proof for device-name self
+// reference: a template that injects its own name (see TestPredefinedNameRendered)
+// selects its own entry by name, independent of array position. The jq below is
+// exactly what the Kostal template renders after {{ .name }} -> db:35.
+func TestStateGetterSelfSelectByName(t *testing.T) {
+	const selfRefJQ = `.[] | select(.name == "db:35").suggestion.charge`
+
+	// realistic: a connected vehicle (db:10) sits at index 0, the home battery
+	// (db:35) at index 1 - a raw index would be wrong/fragile here.
+	setCache(t, "evopt-batteries", []map[string]any{
+		{"type": "vehicle", "name": "db:10", "suggestion": map[string]any{"action": "stop"}},
+		{"type": "battery", "name": "db:35", "suggestion": map[string]any{"charge": 460.0}},
+	})
+
+	p, err := NewStateFromConfig(t.Context(), map[string]any{"key": "evopt-batteries", "jq": selfRefJQ})
+	require.NoError(t, err)
+	g, err := p.(FloatGetter).FloatGetter()
+	require.NoError(t, err)
+	v, err := g()
+	require.NoError(t, err)
+	require.Equal(t, 460.0, v, "must select db:35's value, not the vehicle at index 0")
+
+	// withholding: suggestion.charge omitted -> null -> 0 (block charge), null-safe
+	setCache(t, "evopt-batteries", []map[string]any{
+		{"type": "vehicle", "name": "db:10", "suggestion": map[string]any{"action": "stop"}},
+		{"type": "battery", "name": "db:35", "suggestion": map[string]any{"action": "holdcharge"}},
+	})
+	p, err = NewStateFromConfig(t.Context(), map[string]any{"key": "evopt-batteries", "jq": selfRefJQ})
+	require.NoError(t, err)
+	g, _ = p.(FloatGetter).FloatGetter()
+	v, err = g()
+	require.NoError(t, err)
+	require.Equal(t, 0.0, v, "withholding battery -> charge omitted -> 0")
+}
+
 func TestStateGetterFlatAndMissing(t *testing.T) {
 	setCache(t, "arr", []int64{0, 1500, 3000})
 
