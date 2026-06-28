@@ -14,11 +14,13 @@ func TestHoldChargeMode(t *testing.T) {
 		suggestions map[string]batterySuggestion
 		want        api.BatteryMode
 	}{
-		{"charge -> holdcharge", map[string]batterySuggestion{"b": {Charge: 1500}}, api.BatteryHoldCharge},
-		{"discharge -> normal", map[string]batterySuggestion{"b": {Discharge: 800}}, api.BatteryNormal},
-		{"idle -> hold", map[string]batterySuggestion{"b": {}}, api.BatteryHold},
-		{"below threshold -> hold", map[string]batterySuggestion{"b": {Charge: 20, Discharge: 10}}, api.BatteryHold},
-		{"charge wins over discharge", map[string]batterySuggestion{"a": {Charge: 1000}, "b": {Discharge: 500}}, api.BatteryHoldCharge},
+		{"holdcharge action", map[string]batterySuggestion{"b": {Action: api.BatteryHoldCharge.String()}}, api.BatteryHoldCharge},
+		{"hold action", map[string]batterySuggestion{"b": {Action: api.BatteryHold.String()}}, api.BatteryHold},
+		{"charge action", map[string]batterySuggestion{"b": {Action: api.BatteryCharge.String()}}, api.BatteryCharge},
+		{"normal action", map[string]batterySuggestion{"b": {Action: api.BatteryNormal.String()}}, api.BatteryNormal},
+		{"empty action (default)", map[string]batterySuggestion{"b": {}}, api.BatteryNormal},
+		{"holdcharge wins over charge", map[string]batterySuggestion{"a": {Action: api.BatteryCharge.String()}, "b": {Action: api.BatteryHoldCharge.String()}}, api.BatteryHoldCharge},
+		{"hold wins over charge", map[string]batterySuggestion{"a": {Action: api.BatteryCharge.String()}, "b": {Action: api.BatteryHold.String()}}, api.BatteryHold},
 	} {
 		site := &Site{holdChargeSuggestions: tc.suggestions}
 		require.Equal(t, tc.want, site.holdChargeMode(), tc.name)

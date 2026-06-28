@@ -126,32 +126,33 @@ func (site *Site) holdChargePlanAvailable() bool {
 	return len(site.holdChargeSuggestions) > 0 && time.Since(site.holdChargeUpdated) < holdChargeStale
 }
 
-// holdChargeMode maps the current-slot optimizer plan of the home batteries onto a
-// global battery mode: charge -> holdcharge (limit applied per battery by the meter
-// template), discharge -> normal (discharge allowed), otherwise hold (preserve capacity).
+// holdChargeMode collapses the optimizer's current-slot per-battery suggestions
+// into the single global battery mode that applies to all home batteries. The
+// optimizer already classifies each battery (normal/hold/charge/holdcharge), so
+// we map that action directly instead of re-deriving it from raw charge power.
+// On conflicting suggestions the peak-shaving intent wins: holdcharge > hold >
+// charge > normal. Order-independent (holdcharge short-circuits; the rest only
+// upgrade the priority).
 func (site *Site) holdChargeMode() api.BatteryMode {
 	site.RLock()
 	defer site.RUnlock()
 
-	const threshold = 50.0 // W, ignore numerical noise around zero
-	var anyCharge, anyDischarge bool
+	mode := api.BatteryNormal
 	for _, s := range site.holdChargeSuggestions {
-		if s.Charge > threshold {
-			anyCharge = true
-		}
-		if s.Discharge > threshold {
-			anyDischarge = true
+		switch s.Action {
+		case "holdcharge":
+			return api.BatteryHoldCharge
+		case "hold":
+			if mode != api.BatteryHoldCharge {
+				mode = api.BatteryHold
+			}
+		case "charge":
+			if mode == api.BatteryNormal {
+				mode = api.BatteryCharge
+			}
 		}
 	}
-
-	switch {
-	case anyCharge:
-		return api.BatteryHoldCharge
-	case anyDischarge:
-		return api.BatteryNormal
-	default:
-		return api.BatteryHold
-	}
+	return mode
 }
 
 // batteryMaxSocReached checks is battery has exceed max soc limit
