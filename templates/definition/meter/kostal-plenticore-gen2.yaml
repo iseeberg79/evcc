@@ -51,15 +51,6 @@ params:
     deprecated: true
   - name: watchdog
     default: 60s
-  - name: batteryIndex
-    description:
-      de: Index dieser Hausbatterie (0-basiert)
-      en: Index of this home battery (0-based)
-    help:
-      de: Für die optimizer-gesteuerte HoldCharge-Ladegrenze bei mehreren Hausbatterien
-      en: For the optimizer-driven HoldCharge limit with multiple home batteries
-    default: 0
-    advanced: true
 render: |
   {{- if eq .usage "pv" }}
   type: custom
@@ -143,10 +134,8 @@ render: |
           {{- end }}
       - case: 4 # holdcharge
         set:
-          # optimizer-planned per-slot charge power (W) for this battery; 0 while withholding
-          source: state
-          key: evopt-batteries
-          jq: '[.[] | select(.type=="battery")][{{ .batteryIndex }}].suggestion.charge'
+          source: const
+          value: 0 # W (withhold charging - block charge so PV surplus is exported/peak-shaved)
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}
