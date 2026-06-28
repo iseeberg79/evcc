@@ -12,16 +12,22 @@ import (
 )
 
 func TestWithDeviceName(t *testing.T) {
-	// injects the device name, preserves other keys, leaves the input untouched
+	// template device: injects the name, preserves other keys, input untouched
 	in := map[string]any{"host": "localhost"}
-	out := withDeviceName(in, "db:42")
+	out := withDeviceName("template", in, "db:42")
 	assert.Equal(t, "db:42", out["name"])
 	assert.Equal(t, "localhost", out["host"])
 	_, mutated := in["name"]
 	assert.False(t, mutated, "input map must not be modified")
 
 	// nil input is handled
-	assert.Equal(t, "db:7", withDeviceName(nil, "db:7")["name"])
+	assert.Equal(t, "db:7", withDeviceName("template", nil, "db:7")["name"])
+
+	// non-template device: must NOT inject (custom configs decode strictly)
+	custom := map[string]any{"host": "localhost"}
+	out = withDeviceName("custom", custom, "db:42")
+	_, injected := out["name"]
+	assert.False(t, injected, "custom device must not get a name key")
 }
 
 func TestYamlOff(t *testing.T) {
