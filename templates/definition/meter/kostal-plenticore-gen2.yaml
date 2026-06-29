@@ -134,8 +134,9 @@ render: |
           {{- end }}
       - case: 4 # holdcharge
         set:
-          source: const
-          value: 0 # W (withhold charging - block charge so PV surplus is exported/peak-shaved)
+          source: state
+          key: evopt-batteries
+          jq: '(.[] | select(.name == "{{ .name }}").suggestion.charge) // 0'
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}

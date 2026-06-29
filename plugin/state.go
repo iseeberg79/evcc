@@ -61,7 +61,12 @@ func NewStateFromConfig(ctx context.Context, other map[string]any) (Plugin, erro
 }
 
 // value reads the cached value, applies the jq pipeline and returns it as float64.
-// Returns 0 when the key is unknown.
+// Returns 0 when the key has not been published yet (the value source is absent).
+//
+// A null or empty jq result is surfaced as an error rather than silently mapped to
+// a value: defaulting is consumer policy, not transport behavior, and swallowing it
+// would hide a mistyped key/filter. Consumers that want a default must express it in
+// the jq, e.g. `(.foo) // 0`.
 func (p *State) value() (float64, error) {
 	v := util.DefaultParamCacheValue(p.key)
 	if v == nil {
@@ -77,18 +82,11 @@ func (p *State) value() (float64, error) {
 		return 0, err
 	}
 
-	// the jq path may resolve to null/absent (e.g. an optimizer suggestion that is
-	// not yet available) - treat that as 0 rather than failing the setter
-	switch s := strings.TrimSpace(string(b)); s {
-	case "", "null", "<nil>":
-		return 0, nil
-	default:
-		f, err := strconv.ParseFloat(s, 64)
-		if err != nil {
-			return 0, err
-		}
-		return f * p.scale, nil
+	f, err := strconv.ParseFloat(strings.TrimSpace(string(b)), 64)
+	if err != nil {
+		return 0, err
 	}
+	return f * p.scale, nil
 }
 
 var _ FloatGetter = (*State)(nil)

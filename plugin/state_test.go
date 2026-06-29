@@ -68,9 +68,17 @@ func TestStateGetterFlatAndMissing(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0.0, v)
 
-	// jq path resolving to null (absent field) -> 0, no error
+	// jq resolving to null without a default -> error (surfaces a mistyped key/filter
+	// instead of silently returning a value)
 	setCache(t, "obj", []map[string]any{{"foo": 1.0}})
 	p, err = NewStateFromConfig(t.Context(), map[string]any{"key": "obj", "jq": ".[0].missing.charge"})
+	require.NoError(t, err)
+	g, _ = p.(FloatGetter).FloatGetter()
+	_, err = g()
+	require.Error(t, err, "null result without an explicit default must error")
+
+	// defaulting is consumer policy: express it in the jq -> 0
+	p, err = NewStateFromConfig(t.Context(), map[string]any{"key": "obj", "jq": ".[0].missing.charge // 0"})
 	require.NoError(t, err)
 	g, _ = p.(FloatGetter).FloatGetter()
 	v, err = g()
