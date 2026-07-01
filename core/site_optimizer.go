@@ -365,8 +365,10 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 	})
 
 	slotHours := firstSlotDuration.Hours()
-	gridImporting := len(resp.JSON200.GridImport) > 0 && resp.JSON200.GridImport[0] > 0
-	gridExporting := len(resp.JSON200.GridExport) > 0 && resp.JSON200.GridExport[0] > 0
+	// grid flow gates use the same power threshold as charge/discharge so a trickle
+	// (numerical residual) does not count as importing/exporting for mode selection
+	gridImporting := len(resp.JSON200.GridImport) > 0 && float64(resp.JSON200.GridImport[0])/slotHours > suggestionThreshold
+	gridExporting := len(resp.JSON200.GridExport) > 0 && float64(resp.JSON200.GridExport[0])/slotHours > suggestionThreshold
 
 	// peakExportSlot mirrors the optimizer's peak_overshoot_slot check: true when any forecast
 	// slot has natural surplus (PV - load) exceeding the export limit, meaning the withhold
