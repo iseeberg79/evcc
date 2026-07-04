@@ -32,6 +32,12 @@ var (
 	eta          = float32(0.9)  // efficiency of the battery charging/discharging
 	batteryPower = float32(6000) // default power of the battery in W
 
+	// socDepletionCostHigh is a conservative starting price (€/h) that nudges the optimizer
+	// away from parking a home battery above 80% SOC (calendar aging) without blocking genuine
+	// storage needs. 0.005 is a chemistry-agnostic middle: top of the plausible LFP range,
+	// still a meaningful (~half) share of a rough NMC estimate. Small vs. arbitrage value; tune.
+	socDepletionCostHigh = float32(0.005)
+
 	mu               sync.Mutex
 	optimizerUpdated time.Time
 )
@@ -632,6 +638,9 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 	// withhold_charge lets the optimizer pause charging below the solar peak under
 	// attenuate_grid_peaks so capacity stays free for the midday feed-in peak
 	bat.WithholdCharge = site.batteryAutoHoldCharge
+
+	// nudge the optimizer away from parking the battery at very high SOC (calendar aging)
+	bat.PrcDplSocHigh = socDepletionCostHigh
 
 	return bat, detail
 }
