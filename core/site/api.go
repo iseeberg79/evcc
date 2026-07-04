@@ -92,6 +92,11 @@ type API interface {
 	// SetBatteryAutoHoldCharge enables optimizer-driven hold charge
 	SetBatteryAutoHoldCharge(bool) error
 
+	// GetOptimizerSolarAdjust returns whether the solar forecast is scaled before optimizing
+	GetOptimizerSolarAdjust() bool
+	// SetOptimizerSolarAdjust enables scaling the solar forecast before optimizing
+	SetOptimizerSolarAdjust(bool) error
+
 	//
 	// battery control external
 	//
