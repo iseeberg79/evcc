@@ -104,8 +104,8 @@ type batteryResult struct {
 	Suggestion batterySuggestion `json:"suggestion,omitzero"`
 }
 
-// batterySuggestion is the advisory action derived from the optimizer corner result for the
-// current slot. It is published for visibility only and not yet wired into control.
+// batterySuggestion is the action derived from the optimizer corner result for the current
+// slot. It is published for visibility and drives the battery mode via holdChargeMode.
 type batterySuggestion struct {
 	// Action is the recommended action for the current slot.
 	// home battery: normal|hold|charge|holdcharge; loadpoint/vehicle: charge|stop

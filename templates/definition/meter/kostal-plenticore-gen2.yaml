@@ -118,9 +118,13 @@ render: |
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
       - case: 3 # charge
         set:
-          {{- if .maxchargepower }}
-          source: const
-          value: -{{ .maxchargepower }} # W
+          # optimizer-planned grid charge power (W) for this battery, forced via setpoint;
+          # fall back to maxchargepower when the optimizer has no value.
+          # scale -1 because register 1034 uses negative values for charging
+          source: state
+          key: evopt-batteries
+          scale: -1
+          jq: '(.[] | select(.name == "{{ .name }}").suggestion.charge) // {{ .maxchargepower }}'
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}
@@ -128,10 +132,6 @@ render: |
               address: 1034 # Battery charge power (DC) setpoint, absolute [W]
               type: writemultiple
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
-          {{- else }}
-          source: error
-          error: ErrNotAvailable
-          {{- end }}
       - case: 4 # holdcharge
         set:
           source: state
