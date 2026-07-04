@@ -370,6 +370,31 @@ func (site *Site) SetBatteryDischargeControl(val bool) error {
 	return nil
 }
 
+// GetOptimizerSolarAdjust returns whether the solar forecast is scaled by the
+// measured production ratio before being sent to the optimizer
+func (site *Site) GetOptimizerSolarAdjust() bool {
+	site.RLock()
+	defer site.RUnlock()
+	return site.optimizerSolarAdjust
+}
+
+// SetOptimizerSolarAdjust enables scaling the solar forecast by the measured
+// production ratio before optimizing
+func (site *Site) SetOptimizerSolarAdjust(val bool) error {
+	site.log.DEBUG.Println("set optimizer solar adjust:", val)
+
+	site.Lock()
+	defer site.Unlock()
+
+	if site.optimizerSolarAdjust != val {
+		site.optimizerSolarAdjust = val
+		settings.SetBool(keys.OptimizerSolarAdjust, val)
+		site.publish(keys.OptimizerSolarAdjust, val)
+	}
+
+	return nil
+}
+
 func (site *Site) GetBatteryGridChargeLimit() *float64 {
 	site.RLock()
 	defer site.RUnlock()

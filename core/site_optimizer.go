@@ -196,7 +196,13 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 			return err
 		}
 
-		ft = prorate(scaleAndPrune(solarEnergy, site.solarScale(), minLen), firstSlotDuration)
+		// scale the forecast by the measured production ratio only when enabled;
+		// the ratio is unbounded and can push the forecast beyond installed power
+		scale := 1.0
+		if site.GetOptimizerSolarAdjust() {
+			scale = site.solarScale()
+		}
+		ft = prorate(scaleAndPrune(solarEnergy, scale, minLen), firstSlotDuration)
 	}
 
 	req := optimizer.OptimizationInput{

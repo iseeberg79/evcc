@@ -83,6 +83,7 @@ type Site struct {
 
 	// optimizer settings
 	optimizerChargingStrategy string // optimizer grid charging strategy
+	optimizerSolarAdjust      bool   // scale solar forecast by measured production ratio before optimizing
 
 	loadpoints  []*Loadpoint             // Loadpoints
 	tariffs     *tariff.Tariffs          // Tariffs
@@ -380,6 +381,11 @@ func (site *Site) restoreSettings() error {
 	}
 	site.publish(keys.OptimizerChargingStrategy, site.GetOptimizerChargingStrategy())
 	site.publish(keys.OptimizerChargingStrategies, optimizerChargingStrategies)
+	if v, err := settings.Bool(keys.OptimizerSolarAdjust); err == nil {
+		if err := site.SetOptimizerSolarAdjust(v); err != nil {
+			return err
+		}
+	}
 
 	// drop legacy accumulator-based forecast settings (now stored via metrics collector)
 	settings.Delete("solarAccForecast")
@@ -1118,6 +1124,7 @@ func (site *Site) prepare() {
 	site.publish(keys.BufferStartSoc, site.bufferStartSoc)
 	site.publish(keys.BatteryMode, site.batteryMode)
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
+	site.publish(keys.OptimizerSolarAdjust, site.optimizerSolarAdjust)
 	site.publish(keys.ResidualPower, site.GetResidualPower())
 	site.publish(keys.SmartCostAvailable, site.isDynamicTariff(api.TariffUsagePlanner))
 	site.publish(keys.SmartFeedInPriorityAvailable, site.isDynamicTariff(api.TariffUsageFeedIn))
