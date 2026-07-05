@@ -43,7 +43,7 @@ export interface HemsConfig {
 
 export interface HemsStatus {
   dimmed?: boolean;
-  curtailed?: boolean;
+  curtailed?: number; // allowed feed-in percent (0..100 integer), <100 = curtailed
   maxConsumptionPower?: number;
   maxProductionPower?: number;
 }
@@ -594,6 +594,12 @@ export type EebusConfig = {
 export type EebusStatus = {
   ski: string;
   qr?: string;
+};
+
+export type EebusPairing = {
+  ski: string;
+  shipID: string;
+  source: "paired" | "ski";
 };
 
 export type ModbusProxy = {
