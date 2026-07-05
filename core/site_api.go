@@ -393,6 +393,31 @@ func (site *Site) SetBatteryAutoHoldCharge(val bool) error {
 	return nil
 }
 
+// GetBatteryHoldChargeAlways returns whether holdcharge applies whenever the optimizer
+// plans zero charge, instead of only on a detected export-limit overshoot
+func (site *Site) GetBatteryHoldChargeAlways() bool {
+	site.RLock()
+	defer site.RUnlock()
+	return site.batteryHoldChargeAlways
+}
+
+// SetBatteryHoldChargeAlways sets whether holdcharge applies whenever the optimizer
+// plans zero charge, instead of only on a detected export-limit overshoot
+func (site *Site) SetBatteryHoldChargeAlways(val bool) error {
+	site.log.DEBUG.Println("set battery hold charge always:", val)
+
+	site.Lock()
+	defer site.Unlock()
+
+	if site.batteryHoldChargeAlways != val {
+		site.batteryHoldChargeAlways = val
+		settings.SetBool(keys.BatteryHoldChargeAlways, val)
+		site.publish(keys.BatteryHoldChargeAlways, val)
+	}
+
+	return nil
+}
+
 // GetOptimizerSolarAdjust returns whether the solar forecast is scaled by the
 // measured production ratio before being sent to the optimizer
 func (site *Site) GetOptimizerSolarAdjust() bool {

@@ -80,6 +80,7 @@ type Site struct {
 	bufferStartSoc          float64                      // start charging on battery above this Soc
 	batteryDischargeControl bool                         // prevent battery discharge for fast and planned charging
 	batteryAutoHoldCharge   bool                         // optimizer-driven hold charge: withhold charging for feed-in peak shaving
+	batteryHoldChargeAlways bool                         // apply holdcharge whenever the optimizer plans zero charge, not only on a detected export-limit overshoot
 	holdChargeSuggestions   map[string]batterySuggestion // current-slot optimizer plan per home battery name
 	holdChargeUpdated       time.Time                    // last update of holdChargeSuggestions
 	batteryGridChargeLimit  *float64                     // grid charging limit
@@ -370,6 +371,11 @@ func (site *Site) restoreSettings() error {
 	}
 	if v, err := settings.Bool(keys.BatteryAutoHoldCharge); err == nil {
 		if err := site.SetBatteryAutoHoldCharge(v); err != nil {
+			return err
+		}
+	}
+	if v, err := settings.Bool(keys.BatteryHoldChargeAlways); err == nil {
+		if err := site.SetBatteryHoldChargeAlways(v); err != nil {
 			return err
 		}
 	}
@@ -1139,6 +1145,7 @@ func (site *Site) prepare() {
 	site.publish(keys.BatteryMode, site.batteryMode)
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
 	site.publish(keys.BatteryAutoHoldCharge, site.batteryAutoHoldCharge)
+	site.publish(keys.BatteryHoldChargeAlways, site.batteryHoldChargeAlways)
 	site.publish(keys.OptimizerSolarAdjust, site.optimizerSolarAdjust)
 	site.publish(keys.ResidualPower, site.GetResidualPower())
 	site.publish(keys.SmartCostAvailable, site.isDynamicTariff(api.TariffUsagePlanner))

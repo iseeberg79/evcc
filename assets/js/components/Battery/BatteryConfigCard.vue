@@ -86,6 +86,32 @@
 					{{ $t("battery.config.discharge") }}
 				</label>
 			</div>
+			<div class="form-check form-switch mt-3">
+				<input
+					id="batteryExpHoldCharge"
+					:checked="batteryAutoHoldCharge"
+					class="form-check-input"
+					type="checkbox"
+					role="switch"
+					@change="changeAutoHoldCharge"
+				/>
+				<label class="form-check-label" for="batteryExpHoldCharge">
+					{{ $t("batterySettings.holdCharge") }} 🧪
+				</label>
+			</div>
+			<div v-if="batteryAutoHoldCharge" class="form-check form-switch mt-3 ms-4">
+				<input
+					id="batteryExpHoldChargeAlways"
+					:checked="batteryHoldChargeAlways"
+					class="form-check-input"
+					type="checkbox"
+					role="switch"
+					@change="changeHoldChargeAlways"
+				/>
+				<label class="form-check-label" for="batteryExpHoldChargeAlways">
+					{{ $t("batterySettings.holdChargeAlways") }} 🧪
+				</label>
+			</div>
 		</template>
 	</Card>
 </template>
@@ -113,6 +139,8 @@ export default defineComponent({
 		prioritySoc: { type: Number, default: 0 },
 		bufferStartSoc: { type: Number, default: 0 },
 		batteryDischargeControl: Boolean,
+		batteryAutoHoldCharge: Boolean,
+		batteryHoldChargeAlways: Boolean,
 		battery: { type: Object as PropType<Battery> },
 	},
 	data() {
@@ -225,6 +253,24 @@ export default defineComponent({
 			try {
 				await api.post(
 					`batterydischargecontrol/${(e.target as HTMLInputElement).checked ? "true" : "false"}`
+				);
+			} catch (err) {
+				console.error(err);
+			}
+		},
+		async changeAutoHoldCharge(e: Event) {
+			try {
+				await api.post(
+					`batteryautoholdcharge/${(e.target as HTMLInputElement).checked ? "true" : "false"}`
+				);
+			} catch (err) {
+				console.error(err);
+			}
+		},
+		async changeHoldChargeAlways(e: Event) {
+			try {
+				await api.post(
+					`batteryholdchargealways/${(e.target as HTMLInputElement).checked ? "true" : "false"}`
 				);
 			} catch (err) {
 				console.error(err);

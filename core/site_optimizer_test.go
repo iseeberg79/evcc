@@ -176,6 +176,7 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 		{"battery grid charge", batteryTypeBattery, 3000, 0, true, false, false, "charge"},
 		{"battery pv charge (no peak-shaving)", batteryTypeBattery, 3000, 0, false, true, false, "normal"},
 		{"battery pv charge (peak-shaving)", batteryTypeBattery, 3000, 0, false, true, true, "holdcharge"},
+		{"battery pv withhold, plan gives zero charge (peak-shaving)", batteryTypeBattery, 0, 0, false, true, true, "holdcharge"},
 		{"battery hold (idle while importing)", batteryTypeBattery, 0, 0, true, false, false, "hold"},
 		{"battery idle while exporting", batteryTypeBattery, 0, 0, false, true, false, "normal"},
 		{"battery discharge", batteryTypeBattery, 0, 2000, true, false, false, "normal"},

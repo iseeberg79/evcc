@@ -127,8 +127,9 @@ const suggestionThreshold = 50
 // Because the optimization is linear, the first slot is at an operating-range extreme, so it
 // maps cleanly onto the discrete battery mode / loadpoint intent that control would later apply.
 // Idle while importing means discharge is deliberately withheld (hold). When withholdCharge is
-// set and the battery is actively charging while exporting, holdcharge enforces the planned rate
-// so the optimizer's peak-shaving capacity reservation is respected.
+// set and surplus is being exported, holdcharge blocks charging so the peak-shaving capacity
+// reservation is respected instead of being absorbed by the device's own self-consumption logic
+// - this applies whether the plan still allows some charging or suppresses it fully (charge == 0).
 func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gridImporting, gridExporting, withholdCharge bool, slotHours float64) batterySuggestion {
 	if slotHours <= 0 || len(res.ChargingPower) == 0 || len(res.DischargingPower) == 0 {
 		return batterySuggestion{}
@@ -144,8 +145,10 @@ func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gr
 		case charge > suggestionThreshold && gridImporting:
 			// charging while importing means grid charging
 			s.Action = api.BatteryCharge.String()
-		case charge > suggestionThreshold && gridExporting && withholdCharge:
-			// active charging while exporting under peak-shaving: enforce planned charge rate
+		case gridExporting && withholdCharge:
+			// exporting while the peak-shaving reservation is active: block charging so the
+			// device doesn't self-consume the surplus instead (covers a fully suppressed
+			// plan, charge == 0, below the peak, as well as a still partially capped one)
 			s.Action = api.BatteryHoldCharge.String()
 		case discharge <= suggestionThreshold && gridImporting:
 			// idle while importing: discharge is deliberately withheld
@@ -397,6 +400,11 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 		}
 	}
 
+	// holdChargeGate widens peakExportSlot when batteryHoldChargeAlways is enabled: holdcharge
+	// then also applies whenever the optimizer plans zero charge on its own (e.g. the mild
+	// attenuate_grid_peaks timing preference), not only on a detected export-limit overshoot.
+	holdChargeGate := peakExportSlot || site.GetBatteryHoldChargeAlways()
+
 	var batteries []batteryResult
 	for i, batReq := range req.Batteries {
 		batResp := resp.JSON200.Batteries[i]
@@ -410,7 +418,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 			Empty: matchSoc(batResp.StateOfCharge, func(soc float32) bool {
 				return soc <= batReq.SMin
 			}),
-			Suggestion: currentSlotSuggestion(detail, batResp, gridImporting, gridExporting, batReq.WithholdCharge && peakExportSlot, slotHours),
+			Suggestion: currentSlotSuggestion(detail, batResp, gridImporting, gridExporting, batReq.WithholdCharge && holdChargeGate, slotHours),
 		}
 
 		batteries = append(batteries, batResult)

@@ -92,6 +92,11 @@ type API interface {
 	// SetBatteryAutoHoldCharge enables optimizer-driven hold charge
 	SetBatteryAutoHoldCharge(bool) error
 
+	// GetBatteryHoldChargeAlways returns whether holdcharge applies on any zero-charge plan
+	GetBatteryHoldChargeAlways() bool
+	// SetBatteryHoldChargeAlways sets whether holdcharge applies on any zero-charge plan
+	SetBatteryHoldChargeAlways(bool) error
+
 	// GetOptimizerSolarAdjust returns whether the solar forecast is scaled before optimizing
 	GetOptimizerSolarAdjust() bool
 	// SetOptimizerSolarAdjust enables scaling the solar forecast before optimizing
