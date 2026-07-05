@@ -98,6 +98,11 @@ func (s *SmartCharge) MaxProductionPower() *float64 {
 	return nil
 }
 
+// CurtailedPercent implements api.HEMS. Octopus smart charge does not curtail production.
+func (s *SmartCharge) CurtailedPercent() *int {
+	return nil
+}
+
 // Run implements hems.API.
 func (s *SmartCharge) Run() {
 	ctx := context.Background()

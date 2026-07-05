@@ -119,6 +119,11 @@ func (g *GridReward) MaxProductionPower() *float64 {
 	return nil
 }
 
+// CurtailedPercent implements api.HEMS. Tibber grid reward does not curtail production.
+func (g *GridReward) CurtailedPercent() *int {
+	return nil
+}
+
 // Run implements hems.API.
 func (g *GridReward) Run() {
 	ctx := context.Background()
