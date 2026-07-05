@@ -2,6 +2,7 @@ package core
 
 import (
 	"math"
+	"slices"
 	"time"
 
 	"github.com/evcc-io/evcc/api"
@@ -159,39 +160,66 @@ func (site *Site) solarDetails(solar api.Rates) solarDetails {
 	return res
 }
 
-// solarScale returns the ratio of produced solar energy to forecasted solar
-// energy for the current day, queried from the metrics database. Used to
-// adjust forecasts when PV is consistently under-/over-producing relative
-// to the forecast. Returns 1.0 when not enough data is available to make
-// the ratio meaningful.
+const (
+	solarScaleWindow  = 28 // days of completed history to consider
+	solarScaleMinDays = 5  // require at least this many usable days, else no adjustment
+)
+
+// solarScale returns the median of the daily produced/forecasted ratios over a
+// trailing window of completed days. Used to adjust the forecast for a
+// systematic installation bias (soiling, shading, model error). Deliberately
+// not a single-day ratio: today's deviation is weather noise and must not be
+// projected onto future days. The median ignores outlier days (metering
+// outages, broken forecast feeds) without any explicit filtering. The trailing
+// window follows slow drift and forgets old data. Returns 1 until enough days
+// are available.
 func (site *Site) solarScale() float64 {
-	series, err := metrics.QueryEnergy(now.BeginningOfDay(), time.Now(), "day", true)
+	// completed days only: to is exclusive, so today's partial day is skipped
+	from := now.BeginningOfDay().AddDate(0, 0, -solarScaleWindow)
+	series, err := metrics.QueryEnergy(from, now.BeginningOfDay(), "day", true)
 	if err != nil {
 		site.log.ERROR.Printf("solar forecast scale: %v", err)
 		return 1
 	}
 
-	var pv, fcst float64
+	// index produced energy per day, pairing with forecast below
+	pv := make(map[string]float64)
 	for _, s := range series {
-		if len(s.Data) == 0 {
+		if s.Group == metrics.PV {
+			for _, d := range s.Data {
+				pv[d.Start.Format("2006-01-02")] += d.Energy
+			}
+		}
+	}
+
+	var ratios []float64
+	for _, s := range series {
+		if s.Group != metrics.Forecast {
 			continue
 		}
-		switch s.Group {
-		case metrics.PV:
-			pv = s.Data[0].Energy
-		case metrics.Forecast:
-			fcst = s.Data[0].Energy
+		for _, d := range s.Data {
+			// require data on both sides; the median tolerates the rest
+			if p := pv[d.Start.Format("2006-01-02")]; p > 0 && d.Energy > 0 {
+				ratios = append(ratios, p/d.Energy)
+			}
 		}
 	}
 
-	const minEnergy = 0.5 // kWh
-	if fcst <= 0 || pv+fcst <= minEnergy {
+	scale := solarScaleFactor(ratios)
+	if scale != 1 {
+		site.log.DEBUG.Printf("solar forecast scale %.3f (median of %d days)", scale, len(ratios))
+	}
+	return scale
+}
+
+// solarScaleFactor returns the median of the given daily ratios, or 1 when
+// there are fewer than solarScaleMinDays of them.
+func solarScaleFactor(ratios []float64) float64 {
+	if len(ratios) < solarScaleMinDays {
 		return 1
 	}
-
-	scale := pv / fcst
-	site.log.DEBUG.Printf("solar forecast: produced %.3fkWh, forecasted %.3fkWh, scale %.3f", pv, fcst, scale)
-	return scale
+	slices.Sort(ratios)
+	return ratios[len(ratios)/2]
 }
 
 func (site *Site) isDynamicTariff(usage api.TariffUsage) bool {
