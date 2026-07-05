@@ -4,7 +4,7 @@ products:
     description:
       de: Plenticore Hybrid
       en: Plenticore Hybrid
-capabilities: ["battery-control"]
+capabilities: ["battery-control", "curtail"]
 covers: ["kostal-plenticore-hw0200", "kostal-plenticore"]
 caveats:
   - description:
@@ -75,6 +75,30 @@ render: |
       encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
     scale: 0.001 # Wh -> kWh
   maxacpower: {{ .maxacpower }} # W
+  # feed-in curtailment via active power limit (SunSpec model 123, WMaxLimPct @ 40217).
+  # single holding register written with write single (fn 06); the Plenticore rejects
+  # write multiple (fn 16) here. WMaxLim_Ena (enabled by default) is left to the inverter,
+  # evcc only sets the limit percent (100 % = uncurtailed). Assumes exclusive Modbus access.
+  curtail: # limit feed-in to the given percent of nominal (WMaxLimPct)
+    source: modbus
+    {{- include "modbus" . | indent 2 }}
+    register:
+      address: 40217 # WMaxLimPct
+      type: writesingle
+      encoding: uint16
+  curtailed: # curtailed while the limit is below nominal (< 100 %)
+    source: go
+    in:
+    - name: limit
+      type: int
+      config:
+        source: modbus
+        {{- include "modbus" . | indent 6 }}
+        register:
+          address: 40217 # WMaxLimPct
+          type: holding
+          encoding: uint16
+    script: limit < 100
   {{- end }}
   {{- if eq .usage "battery" }}
   type: custom
