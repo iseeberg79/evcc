@@ -126,11 +126,13 @@ const suggestionThreshold = 50
 // currentSlotSuggestion maps the optimizer's first-slot corner result onto an advisory action.
 // Because the optimization is linear, the first slot is at an operating-range extreme, so it
 // maps cleanly onto the discrete battery mode / loadpoint intent that control would later apply.
-// Idle while importing means discharge is deliberately withheld (hold). When withholdCharge is
-// set and surplus is being exported, holdcharge blocks charging so the peak-shaving capacity
-// reservation is respected instead of being absorbed by the device's own self-consumption logic
-// - this applies whether the plan still allows some charging or suppresses it fully (charge == 0).
-func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gridImporting, gridExporting, withholdCharge bool, slotHours float64) batterySuggestion {
+// Idle while importing means discharge is deliberately withheld (hold). With withholdCharge set,
+// PV production while not importing yields holdcharge so the optimizer's plan for the slot is
+// enforced (the device caps charging at the planned value suggestion.charge, zero while the plan
+// withholds) instead of the device's self-consumption logic absorbing surplus the plan deferred
+// to a later slot. A slot the plan does mean to charge (charge > 0) stays holdcharge too, capped
+// at its planned value rather than charging freely.
+func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gridImporting, pvActive, withholdCharge bool, slotHours float64) batterySuggestion {
 	if slotHours <= 0 || len(res.ChargingPower) == 0 || len(res.DischargingPower) == 0 {
 		return batterySuggestion{}
 	}
@@ -145,10 +147,11 @@ func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gr
 		case charge > suggestionThreshold && gridImporting:
 			// charging while importing means grid charging
 			s.Action = api.BatteryCharge.String()
-		case gridExporting && withholdCharge:
-			// exporting while the peak-shaving reservation is active: block charging so the
-			// device doesn't self-consume the surplus instead (covers a fully suppressed
-			// plan, charge == 0, below the peak, as well as a still partially capped one)
+		case withholdCharge && pvActive && !gridImporting:
+			// peak-shaving reservation active with PV production and no import: enforce the
+			// optimizer's planned charge (capped at suggestion.charge, zero while withheld) so
+			// the device's self-consumption logic doesn't fill the battery from surplus the plan
+			// deferred to a later slot
 			s.Action = api.BatteryHoldCharge.String()
 		case discharge <= suggestionThreshold && gridImporting:
 			// idle while importing: discharge is deliberately withheld
@@ -380,10 +383,13 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 	})
 
 	slotHours := firstSlotDuration.Hours()
-	// grid flow gates use the same power threshold as charge/discharge so a trickle
-	// (numerical residual) does not count as importing/exporting for mode selection
+	// the grid import gate uses the same power threshold as charge/discharge so a trickle
+	// (numerical residual) does not count as importing for mode selection
 	gridImporting := len(resp.JSON200.GridImport) > 0 && float64(resp.JSON200.GridImport[0])/slotHours > suggestionThreshold
-	gridExporting := len(resp.JSON200.GridExport) > 0 && float64(resp.JSON200.GridExport[0])/slotHours > suggestionThreshold
+	// pvActive reflects real production: with the reservation active the inverter's own
+	// self-consumption would charge the battery from any surplus the optimizer did not plan
+	// (the plan hides it as balanced grid flow), so this real signal gates holdcharge
+	pvActive := site.pvPower > suggestionThreshold
 
 	// peakExportSlot mirrors the optimizer's peak_overshoot_slot check: true when any forecast
 	// slot has natural surplus (PV - load) exceeding the export limit, meaning the withhold
@@ -418,7 +424,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 			Empty: matchSoc(batResp.StateOfCharge, func(soc float32) bool {
 				return soc <= batReq.SMin
 			}),
-			Suggestion: currentSlotSuggestion(detail, batResp, gridImporting, gridExporting, batReq.WithholdCharge && holdChargeGate, slotHours),
+			Suggestion: currentSlotSuggestion(detail, batResp, gridImporting, pvActive, batReq.WithholdCharge && holdChargeGate, slotHours),
 		}
 
 		batteries = append(batteries, batResult)
