@@ -265,3 +265,5 @@ replace github.com/lorenzodonini/ocpp-go => github.com/evcc-io/ocpp-go v0.0.0-20
 // TEMP: build against local optimizer fork with withhold_charge (evcc-io/optimizer#79); remove before merge once the optimizer release is bumped
 replace github.com/evcc-io/optimizer => ../optimizer
 replace github.com/enbility/eebus-go => github.com/evcc-io/eebus-go v0.0.0-20260627085352-933afd2a4ea6
+
+replace github.com/enbility/ship-go => github.com/evcc-io/ship-go v0.6.1-0.20260705143036-943556b69307
