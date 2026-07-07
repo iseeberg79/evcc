@@ -719,12 +719,6 @@ func loadpointProfile(lp loadpoint.API, minLen int) []float64 {
 }
 
 // homeProfile returns the home base load in Wh
-// homeConsumptionMargin inflates the forecast home consumption so the optimizer sizes the
-// battery against a slightly higher demand than the point forecast. The extra demand is met
-// from stored PV (surplus that would otherwise be exported) rather than grid charging, since
-// forgone export is cheaper than importing - leaving reserve for unforecast/spontaneous loads.
-const homeConsumptionMargin = 1.1
-
 func (site *Site) homeProfile(minLen int) ([]float64, error) {
 	// kWh over last 30 days
 	profile, err := site.collectors[metrics.Home].EnergyProfile(now.BeginningOfDay().AddDate(0, 0, -30))
@@ -746,9 +740,9 @@ func (site *Site) homeProfile(minLen int) ([]float64, error) {
 		res = res[:minLen]
 	}
 
-	// convert to Wh, applying the consumption safety margin
+	// convert to Wh
 	return lo.Map(res, func(v float64, i int) float64 {
-		return v * 1e3 * homeConsumptionMargin
+		return v * 1e3
 	}), nil
 }
 
