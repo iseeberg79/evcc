@@ -725,8 +725,14 @@ export interface Forecast {
   grid?: ForecastSlot[];
   co2?: ForecastSlot[];
   solar?: SolarDetails;
+  consumption?: ConsumptionDetails;
   planner?: ForecastSlot[];
   feedin?: ForecastSlot[];
+}
+
+export interface ConsumptionDetails {
+  margin: number; // reserve multiplier applied to the consumption forecast (>= 1)
+  coverage: number; // share of days the margin is sized to cover (0..1)
 }
 
 export interface SelectOption<T> {

@@ -1089,6 +1089,7 @@
       "lowestHour": "Sauberste Stunde",
       "range": "Bereich"
     },
+    "consumptionReserve": "Verbrauchsreserve {percent} (deckt {coverage} der Tage)",
     "empty": {
       "co2": "Erfahre, wann Netzstrom in deiner Region sauber ist. Ladepläne werden auf niedrige Emissionen optimiert und CO₂-Einsparungen berechnet.",
       "price": "Dynamischen Stromtarif konfigurieren, um Ladepläne automatisch zu optimieren und Einsparungen zu berechnen.",

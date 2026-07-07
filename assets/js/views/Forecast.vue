@@ -42,6 +42,9 @@
 		</div>
 		<div v-else class="row">
 			<main class="col-12 d-flex flex-column">
+				<div v-if="consumptionReserveText" class="text-muted small mt-3">
+					{{ consumptionReserveText }}
+				</div>
 				<section v-if="forecast.solar" class="mb-5">
 					<div class="d-flex align-items-baseline my-4">
 						<h3 class="fw-normal mb-0">{{ $t("forecast.type.solar") }}</h3>
@@ -227,6 +230,13 @@ export default defineComponent({
 		},
 		solarAdjusted() {
 			return settings.solarAdjusted;
+		},
+		consumptionReserveText(): string {
+			const c = this.forecast.consumption;
+			if (!c) return "";
+			const percent = this.fmtPercentage(c.margin * 100 - 100, 0, true);
+			const coverage = this.fmtPercentage(c.coverage * 100, 0);
+			return this.$t("forecast.consumptionReserve", { percent, coverage });
 		},
 		priceZoom() {
 			return settings.priceZoom;

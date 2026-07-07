@@ -26,6 +26,13 @@ type dailyDetails struct {
 	Complete bool    `json:"complete"`
 }
 
+// consumptionDetails reports the data-driven reserve margin applied to the home
+// consumption forecast, for display in the forecast view.
+type consumptionDetails struct {
+	Margin   float64 `json:"margin"`   // reserve multiplier applied to the consumption forecast (>= 1)
+	Coverage float64 `json:"coverage"` // share of days the margin is sized to cover (0..1)
+}
+
 // greenShare returns
 //   - the current green share, calculated for the part of the consumption between powerFrom and powerTo
 //     the consumption below powerFrom will get the available green power first
@@ -99,11 +106,12 @@ func (site *Site) publishTariffs(greenShareHome float64, greenShareLoadpoints fl
 	}
 
 	fc := struct {
-		Co2     api.Rates     `json:"co2,omitempty"`
-		FeedIn  api.Rates     `json:"feedin,omitempty"`
-		Grid    api.Rates     `json:"grid,omitempty"`
-		Planner api.Rates     `json:"planner,omitempty"`
-		Solar   *solarDetails `json:"solar,omitempty"`
+		Co2         api.Rates           `json:"co2,omitempty"`
+		FeedIn      api.Rates           `json:"feedin,omitempty"`
+		Grid        api.Rates           `json:"grid,omitempty"`
+		Planner     api.Rates           `json:"planner,omitempty"`
+		Solar       *solarDetails       `json:"solar,omitempty"`
+		Consumption *consumptionDetails `json:"consumption,omitempty"`
 	}{
 		Co2:     tariff.Rates(site.GetTariff(api.TariffUsageCo2)),
 		FeedIn:  tariff.Rates(site.GetTariff(api.TariffUsageFeedIn)),
@@ -114,6 +122,11 @@ func (site *Site) publishTariffs(greenShareHome float64, greenShareLoadpoints fl
 	// calculate adjusted solar rates
 	if solar := tariff.Rates(site.GetTariff(api.TariffUsageSolar)); len(solar) > 0 {
 		fc.Solar = new(site.solarDetails(solar))
+	}
+
+	// data-driven consumption reserve margin (only when it adds reserve)
+	if margin := site.consumptionMargin(); margin > 1 {
+		fc.Consumption = &consumptionDetails{Margin: margin, Coverage: consumptionMarginPercentile}
 	}
 
 	site.publish(keys.Forecast, util.NewSharder(keys.Forecast, fc))
