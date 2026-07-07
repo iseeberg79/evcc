@@ -2,6 +2,7 @@ package core
 
 import (
 	"math"
+	"slices"
 	"time"
 
 	"github.com/evcc-io/evcc/api"
@@ -192,6 +193,79 @@ func (site *Site) solarScale() float64 {
 	scale := pv / fcst
 	site.log.DEBUG.Printf("solar forecast: produced %.3fkWh, forecasted %.3fkWh, scale %.3f", pv, fcst, scale)
 	return scale
+}
+
+const (
+	consumptionMarginDays       = 90   // trailing window of days for the reserve percentile
+	consumptionMarginBaseline   = 30   // days averaged for the per-day forecast baseline (matches homeProfile window)
+	consumptionMarginPercentile = 0.80 // plan to cover this share of days
+	consumptionMarginMinSamples = 14   // minimum ratio samples before applying a margin
+)
+
+// consumptionMargin returns a multiplier (>= 1) for the forecast home consumption so
+// the optimizer sizes the battery with reserve for spontaneous loads. It is the
+// consumptionMarginPercentile of the daily ratio between actual consumption and its
+// own trailing consumptionMarginBaseline-day mean (the baseline homeProfile forecasts
+// from), over the last consumptionMarginDays. Unlike solarScale (a median-style
+// correction) this is a percentile buffer, floored at 1 so it never plans for less
+// than the forecast. Returns 1 when there is not enough history.
+func (site *Site) consumptionMargin() float64 {
+	from := now.BeginningOfDay().AddDate(0, 0, -(consumptionMarginDays + consumptionMarginBaseline))
+	series, err := metrics.QueryEnergy(from, time.Now(), "day", true)
+	if err != nil {
+		site.log.ERROR.Printf("consumption margin: %v", err)
+		return 1
+	}
+
+	var daily []metrics.Slot
+	for _, s := range series {
+		if s.Group == metrics.Home {
+			daily = s.Data
+			break
+		}
+	}
+	slices.SortFunc(daily, func(a, b metrics.Slot) int { return a.Start.Compare(b.Start) })
+	// drop the current (partial) day so it does not depress the ratios
+	if n := len(daily); n > 0 && !daily[n-1].Start.Before(now.BeginningOfDay()) {
+		daily = daily[:n-1]
+	}
+
+	energies := make([]float64, len(daily))
+	for i, d := range daily {
+		energies[i] = d.Energy
+	}
+
+	margin, samples := consumptionReserveMargin(energies)
+	if samples > 0 {
+		site.log.DEBUG.Printf("consumption margin: P%.0f over %d days = %.2f", consumptionMarginPercentile*100, samples, margin)
+	}
+	return margin
+}
+
+// consumptionReserveMargin computes the reserve multiplier from a chronological
+// series of daily home consumption. It is the consumptionMarginPercentile of the
+// ratio between each day and its trailing consumptionMarginBaseline-day mean,
+// floored at 1. Returns (1, 0) when there is not enough history to be meaningful.
+func consumptionReserveMargin(daily []float64) (margin float64, samples int) {
+	if len(daily) < consumptionMarginBaseline+consumptionMarginMinSamples {
+		return 1, 0
+	}
+
+	ratios := make([]float64, 0, len(daily)-consumptionMarginBaseline)
+	for i := consumptionMarginBaseline; i < len(daily); i++ {
+		var sum float64
+		for _, v := range daily[i-consumptionMarginBaseline : i] {
+			sum += v
+		}
+		if mean := sum / consumptionMarginBaseline; mean > 0 {
+			ratios = append(ratios, daily[i]/mean)
+		}
+	}
+	if len(ratios) == 0 {
+		return 1, 0
+	}
+	slices.Sort(ratios)
+	return math.Max(1, ratios[int(consumptionMarginPercentile*float64(len(ratios)-1))]), len(ratios)
 }
 
 func (site *Site) isDynamicTariff(usage api.TariffUsage) bool {
