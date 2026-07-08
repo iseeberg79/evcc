@@ -209,6 +209,73 @@ func (site *Site) solarScale() float64 {
 }
 
 const (
+	solarScaleMedianDays       = 28  // trailing window for the robust solar scale
+	solarScaleMedianMinSamples = 7   // minimum daily ratios before applying a scale
+	solarScaleMinEnergy        = 0.5 // kWh, skip dark days where the ratio is noise
+)
+
+// solarScaleMedian returns the median of the daily produced/forecasted solar ratio
+// over the last solarScaleMedianDays. Unlike solarScale (today's ratio, used only for
+// display) this trailing median is robust against single-day forecast outliers and is
+// what feeds the optimizer. Returns 1 when there is not enough history.
+func (site *Site) solarScaleMedian() float64 {
+	from := now.BeginningOfDay().AddDate(0, 0, -solarScaleMedianDays)
+	series, err := metrics.QueryEnergy(from, time.Now(), "day", true)
+	if err != nil {
+		site.log.ERROR.Printf("solar scale median: %v", err)
+		return 1
+	}
+
+	pv := map[string]float64{}
+	fcst := map[string]float64{}
+	for _, s := range series {
+		var m map[string]float64
+		switch s.Group {
+		case metrics.PV:
+			m = pv
+		case metrics.Forecast:
+			m = fcst
+		default:
+			continue
+		}
+		for _, d := range s.Data {
+			m[d.Start.Format("2006-01-02")] = d.Energy
+		}
+	}
+
+	today := now.BeginningOfDay().Format("2006-01-02")
+	ratios := make([]float64, 0, len(fcst))
+	for day, f := range fcst {
+		if day == today || f <= solarScaleMinEnergy {
+			continue
+		}
+		ratios = append(ratios, pv[day]/f)
+	}
+
+	median, ok := medianOf(ratios, solarScaleMedianMinSamples)
+	if !ok {
+		return 1
+	}
+	site.log.DEBUG.Printf("solar scale median over %d days = %.3f", len(ratios), median)
+	return median
+}
+
+// medianOf returns the median of values and true when at least minSamples are
+// present, otherwise (1, false).
+func medianOf(values []float64, minSamples int) (float64, bool) {
+	if len(values) < minSamples {
+		return 1, false
+	}
+	s := slices.Clone(values)
+	slices.Sort(s)
+	if n := len(s); n%2 == 1 {
+		return s[n/2], true
+	} else {
+		return (s[n/2-1] + s[n/2]) / 2, true
+	}
+}
+
+const (
 	consumptionMarginDays       = 90   // trailing window of days for the reserve percentile
 	consumptionMarginBaseline   = 30   // days averaged for the per-day forecast baseline (matches homeProfile window)
 	consumptionMarginPercentile = 0.80 // plan to cover this share of days

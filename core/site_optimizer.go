@@ -261,11 +261,11 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 			return err
 		}
 
-		// scale the forecast by the measured production ratio only when enabled;
-		// the ratio is unbounded and can push the forecast beyond installed power
+		// scale the forecast by the robust trailing median of the measured
+		// production ratio when enabled (solarScale's daily ratio stays display-only)
 		scale := 1.0
 		if site.GetOptimizerSolarAdjust() {
-			scale = site.solarScale()
+			scale = site.solarScaleMedian()
 		}
 		ft = prorate(scaleAndPrune(solarEnergy, scale, minLen), firstSlotDuration)
 	}

@@ -47,3 +47,29 @@ func TestConsumptionReserveMargin(t *testing.T) {
 		assert.Equal(t, 30, samples)
 	})
 }
+
+func TestMedianOf(t *testing.T) {
+	t.Run("too few samples", func(t *testing.T) {
+		v, ok := medianOf([]float64{1, 2, 3}, 5)
+		assert.False(t, ok)
+		assert.Equal(t, 1.0, v)
+	})
+
+	t.Run("odd count", func(t *testing.T) {
+		v, ok := medianOf([]float64{3, 1, 2, 5, 4}, 3)
+		assert.True(t, ok)
+		assert.Equal(t, 3.0, v)
+	})
+
+	t.Run("even count averages the middle two", func(t *testing.T) {
+		v, ok := medianOf([]float64{4, 1, 3, 2}, 3)
+		assert.True(t, ok)
+		assert.Equal(t, 2.5, v)
+	})
+
+	t.Run("robust against a single outlier", func(t *testing.T) {
+		// one huge day does not move the median the way a mean would
+		v, _ := medianOf([]float64{1, 1, 1, 1, 1, 1, 20}, 3)
+		assert.Equal(t, 1.0, v)
+	})
+}
