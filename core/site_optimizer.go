@@ -137,7 +137,14 @@ func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gr
 		return batterySuggestion{}
 	}
 
+	// index 0 is the short remainder of the ongoing 15-min slot (dt[0]); the optimizer
+	// routinely leaves its charge at 0 and starts charging at the next full slot, so a
+	// deferred charge never surfaces in slot 0. Read the first full slot for the charge
+	// intent. Discharge in the partial slot is reliable and left as-is.
 	charge := float64(res.ChargingPower[0]) / slotHours
+	if len(res.ChargingPower) > 1 {
+		charge = float64(res.ChargingPower[1]) * slotsPerHour
+	}
 	discharge := float64(res.DischargingPower[0]) / slotHours
 
 	s := batterySuggestion{Charge: charge, Discharge: discharge}
