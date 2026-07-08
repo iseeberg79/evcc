@@ -1,40 +1,6 @@
 <template>
 	<div class="container px-4 safe-area-inset">
 		<TopHeader title="Optimize Debug 🧪" />
-		<OptimizeHeader
-			class="mt-4 mb-5"
-			:updated="evopt?.updated"
-			:status="evopt?.res?.status"
-			:net-cost="netCost"
-			:horizon-hours="horizonHours"
-			:currency="currency"
-			:charging-strategies="chargingStrategies"
-			:selected-strategy="optimizerChargingStrategy"
-			:pending="pending"
-			@optimize="optimizeNow"
-			@change-strategy="changeChargingStrategy"
-		/>
-		<div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
-			<div class="form-check form-switch mb-0">
-				<input
-					id="optimizerForecastAdjust"
-					:checked="forecastAdjust"
-					class="form-check-input"
-					type="checkbox"
-					role="switch"
-					@change="changeForecastAdjust"
-				/>
-				<label class="form-check-label text-muted" for="optimizerForecastAdjust">
-					Adjust forecasts from measured data
-				</label>
-			</div>
-			<span v-if="solarScaleMedian" class="text-muted small">
-				Solar median ×{{ solarScaleMedian.toFixed(2) }}
-			</span>
-			<span v-if="consumptionMargin" class="text-muted small">
-				Consumption reserve {{ fmtPercentage(consumptionMargin * 100 - 100, 0, true) }}
-			</span>
-		</div>
 		<Card edge-to-edge class="box-pull-out mt-4 mb-4">
 			<OptimizeHeader
 				:updated="evopt?.updated"
@@ -48,6 +14,27 @@
 				@optimize="optimizeNow"
 				@change-strategy="changeChargingStrategy"
 			/>
+			<div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+				<div class="form-check form-switch mb-0">
+					<input
+						id="optimizerForecastAdjust"
+						:checked="forecastAdjust"
+						class="form-check-input"
+						type="checkbox"
+						role="switch"
+						@change="changeForecastAdjust"
+					/>
+					<label class="form-check-label text-muted" for="optimizerForecastAdjust">
+						Adjust forecasts from measured data
+					</label>
+				</div>
+				<span v-if="solarScaleMedian" class="text-muted small">
+					Solar median ×{{ solarScaleMedian.toFixed(2) }}
+				</span>
+				<span v-if="consumptionMargin" class="text-muted small">
+					Consumption reserve {{ fmtPercentage(consumptionMargin * 100 - 100, 0, true) }}
+				</span>
+			</div>
 		</Card>
 		<div class="row">
 			<main class="col-12">
