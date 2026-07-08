@@ -1089,7 +1089,6 @@
       "lowestHour": "Cleanest hour",
       "range": "Range"
     },
-    "consumptionReserve": "Consumption reserve {percent} (covers {coverage} of days)",
     "empty": {
       "co2": "See when grid energy in your region is clean. Charging plans will optimize for low emissions and calculate CO₂ savings.",
       "price": "Configure your dynamic electricity tariff to automatically optimize charging plans and calculate savings.",

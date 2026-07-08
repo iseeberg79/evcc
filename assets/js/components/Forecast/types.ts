@@ -20,6 +20,7 @@ export interface EnergyByDay {
 
 export interface SolarDetails {
   scale?: number;
+  scaleMedian?: number;
   today?: EnergyByDay;
   tomorrow?: EnergyByDay;
   dayAfterTomorrow?: EnergyByDay;

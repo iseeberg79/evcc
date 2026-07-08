@@ -14,6 +14,27 @@
 			@optimize="optimizeNow"
 			@change-strategy="changeChargingStrategy"
 		/>
+		<div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+			<div class="form-check form-switch mb-0">
+				<input
+					id="optimizerForecastAdjust"
+					:checked="forecastAdjust"
+					class="form-check-input"
+					type="checkbox"
+					role="switch"
+					@change="changeForecastAdjust"
+				/>
+				<label class="form-check-label text-muted" for="optimizerForecastAdjust">
+					Adjust forecasts from measured data
+				</label>
+			</div>
+			<span v-if="solarScaleMedian" class="text-muted small">
+				Solar median ×{{ solarScaleMedian.toFixed(2) }}
+			</span>
+			<span v-if="consumptionMargin" class="text-muted small">
+				Consumption reserve {{ fmtPercentage(consumptionMargin * 100 - 100, 0, true) }}
+			</span>
+		</div>
 		<div class="row">
 			<main class="col-12">
 				<div v-if="evopt">
@@ -168,6 +189,15 @@ export default defineComponent({
 		optimizerChargingStrategy(): string {
 			return store.state.optimizerChargingStrategy || "";
 		},
+		forecastAdjust(): boolean {
+			return store.state.optimizerForecastAdjust || false;
+		},
+		solarScaleMedian(): number | undefined {
+			return store.state.forecast?.solar?.scaleMedian;
+		},
+		consumptionMargin(): number | undefined {
+			return store.state.forecast?.consumption?.margin;
+		},
 		netCost(): number {
 			return (this.evopt?.res?.objective_value || 0) * -1;
 		},
@@ -213,6 +243,9 @@ export default defineComponent({
 		},
 		changeChargingStrategy(value: string) {
 			api.post(`optimizerchargingstrategy/${value}`);
+		},
+		changeForecastAdjust() {
+			api.post(`optimizerforecastadjust/${this.forecastAdjust ? 0 : 1}`);
 		},
 		dimColorBy25Percent(color: string): string {
 			// Convert color to 25% opacity (40 in hex = 25% of 255)

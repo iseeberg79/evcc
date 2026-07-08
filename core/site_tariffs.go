@@ -14,7 +14,8 @@ import (
 )
 
 type solarDetails struct {
-	Scale            *float64     `json:"scale,omitempty"`            // scale factor yield/forecasted today
+	Scale            *float64     `json:"scale,omitempty"`            // scale factor yield/forecasted today (display)
+	ScaleMedian      *float64     `json:"scaleMedian,omitempty"`      // trailing-median scale fed to the optimizer
 	Today            dailyDetails `json:"today,omitempty"`            // tomorrow
 	Tomorrow         dailyDetails `json:"tomorrow,omitempty"`         // tomorrow
 	DayAfterTomorrow dailyDetails `json:"dayAfterTomorrow,omitempty"` // day after tomorrow
@@ -168,6 +169,10 @@ func (site *Site) solarDetails(solar api.Rates) solarDetails {
 
 	if scale := site.solarScale(); scale != 1 {
 		res.Scale = &scale
+	}
+
+	if median := site.solarScaleMedian(); median != 1 {
+		res.ScaleMedian = &median
 	}
 
 	return res

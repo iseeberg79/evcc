@@ -134,6 +134,7 @@ export interface State {
   optimizer?: boolean;
   optimizerChargingStrategy?: string;
   optimizerChargingStrategies?: string[];
+  optimizerForecastAdjust?: boolean;
   mcp?: boolean;
 }
 
