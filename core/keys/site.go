@@ -53,7 +53,7 @@ const (
 	// optimizer
 	OptimizerChargingStrategy   = "optimizerChargingStrategy"
 	OptimizerChargingStrategies = "optimizerChargingStrategies"
-	OptimizerSolarAdjust        = "optimizerSolarAdjust"
+	OptimizerForecastAdjust     = "optimizerForecastAdjust"
 
 	// battery status
 	Battery     = "battery"

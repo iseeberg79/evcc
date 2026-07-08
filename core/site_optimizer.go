@@ -264,7 +264,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 		// scale the forecast by the robust trailing median of the measured
 		// production ratio when enabled (solarScale's daily ratio stays display-only)
 		scale := 1.0
-		if site.GetOptimizerSolarAdjust() {
+		if site.GetOptimizerForecastAdjust() {
 			scale = site.solarScaleMedian()
 		}
 		ft = prorate(scaleAndPrune(solarEnergy, scale, minLen), firstSlotDuration)
@@ -740,8 +740,12 @@ func (site *Site) homeProfile(minLen int) ([]float64, error) {
 		res = res[:minLen]
 	}
 
-	// convert to Wh, applying the data-driven consumption reserve margin
-	margin := site.consumptionMargin()
+	// convert to Wh, applying the data-driven consumption reserve margin - gated by
+	// the same switch as the solar adjustment so the user opts into both together
+	margin := 1.0
+	if site.GetOptimizerForecastAdjust() {
+		margin = site.consumptionMargin()
+	}
 	return lo.Map(res, func(v float64, i int) float64 {
 		return v * 1e3 * margin
 	}), nil

@@ -88,7 +88,7 @@ type Site struct {
 
 	// optimizer settings
 	optimizerChargingStrategy string // optimizer grid charging strategy
-	optimizerSolarAdjust      bool   // scale solar forecast by measured production ratio before optimizing
+	optimizerForecastAdjust   bool   // scale solar and consumption forecasts by measured data before optimizing
 
 	loadpoints  []*Loadpoint             // Loadpoints
 	tariffs     *tariff.Tariffs          // Tariffs
@@ -401,8 +401,8 @@ func (site *Site) restoreSettings() error {
 	}
 	site.publish(keys.OptimizerChargingStrategy, site.GetOptimizerChargingStrategy())
 	site.publish(keys.OptimizerChargingStrategies, optimizerChargingStrategies)
-	if v, err := settings.Bool(keys.OptimizerSolarAdjust); err == nil {
-		if err := site.SetOptimizerSolarAdjust(v); err != nil {
+	if v, err := settings.Bool(keys.OptimizerForecastAdjust); err == nil {
+		if err := site.SetOptimizerForecastAdjust(v); err != nil {
 			return err
 		}
 	}
@@ -1146,7 +1146,7 @@ func (site *Site) prepare() {
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
 	site.publish(keys.BatteryAutoHoldCharge, site.batteryAutoHoldCharge)
 	site.publish(keys.BatteryHoldChargeAlways, site.batteryHoldChargeAlways)
-	site.publish(keys.OptimizerSolarAdjust, site.optimizerSolarAdjust)
+	site.publish(keys.OptimizerForecastAdjust, site.optimizerForecastAdjust)
 	site.publish(keys.ResidualPower, site.GetResidualPower())
 	site.publish(keys.SmartCostAvailable, site.isDynamicTariff(api.TariffUsagePlanner))
 	site.publish(keys.SmartFeedInPriorityAvailable, site.isDynamicTariff(api.TariffUsageFeedIn))

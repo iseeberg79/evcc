@@ -418,26 +418,26 @@ func (site *Site) SetBatteryHoldChargeAlways(val bool) error {
 	return nil
 }
 
-// GetOptimizerSolarAdjust returns whether the solar forecast is scaled by the
-// measured production ratio before being sent to the optimizer
-func (site *Site) GetOptimizerSolarAdjust() bool {
+// GetOptimizerForecastAdjust returns whether the solar and consumption forecasts
+// are scaled by measured data before being sent to the optimizer
+func (site *Site) GetOptimizerForecastAdjust() bool {
 	site.RLock()
 	defer site.RUnlock()
-	return site.optimizerSolarAdjust
+	return site.optimizerForecastAdjust
 }
 
-// SetOptimizerSolarAdjust enables scaling the solar forecast by the measured
-// production ratio before optimizing
-func (site *Site) SetOptimizerSolarAdjust(val bool) error {
-	site.log.DEBUG.Println("set optimizer solar adjust:", val)
+// SetOptimizerForecastAdjust enables scaling the solar and consumption forecasts
+// by measured data before optimizing
+func (site *Site) SetOptimizerForecastAdjust(val bool) error {
+	site.log.DEBUG.Println("set optimizer forecast adjust:", val)
 
 	site.Lock()
 	defer site.Unlock()
 
-	if site.optimizerSolarAdjust != val {
-		site.optimizerSolarAdjust = val
-		settings.SetBool(keys.OptimizerSolarAdjust, val)
-		site.publish(keys.OptimizerSolarAdjust, val)
+	if site.optimizerForecastAdjust != val {
+		site.optimizerForecastAdjust = val
+		settings.SetBool(keys.OptimizerForecastAdjust, val)
+		site.publish(keys.OptimizerForecastAdjust, val)
 	}
 
 	return nil
