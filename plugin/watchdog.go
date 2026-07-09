@@ -79,7 +79,12 @@ type deferredState[T comparable] struct {
 // it is currently not possible to write this as a method
 func setter[T comparable](o *watchdogPlugin, set func(T) error, reset []T) func(T) error {
 	var state *deferredState[T]
-	var lastUpdated time.Time
+	// lastUpdated is process-local and does not survive a restart. A prior process may have
+	// written a reset value (e.g. on its shutdown hook) moments before this one started, and
+	// the device may still be settling from it. Seed lastUpdated with "now" rather than the
+	// zero value so the first non-reset write after a restart is still deferred by a full
+	// timeout, instead of o.clock.Since(zero) reading as "ages ago" and skipping the defer.
+	lastUpdated := o.clock.Now()
 	var last *T
 
 	// stop running wdt
@@ -144,7 +149,7 @@ func setter[T comparable](o *watchdogPlugin, set func(T) error, reset []T) func(
 		delay := max(0, o.timeout+5*time.Second-o.clock.Since(lastUpdated))
 
 		// defer update to non-reset value
-		if o.deferred && delay > 0 && !lastUpdated.IsZero() && !slices.Contains(reset, val) {
+		if o.deferred && delay > 0 && !slices.Contains(reset, val) {
 			stopWdt()
 
 			// store deferred value
