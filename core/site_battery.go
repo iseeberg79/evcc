@@ -55,6 +55,23 @@ func (site *Site) SetBatteryMode(batMode api.BatteryMode) {
 func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate) {
 	batteryMode := site.requiredBatteryMode(batteryGridChargeActive, rate)
 
+	// battery estimator: auto-enable HoldCharge to spread PV charging power over time,
+	// independent of the optimizer (only from Unknown or Normal - it must not override an
+	// externally or grid-charge/discharge-controlled mode)
+	if (batteryMode == api.BatteryUnknown || batteryMode == api.BatteryNormal) && site.shouldUseBatteryEstimator() {
+		batteryMode = api.BatteryHoldCharge
+	}
+	// release the estimator's HoldCharge once the battery is full and cutoff is close, so it
+	// can discharge freely instead of sitting needlessly capped
+	if site.batteryEstimator && batteryMode == api.BatteryHoldCharge && site.isEstimatorBufferTimeActiveAndBatteryFull() {
+		batteryMode = api.BatteryNormal
+	}
+	// keep the estimator's per-battery hold charge power (Reg 1038 etc.) current whenever
+	// it may be applied
+	if site.batteryEstimator && (batteryMode == api.BatteryHoldCharge || site.batteryMode == api.BatteryHoldCharge) {
+		site.updateBatteryEstimatorSuggestions()
+	}
+
 	// put battery into hold mode when charging is active and HEMS dimmed
 	fromToCharge := batteryMode == api.BatteryCharge || batteryMode == api.BatteryUnknown && site.batteryMode == api.BatteryCharge
 	if dimmed := hemsDimmed(site.hems); fromToCharge && dimmed != nil && *dimmed {
@@ -106,8 +123,10 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive bool, rate api.Rat
 		res = keepUnlessModified(api.BatteryCharge)
 	case site.dischargeControlActive(rate):
 		res = keepUnlessModified(api.BatteryHold)
-	case site.GetBatteryAutoHoldCharge() && site.holdChargePlanAvailable():
-		// follow the optimizer plan for the current slot
+	case !site.batteryEstimator && site.GetBatteryAutoHoldCharge() && site.holdChargePlanAvailable():
+		// follow the optimizer plan for the current slot; disabled while the battery
+		// estimator is active since the two hold charge sources must not fight over the
+		// same battery mode
 		res = keepUnlessModified(site.holdChargeMode())
 	case batteryModeModified(batMode):
 		res = api.BatteryNormal

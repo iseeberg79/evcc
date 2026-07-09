@@ -97,6 +97,22 @@ type API interface {
 	// SetBatteryHoldChargeAlways sets whether holdcharge applies on any zero-charge plan
 	SetBatteryHoldChargeAlways(bool) error
 
+	// GetBatteryEstimator returns whether the battery estimator (spread charging,
+	// mutually exclusive with batteryAutoHoldCharge) is enabled
+	GetBatteryEstimator() bool
+	// SetBatteryEstimator enables the battery estimator
+	SetBatteryEstimator(bool) error
+
+	// GetBatteryEstimatorFactor returns the battery estimator's PV/consumption factor
+	GetBatteryEstimatorFactor() float64
+	// SetBatteryEstimatorFactor sets the battery estimator's PV/consumption factor
+	SetBatteryEstimatorFactor(float64) error
+
+	// GetBatteryEstimatorTargetTime returns the battery estimator's target time (HH:MM)
+	GetBatteryEstimatorTargetTime() string
+	// SetBatteryEstimatorTargetTime sets the battery estimator's target time (HH:MM)
+	SetBatteryEstimatorTargetTime(string) error
+
 	// GetOptimizerForecastAdjust returns whether solar and consumption forecasts are scaled before optimizing
 	GetOptimizerForecastAdjust() bool
 	// SetOptimizerForecastAdjust enables scaling solar and consumption forecasts before optimizing
