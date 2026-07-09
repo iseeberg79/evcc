@@ -118,6 +118,9 @@ export interface State {
   batteryDischargeControl?: boolean;
   batteryAutoHoldCharge?: boolean;
   batteryHoldChargeAlways?: boolean;
+  batteryEstimator?: boolean;
+  batteryEstimatorFactor?: number;
+  batteryEstimatorTargetTime?: string;
   batteryGridChargeLimit?: number | null;
   gridExportLimit?: number | null;
   smartCostAvailable?: boolean;

@@ -90,6 +90,7 @@
 				<input
 					id="batteryExpHoldCharge"
 					:checked="batteryAutoHoldCharge"
+					:disabled="batteryEstimator"
 					class="form-check-input"
 					type="checkbox"
 					role="switch"
@@ -110,6 +111,47 @@
 				/>
 				<label class="form-check-label" for="batteryExpHoldChargeAlways">
 					{{ $t("batterySettings.holdChargeAlways") }} 🧪
+				</label>
+			</div>
+			<div class="form-check form-switch mt-3">
+				<input
+					id="batteryExpEstimator"
+					:checked="batteryEstimator"
+					:disabled="batteryAutoHoldCharge"
+					class="form-check-input"
+					type="checkbox"
+					role="switch"
+					@change="changeEstimator"
+				/>
+				<label class="form-check-label" for="batteryExpEstimator">
+					{{ $t("batterySettings.estimator") }} 🧪
+				</label>
+			</div>
+			<div v-if="batteryEstimator" class="d-flex gap-3 mt-3 ms-4">
+				<label class="form-check-label" for="batteryExpEstimatorFactor">
+					{{ $t("batterySettings.estimatorFactor") }}
+					<input
+						id="batteryExpEstimatorFactor"
+						v-model.number="selectedEstimatorFactor"
+						type="number"
+						step="0.1"
+						min="1"
+						max="5"
+						class="form-control form-control-sm d-inline-block"
+						style="width: 80px"
+						@change="changeEstimatorFactor"
+					/>
+				</label>
+				<label class="form-check-label" for="batteryExpEstimatorTargetTime">
+					{{ $t("batterySettings.estimatorTargetTime") }}
+					<input
+						id="batteryExpEstimatorTargetTime"
+						v-model="selectedEstimatorTargetTime"
+						type="time"
+						class="form-control form-control-sm d-inline-block"
+						style="width: 110px"
+						@change="changeEstimatorTargetTime"
+					/>
 				</label>
 			</div>
 		</template>
@@ -141,6 +183,9 @@ export default defineComponent({
 		batteryDischargeControl: Boolean,
 		batteryAutoHoldCharge: Boolean,
 		batteryHoldChargeAlways: Boolean,
+		batteryEstimator: Boolean,
+		batteryEstimatorFactor: { type: Number, default: 1.5 },
+		batteryEstimatorTargetTime: { type: String, default: "18:00" },
 		battery: { type: Object as PropType<Battery> },
 	},
 	data() {
@@ -148,6 +193,8 @@ export default defineComponent({
 			selectedBufferSoc: 100,
 			selectedPrioritySoc: 0,
 			selectedBufferStartSoc: 0,
+			selectedEstimatorFactor: 1.5,
+			selectedEstimatorTargetTime: "18:00",
 		};
 	},
 	computed: {
@@ -202,6 +249,18 @@ export default defineComponent({
 		bufferStartSoc: {
 			handler(soc) {
 				this.selectedBufferStartSoc = soc;
+			},
+			immediate: true,
+		},
+		batteryEstimatorFactor: {
+			handler(factor) {
+				this.selectedEstimatorFactor = factor;
+			},
+			immediate: true,
+		},
+		batteryEstimatorTargetTime: {
+			handler(val) {
+				this.selectedEstimatorTargetTime = val || "18:00";
 			},
 			immediate: true,
 		},
@@ -271,6 +330,31 @@ export default defineComponent({
 			try {
 				await api.post(
 					`batteryholdchargealways/${(e.target as HTMLInputElement).checked ? "true" : "false"}`
+				);
+			} catch (err) {
+				console.error(err);
+			}
+		},
+		async changeEstimator(e: Event) {
+			try {
+				await api.post(
+					`batteryestimator/${(e.target as HTMLInputElement).checked ? "true" : "false"}`
+				);
+			} catch (err) {
+				console.error(err);
+			}
+		},
+		async changeEstimatorFactor() {
+			try {
+				await api.post(`batteryestimatorfactor/${this.selectedEstimatorFactor}`);
+			} catch (err) {
+				console.error(err);
+			}
+		},
+		async changeEstimatorTargetTime() {
+			try {
+				await api.post(
+					`batteryestimatortargettime/${encodeURIComponent(this.selectedEstimatorTargetTime)}`
 				);
 			} catch (err) {
 				console.error(err);
