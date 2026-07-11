@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/evcc-io/evcc/api"
+	"github.com/evcc-io/evcc/core/types"
 	"github.com/evcc-io/evcc/tariff"
 	"github.com/evcc-io/evcc/util/config"
 	optimizer "github.com/evcc-io/optimizer/client"
@@ -286,7 +287,7 @@ func (site *Site) updateBatteryEstimatorSuggestions() {
 		totalDeficit += d
 	}
 
-	suggestions := make(map[string]batterySuggestion, len(site.batteryMeters))
+	suggestions := make(map[string]types.Suggestion, len(site.batteryMeters))
 	var batteries []batteryResult
 
 	if totalDeficit > 0 {
@@ -305,7 +306,7 @@ func (site *Site) updateBatteryEstimatorSuggestions() {
 				capacity = batCap.Capacity()
 			}
 
-			s := batterySuggestion{Action: action, Charge: power}
+			s := types.Suggestion{Action: action, Charge: power}
 			suggestions[name] = s
 			batteries = append(batteries, batteryResult{
 				batteryDetail: batteryDetail{

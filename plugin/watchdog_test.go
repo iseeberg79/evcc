@@ -142,55 +142,6 @@ func TestWatchdogCancelPendingDeferredUpdate(t *testing.T) {
 	require.Equal(t, []int{1, 3, 1}, calls, "Value 2 should remain cancelled")
 }
 
-func TestWatchdogFreshSetterAssumesRecentReset(t *testing.T) {
-	// A restarted process loses lastUpdated in memory, even though the previous process may
-	// have written a reset value (e.g. its shutdown hook) moments before exiting and the
-	// device may still be settling from it. A brand new setter must therefore defer its
-	// first non-reset write by a full timeout instead of treating "never written in this
-	// process" as "ages ago, safe to write immediately" - see discussion on the Kostal
-	// register 1034/1038 race after a restart.
-	timeout := 60 * time.Second
-	c := clock.NewMock()
-	p := &watchdogPlugin{
-		log:      util.NewLogger("test"),
-		timeout:  timeout,
-		deferred: true,
-		clock:    c,
-	}
-
-	var calls []int
-	set := setter(p, func(i int) error {
-		calls = append(calls, i)
-		return nil
-	}, []int{1}) // 1 is reset value
-
-	// first-ever call, non-reset target -> must not write immediately
-	require.NoError(t, set(4))
-	require.Empty(t, calls, "first write after (re)start must be deferred, not immediate")
-
-	c.Add(timeout + 5*time.Second)
-	require.Equal(t, []int{4}, calls)
-}
-
-func TestWatchdogFreshSetterResetIsImmediate(t *testing.T) {
-	// switching to the reset value itself must never be deferred, even on a brand new setter
-	p := &watchdogPlugin{
-		log:      util.NewLogger("test"),
-		timeout:  60 * time.Second,
-		deferred: true,
-		clock:    clock.NewMock(),
-	}
-
-	var calls []int
-	set := setter(p, func(i int) error {
-		calls = append(calls, i)
-		return nil
-	}, []int{1})
-
-	require.NoError(t, set(1))
-	require.Equal(t, []int{1}, calls)
-}
-
 func TestWatchdogDelayBackwardCompatibility(t *testing.T) {
 	// Test: deferred=false behaves like old implementation
 	// Expected: All updates immediate

@@ -6,6 +6,7 @@ import (
 
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/loadpoint"
+	"github.com/evcc-io/evcc/core/types"
 	"github.com/evcc-io/evcc/util"
 	optimizer "github.com/evcc-io/optimizer/client"
 	"github.com/stretchr/testify/assert"
@@ -167,32 +168,33 @@ func TestOptimizerChargingStrategy(t *testing.T) {
 func TestCurrentSlotSuggestion(t *testing.T) {
 	// slotHours 1 makes the per-slot Wh values map 1:1 to W
 	for _, tc := range []struct {
-		name                    string
-		typ                     batteryType
-		charge, disch           float32
-		importing, pv, withhold bool
-		want                    string
+		name                             string
+		typ                              batteryType
+		charge, disch                    float32
+		importing, exporting, pv, withhold bool
+		want                             string
 	}{
-		{"battery grid charge", batteryTypeBattery, 3000, 0, true, false, false, "charge"},
-		{"battery pv charge (no peak-shaving)", batteryTypeBattery, 3000, 0, false, true, false, "normal"},
-		{"battery planned charge is capped, not free (peak-shaving)", batteryTypeBattery, 3000, 0, false, true, true, "holdcharge"},
-		{"battery pv withhold, plan gives zero charge (peak-shaving)", batteryTypeBattery, 0, 0, false, true, true, "holdcharge"},
-		{"battery zero charge without pv is not held (night, peak-shaving)", batteryTypeBattery, 0, 0, false, false, true, "normal"},
-		{"battery zero charge with pv but no peak-shaving", batteryTypeBattery, 0, 0, false, true, false, "normal"},
-		{"battery withhold while importing stays hold", batteryTypeBattery, 0, 0, true, true, true, "hold"},
-		{"battery hold (idle while importing)", batteryTypeBattery, 0, 0, true, false, false, "hold"},
-		{"battery discharge", batteryTypeBattery, 0, 2000, true, false, false, "normal"},
-		{"battery idle balanced", batteryTypeBattery, 0, 0, false, false, false, "normal"},
-		{"loadpoint charge", batteryTypeLoadpoint, 11000, 0, false, false, false, "charge"},
-		{"loadpoint stop", batteryTypeLoadpoint, 0, 0, false, false, false, "stop"},
-		{"vehicle below threshold is stop", batteryTypeVehicle, 40, 0, false, false, false, "stop"},
+		{"battery grid charge", batteryTypeBattery, 3000, 0, true, false, false, false, "charge"},
+		{"battery pv charge (no peak-shaving, no export)", batteryTypeBattery, 3000, 0, false, false, true, false, "normal"},
+		{"battery planned charge is capped, not free (peak-shaving)", batteryTypeBattery, 3000, 0, false, false, true, true, "holdcharge"},
+		{"battery pv withhold, plan gives zero charge (peak-shaving)", batteryTypeBattery, 0, 0, false, false, true, true, "holdcharge"},
+		{"battery zero charge without pv is not held (night, peak-shaving)", batteryTypeBattery, 0, 0, false, false, false, true, "normal"},
+		{"battery zero charge with pv but no peak-shaving, no export", batteryTypeBattery, 0, 0, false, false, true, false, "normal"},
+		{"battery withhold while importing stays hold", batteryTypeBattery, 0, 0, true, false, true, true, "hold"},
+		{"battery hold (idle while importing)", batteryTypeBattery, 0, 0, true, false, false, false, "hold"},
+		{"battery holdcharge (idle while exporting, no withhold plan)", batteryTypeBattery, 0, 0, false, true, false, false, "holdcharge"},
+		{"battery discharge", batteryTypeBattery, 0, 2000, true, false, false, false, "normal"},
+		{"battery idle balanced", batteryTypeBattery, 0, 0, false, false, false, false, "normal"},
+		{"loadpoint charge", batteryTypeLoadpoint, 11000, 0, false, false, false, false, "charge"},
+		{"loadpoint stop", batteryTypeLoadpoint, 0, 0, false, false, false, false, "stop"},
+		{"vehicle below threshold is stop", batteryTypeVehicle, 40, 0, false, false, false, false, "stop"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			res := optimizer.BatteryResult{
 				ChargingPower:    []float32{tc.charge},
 				DischargingPower: []float32{tc.disch},
 			}
-			s := currentSlotSuggestion(batteryDetail{Type: tc.typ}, res, tc.importing, tc.pv, tc.withhold, 1)
+			s := currentSlotSuggestion(batteryDetail{Type: tc.typ}, res, tc.importing, tc.exporting, tc.pv, tc.withhold, 1)
 			assert.Equal(t, tc.want, s.Action)
 			assert.InDelta(t, tc.charge, s.Charge, 1e-3)
 			assert.InDelta(t, tc.disch, s.Discharge, 1e-3)
@@ -207,7 +209,7 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 			DischargingPower: []float32{0, 0},
 		}
 		// slotHours is the short partial slot; slot 1 is scaled by the full-slot rate
-		s := currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, false, true, true, 285.0/3600)
+		s := currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, false, false, true, true, 285.0/3600)
 		assert.Equal(t, "holdcharge", s.Action)
 		assert.InDelta(t, 1592*slotsPerHour, s.Charge, 1e-3)
 	})
@@ -218,11 +220,11 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 			ChargingPower:    []float32{0, 0},
 			DischargingPower: []float32{500, 0}, // discharging now, idle next full slot
 		}
-		s := currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, true, false, false, 1)
+		s := currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, true, false, false, false, 1)
 		assert.InDelta(t, 500, s.Discharge, 1e-3)
 		assert.Equal(t, "normal", s.Action) // discharge > threshold while importing -> not hold
 	})
 
 	// no result yields an empty suggestion
-	assert.Equal(t, batterySuggestion{}, currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{}, true, false, false, 1))
+	assert.Equal(t, types.Suggestion{}, currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{}, true, false, false, false, 1))
 }

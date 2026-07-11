@@ -101,23 +101,15 @@ type batteryDetail struct {
 	Title    string      `json:"title,omitempty"`
 	Name     string      `json:"name,omitempty"`
 	Capacity float64     `json:"capacity,omitempty"`
+
+	loadpoint *int // originating loadpoint id for loadpoint/vehicle entries
 }
 
 type batteryResult struct {
 	batteryDetail
-	Full       time.Time         `json:"full,omitzero"`
-	Empty      time.Time         `json:"empty,omitzero"`
-	Suggestion batterySuggestion `json:"suggestion,omitzero"`
-}
-
-// batterySuggestion is the action derived from the optimizer corner result for the current
-// slot. It is published for visibility and drives the battery mode via holdChargeMode.
-type batterySuggestion struct {
-	// Action is the recommended action for the current slot.
-	// home battery: normal|hold|charge|holdcharge; loadpoint/vehicle: charge|stop
-	Action    string  `json:"action,omitempty"`
-	Charge    float64 `json:"charge,omitempty"`    // recommended charge power, W
-	Discharge float64 `json:"discharge,omitempty"` // recommended discharge power, W
+	Full       time.Time        `json:"full,omitzero"`
+	Empty      time.Time        `json:"empty,omitzero"`
+	Suggestion types.Suggestion `json:"suggestion,omitzero"`
 }
 
 // suggestionThreshold ignores numerical noise around zero power (W)
@@ -126,15 +118,17 @@ const suggestionThreshold = 50
 // currentSlotSuggestion maps the optimizer's first-slot corner result onto an advisory action.
 // Because the optimization is linear, the first slot is at an operating-range extreme, so it
 // maps cleanly onto the discrete battery mode / loadpoint intent that control would later apply.
-// Idle while importing means discharge is deliberately withheld (hold). With withholdCharge set,
-// PV production while not importing yields holdcharge so the optimizer's plan for the slot is
-// enforced (the device caps charging at the planned value suggestion.charge, zero while the plan
-// withholds) instead of the device's self-consumption logic absorbing surplus the plan deferred
-// to a later slot. A slot the plan does mean to charge (charge > 0) stays holdcharge too, capped
-// at its planned value rather than charging freely.
-func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gridImporting, pvActive, withholdCharge bool, slotHours float64) batterySuggestion {
+// Idle while importing means discharge is deliberately withheld (hold); idle while exporting
+// means charging is withheld (holdcharge) - this generic case catches surplus export even
+// without an explicit reservation plan. With withholdCharge set, PV production while not
+// importing yields holdcharge so the optimizer's plan for the slot is enforced (the device caps
+// charging at the planned value suggestion.charge, zero while the plan withholds) instead of the
+// device's self-consumption logic absorbing surplus the plan deferred to a later slot. A slot the
+// plan does mean to charge (charge > 0) stays holdcharge too, capped at its planned value rather
+// than charging freely.
+func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gridImporting, gridExporting, pvActive, withholdCharge bool, slotHours float64) types.Suggestion {
 	if slotHours <= 0 || len(res.ChargingPower) == 0 || len(res.DischargingPower) == 0 {
-		return batterySuggestion{}
+		return types.Suggestion{}
 	}
 
 	// index 0 is the short remainder of the ongoing 15-min slot (dt[0]); the optimizer
@@ -147,9 +141,10 @@ func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gr
 	}
 	discharge := float64(res.DischargingPower[0]) / slotHours
 
-	s := batterySuggestion{Charge: charge, Discharge: discharge}
+	s := types.Suggestion{Charge: charge, Discharge: discharge}
 
 	if detail.Type == batteryTypeBattery {
+		idle := charge <= suggestionThreshold && discharge <= suggestionThreshold
 		switch {
 		case charge > suggestionThreshold && gridImporting:
 			// charging while importing means grid charging
@@ -160,9 +155,12 @@ func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gr
 			// the device's self-consumption logic doesn't fill the battery from surplus the plan
 			// deferred to a later slot
 			s.Action = api.BatteryHoldCharge.String()
-		case discharge <= suggestionThreshold && gridImporting:
+		case idle && gridImporting:
 			// idle while importing: discharge is deliberately withheld
 			s.Action = api.BatteryHold.String()
+		case idle && gridExporting:
+			// idle while exporting: surplus is exported instead of charged
+			s.Action = api.BatteryHoldCharge.String()
 		default:
 			s.Action = api.BatteryNormal.String()
 		}
@@ -173,6 +171,35 @@ func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gr
 	}
 
 	return s
+}
+
+// setBatterySuggestions replaces the suggestions applied on each battery publish
+func (site *Site) setBatterySuggestions(suggestions map[string]types.Suggestion) {
+	site.Lock()
+	defer site.Unlock()
+
+	site.batterySuggestions = suggestions
+}
+
+// batterySuggestion returns the optimizer suggestion for the given battery meter
+func (site *Site) batterySuggestion(name string) *types.Suggestion {
+	site.RLock()
+	defer site.RUnlock()
+
+	if s, ok := site.batterySuggestions[name]; ok {
+		return &s
+	}
+	return nil
+}
+
+// clearSuggestions removes all suggestions when the optimizer result is stale
+func (site *Site) clearSuggestions() {
+	site.setBatterySuggestions(nil)
+	site.publishBattery()
+
+	for id := range site.Loadpoints() {
+		site.publishLoadpoint(id, keys.Suggestion, nil)
+	}
 }
 
 type requestDetails struct {
@@ -212,6 +239,9 @@ func (site *Site) optimizerUpdateAsync() {
 
 		if err != nil {
 			site.log.ERROR.Println("optimizer:", err)
+
+			// stale advice must not linger
+			site.clearSuggestions()
 		}
 	}()
 
@@ -317,7 +347,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 		details.BatteryDetails = append(details.BatteryDetails, detail)
 	}
 
-	for _, lp := range site.Loadpoints() {
+	for id, lp := range site.Loadpoints() {
 		// ignore disconnected loadpoints, including StatusNone
 		if s := lp.GetStatus(); s != api.StatusB && s != api.StatusC {
 			continue
@@ -329,6 +359,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 
 		// skip disabled loadpoints
 		if req, detail := site.loadpointRequest(lp, minLen, firstSlotDuration, grid); req.CMax > 0 {
+			detail.loadpoint = &id
 			add(req, detail)
 		}
 	}
@@ -393,6 +424,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 	// the grid import gate uses the same power threshold as charge/discharge so a trickle
 	// (numerical residual) does not count as importing for mode selection
 	gridImporting := len(resp.JSON200.GridImport) > 0 && float64(resp.JSON200.GridImport[0])/slotHours > suggestionThreshold
+	gridExporting := len(resp.JSON200.GridExport) > 0 && resp.JSON200.GridExport[0] > 0
 	// pvActive reflects real production: with the reservation active the inverter's own
 	// self-consumption would charge the battery from any surplus the optimizer did not plan
 	// (the plan hides it as balanced grid flow), so this real signal gates holdcharge
@@ -419,9 +451,14 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 	holdChargeGate := peakExportSlot || site.GetBatteryHoldChargeAlways()
 
 	var batteries []batteryResult
+	suggestions := make(map[string]types.Suggestion, len(req.Batteries))
+	lpSuggestions := make(map[int]types.Suggestion)
+
 	for i, batReq := range req.Batteries {
 		batResp := resp.JSON200.Batteries[i]
 		detail := details.BatteryDetails[i]
+
+		suggestion := currentSlotSuggestion(detail, batResp, gridImporting, gridExporting, pvActive, batReq.WithholdCharge && holdChargeGate, slotHours)
 
 		batResult := batteryResult{
 			batteryDetail: detail,
@@ -431,29 +468,48 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 			Empty: matchSoc(batResp.StateOfCharge, func(soc float32) bool {
 				return soc <= batReq.SMin
 			}),
-			Suggestion: currentSlotSuggestion(detail, batResp, gridImporting, pvActive, batReq.WithholdCharge && holdChargeGate, slotHours),
+			Suggestion: suggestion,
 		}
 
 		batteries = append(batteries, batResult)
+
+		if suggestion.Action == "" {
+			continue
+		}
+		if detail.Type == batteryTypeBattery {
+			suggestions[detail.Name] = suggestion
+		} else if detail.loadpoint != nil {
+			lpSuggestions[*detail.loadpoint] = suggestion
+		}
 	}
 
 	site.publish("evopt-batteries", batteries)
 
 	// store the current-slot plan per home battery so the battery mode can follow it
-	suggestions := make(map[string]batterySuggestion)
+	holdChargeSuggestions := make(map[string]types.Suggestion, len(batteries))
 	for _, b := range batteries {
 		if b.Type == batteryTypeBattery {
-			suggestions[b.Name] = b.Suggestion
+			holdChargeSuggestions[b.Name] = b.Suggestion
 		}
 	}
 	site.Lock()
-	site.holdChargeSuggestions = suggestions
+	site.holdChargeSuggestions = holdChargeSuggestions
 	site.holdChargeUpdated = time.Now()
 	site.Unlock()
 
+	site.setBatterySuggestions(suggestions)
 	site.battery.Forecast = site.addBatteryForecastTotals(req.Batteries, resp.JSON200.Batteries)
 
-	site.publish(keys.Battery, site.battery)
+	site.publishBattery()
+
+	// publish for all loadpoints so suggestions of dropped-out loadpoints clear
+	for id := range site.Loadpoints() {
+		var val any
+		if s, ok := lpSuggestions[id]; ok {
+			val = s
+		}
+		site.publishLoadpoint(id, keys.Suggestion, val)
+	}
 
 	return nil
 }

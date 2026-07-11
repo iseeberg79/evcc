@@ -48,17 +48,16 @@
     },
     "optimizer": {
       "action": {
-        "charge": "Grid charging",
-        "hold": "Discharge locked",
-        "holdcharge": "Charging paused",
-        "normal": "Following solar surplus"
+        "charge": "Charge from grid",
+        "hold": "Prevent discharging",
+        "holdcharge": "Prevent charging",
+        "normal": "Normal operation"
       },
       "empty": "empty",
       "full": "full",
       "highest": "Highest ({value})",
       "lowest": "Lowest ({value})",
-      "suggestion": "Suggestion",
-      "title": "Optimizer"
+      "suggestion": "Suggestion"
     }
   },
   "batterySettings": {
@@ -243,6 +242,7 @@
       "price": "Price",
       "productionLimited": "Production limited",
       "range": "Range",
+      "remoteEnabled": "Enabled",
       "returnEnergy": "Energy (reverse)",
       "singlePhase": "Single phase",
       "soc": "Charge",
@@ -1284,10 +1284,6 @@
       "batteryChargeHold": "Battery (charge locked)",
       "batteryDischarge": "Battery discharging",
       "batteryDischargeHold": "Battery (discharge locked)",
-      "batteryForecastEmpty": "Empty",
-      "batteryForecastFull": "Full",
-      "batteryForecastNextHigh": "High",
-      "batteryForecastNextLow": "Low",
       "batteryGridChargeActive": "Grid charging: active",
       "batteryGridChargeLimit": "Grid charging: when",
       "batteryTooltip": "{energy} of {total} ({soc})",
@@ -1306,6 +1302,8 @@
     "heatingStatus": {
       "charging": "Heating…",
       "connected": "Standby.",
+      "suggestionStartTooltip": "Optimizer recommends heating now.",
+      "suggestionStopTooltip": "Optimizer recommends pausing the heating.",
       "vehicleLimit": "Heater limit",
       "waitForVehicle": "Ready to heat…"
     },
@@ -1374,7 +1372,6 @@
       "batteryUsage": "Home Battery",
       "currents": "Charging Current",
       "default": "default",
-      "disclaimerHint": "Note:",
       "limitSoc": {
         "description": "Charging limit that is used when this vehicle is connected.",
         "label": "Default limit"
@@ -1389,7 +1386,6 @@
         "description": "The vehicle gets „fast” charged to {0} in solar mode. Then continues with solar surplus. Useful to ensure a minimum range even for darker days.",
         "label": "Min. charge %"
       },
-      "onlyForSocBasedCharging": "These options are only available for vehicles with known charging level.",
       "phasesConfigured": {
         "label": "Phases",
         "no1p3pSupport": "How is your charger connected?",
@@ -1499,6 +1495,8 @@
       "pvEnable": "Surplus available. Starting soon.",
       "scale1p": "Reducing to 1-phase charging soon.",
       "scale3p": "Increasing to 3-phase charging soon.",
+      "suggestionStartTooltip": "Optimizer recommends charging now.",
+      "suggestionStopTooltip": "Optimizer recommends pausing the charge.",
       "targetChargeActive": "Charging plan active. Estimated finish in {duration}.",
       "targetChargePlanned": "Charging plan starts in {duration}.",
       "targetChargeWaitForVehicle": "Charging plan ready. Waiting for vehicle…",
