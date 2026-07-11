@@ -89,7 +89,11 @@ export default defineComponent({
 			return this.devices.length > 0;
 		},
 		evopt() {
-			return this.state.evopt;
+			// the SoC forecast must reflect whichever mechanism actually drives hold charge -
+			// the optimizer plan is irrelevant while the battery estimator is active
+			return this.state.batteryEstimator
+				? this.state.batteryEstimatorForecast
+				: this.state.evopt;
 		},
 		kWhAvailable(): boolean {
 			return this.batteryAvailable && this.devices.every((d) => d.capacity > 0);

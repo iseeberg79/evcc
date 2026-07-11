@@ -84,6 +84,7 @@ export interface State {
   fatal?: FatalError[];
   authProviders?: AuthProviders;
   evopt?: EvOpt;
+  batteryEstimatorForecast?: EvOpt;
   version?: string;
   availableVersion?: string;
   system?: string;

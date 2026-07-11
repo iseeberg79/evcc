@@ -7,6 +7,7 @@ import (
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/tariff"
 	"github.com/evcc-io/evcc/util/config"
+	optimizer "github.com/evcc-io/optimizer/client"
 )
 
 // solarCutoffTime finds the first point in rates where solar drops below 50W.
@@ -319,9 +320,143 @@ func (site *Site) updateBatteryEstimatorSuggestions() {
 	}
 
 	site.publish("evopt-batteries", batteries)
+	site.publish("batteryEstimatorForecast", site.estimatorForecast(deficits))
 
 	site.Lock()
 	site.holdChargeSuggestions = suggestions
 	site.holdChargeUpdated = time.Now()
 	site.Unlock()
+}
+
+// estimatorForecast simulates each battery's projected SoC from now until the effective
+// cutoff time, re-evaluating spreadChargePower at each solar forecast slot so the projected
+// power ramps the same way the live suggestion will as time passes. Published in the same
+// shape the optimizer uses (see forecastToSeries on the frontend) so the SoC chart can show
+// the active strategy's plan instead of always the optimizer's, even while the estimator -
+// not the optimizer - is driving hold charge.
+func (site *Site) estimatorForecast(deficits map[string]float64) optimizerResult {
+	var totalMaxACPower float64
+	for _, dev := range site.pvMeters {
+		if getter, ok := api.Cap[api.MaxACPowerGetter](dev.Instance()); ok {
+			totalMaxACPower += getter.MaxACPower()
+		}
+	}
+	totalMaxChargePower := site.totalMaxBatteryChargePower()
+	if totalMaxACPower <= 0 || totalMaxChargePower <= 0 {
+		return optimizerResult{}
+	}
+
+	solarTariff := site.GetTariff(api.TariffUsageSolar)
+	if solarTariff == nil {
+		return optimizerResult{}
+	}
+	allRates, err := solarTariff.Rates()
+	if err != nil || len(allRates) == 0 {
+		return optimizerResult{}
+	}
+
+	now := time.Now()
+	var rates api.Rates
+	for _, r := range allRates {
+		if r.End.After(now) {
+			rates = append(rates, r)
+		}
+	}
+	if len(rates) == 0 {
+		return optimizerResult{}
+	}
+	cutoff := site.effectiveEstimatorCutoffTime(rates)
+
+	names := make([]string, 0, len(site.batteryMeters))
+	socWh := make(map[string]float64, len(site.batteryMeters))
+	capacityWh := make(map[string]float64, len(site.batteryMeters))
+	details := make([]batteryDetail, 0, len(site.batteryMeters))
+	for _, dev := range site.batteryMeters {
+		name := dev.Config().Name
+		batCap, ok := api.Cap[api.BatteryCapacity](dev.Instance())
+		if !ok || batCap.Capacity() == 0 {
+			continue
+		}
+		batSoc, ok := api.Cap[api.Battery](dev.Instance())
+		if !ok {
+			continue
+		}
+		soc, err := batSoc.Soc()
+		if err != nil {
+			continue
+		}
+
+		names = append(names, name)
+		capacityWh[name] = batCap.Capacity() * 1000
+		socWh[name] = capacityWh[name] * soc / 100
+		details = append(details, batteryDetail{
+			Type:     batteryTypeBattery,
+			Name:     name,
+			Title:    deviceProperties(dev).Title,
+			Capacity: batCap.Capacity(),
+		})
+	}
+	if len(names) == 0 {
+		return optimizerResult{}
+	}
+
+	remaining := make(map[string]float64, len(names))
+	for _, name := range names {
+		remaining[name] = deficits[name] * 1000
+	}
+
+	timestamps := []time.Time{now}
+	series := make(map[string][]float32, len(names))
+	for _, name := range names {
+		series[name] = append(series[name], float32(socWh[name]))
+	}
+
+	t := now
+	for _, r := range rates {
+		if r.Start.After(t) {
+			t = r.Start
+		}
+		if !t.Before(cutoff) {
+			break
+		}
+		end := r.End
+		if end.After(cutoff) {
+			end = cutoff
+		}
+		dt := end.Sub(t).Hours()
+		if dt <= 0 {
+			continue
+		}
+
+		var totalRemaining float64
+		for _, name := range names {
+			totalRemaining += remaining[name]
+		}
+
+		power := spreadChargePower(totalRemaining, cutoff.Sub(t).Hours(), totalMaxACPower, totalMaxChargePower, r.Value)
+		energy := power * dt
+
+		for _, name := range names {
+			if totalRemaining > 0 {
+				share := energy * remaining[name] / totalRemaining
+				socWh[name] = math.Min(socWh[name]+share, capacityWh[name])
+				remaining[name] = math.Max(0, capacityWh[name]-socWh[name])
+			}
+			series[name] = append(series[name], float32(socWh[name]))
+		}
+		timestamps = append(timestamps, end)
+
+		t = end
+	}
+
+	res := optimizer.OptimizationResult{Batteries: make([]optimizer.BatteryResult, len(names))}
+	for i, name := range names {
+		res.Batteries[i] = optimizer.BatteryResult{StateOfCharge: series[name]}
+	}
+
+	return optimizerResult{
+		Updated: now,
+		Res:     res,
+		Details: requestDetails{Timestamps: timestamps, BatteryDetails: details},
+	}
 }
