@@ -444,14 +444,14 @@ func (site *Site) SetBatteryEstimator(val bool) error {
 	return nil
 }
 
-// GetBatteryEstimatorFactor returns the battery estimator's PV/consumption factor
+// GetBatteryEstimatorFactor returns the battery estimator's activation factor
 func (site *Site) GetBatteryEstimatorFactor() float64 {
 	site.RLock()
 	defer site.RUnlock()
 	return site.batteryEstimatorFactor
 }
 
-// SetBatteryEstimatorFactor sets the battery estimator's PV/consumption factor: the
+// SetBatteryEstimatorFactor sets the battery estimator's activation factor: the
 // estimator auto-activates when remaining PV forecast > remaining consumption * factor
 func (site *Site) SetBatteryEstimatorFactor(val float64) error {
 	site.log.DEBUG.Println("set battery estimator factor:", val)

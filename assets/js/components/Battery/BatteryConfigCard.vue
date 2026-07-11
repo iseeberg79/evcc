@@ -128,7 +128,11 @@
 				</label>
 			</div>
 			<div v-if="batteryEstimator" class="d-flex gap-3 mt-3 ms-4">
-				<label class="form-check-label" for="batteryExpEstimatorFactor">
+				<label
+					class="form-check-label"
+					for="batteryExpEstimatorFactor"
+					:title="$t('batterySettings.estimatorFactorHint')"
+				>
 					{{ $t("batterySettings.estimatorFactor") }}
 					<input
 						id="batteryExpEstimatorFactor"

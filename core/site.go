@@ -314,6 +314,9 @@ func NewSite() *Site {
 		log:        util.NewLogger("site"),
 		Voltage:    230, // V
 		collectors: make(map[string]*metrics.Collector),
+
+		batteryEstimatorFactor:     1.5,
+		batteryEstimatorTargetTime: "18:00",
 	}
 
 	return site
