@@ -7,6 +7,7 @@ import (
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/keys"
 	"github.com/evcc-io/evcc/core/loadpoint"
+	"github.com/evcc-io/evcc/core/types"
 	"github.com/evcc-io/evcc/util/config"
 )
 
@@ -78,6 +79,11 @@ func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate)
 		site.log.DEBUG.Println("battery mode: HEMS dimmed")
 		batteryMode = api.BatteryHold
 	}
+
+	// refresh each battery's charge values in its device-local cell before applying the
+	// mode, so a control path consuming them (batterymode charge/holdcharge case) reads a
+	// fresh value in the same cycle
+	site.updateBatteryChargeValues()
 
 	// NOTE: applyBatteryMode is always called when charge mode is active to validate max soc
 	if modeChanged := batteryMode != api.BatteryUnknown; modeChanged || site.batteryMode == api.BatteryCharge {
@@ -201,6 +207,14 @@ func (site *Site) batteryMaxSocReached(dev config.Device[api.Meter]) (bool, erro
 	return false, nil
 }
 
+// holdChargeSuggestion returns the current-slot plan for the given home battery,
+// or the zero value if none is available
+func (site *Site) holdChargeSuggestion(name string) types.Suggestion {
+	site.RLock()
+	defer site.RUnlock()
+	return site.holdChargeSuggestions[name]
+}
+
 // applyBatteryMode applies the mode to each battery
 //
 // api.BatteryCharge:
@@ -242,6 +256,45 @@ func (site *Site) applyBatteryMode(mode api.BatteryMode) error {
 	}
 
 	return nil
+}
+
+// updateBatteryChargeValues pushes the optimizer's current-slot charge values into each
+// battery's device-local cell via typed capabilities. The values are consumed by the
+// device's own batterymode control path (charge / holdcharge case) and therefore ride the
+// mode's watchdog/reset lifecycle - on leaving the mode that path stops writing them, so
+// there is no separate lifecycle to unwind here. Pushing unconditionally (not gated on the
+// current mode) keeps the cell fresh, so the consuming case reads the right value the
+// moment the mode applies.
+//
+// Charge power cap (holdcharge): the raw current-slot suggestion. Charge setpoint (forced
+// grid charge): the suggestion, or the battery's own reported max charge power when the
+// optimizer has no current-slot value (no optimizer, or plan stale).
+//
+// TODO: guard the pushed setpoint against an active circuit/load-management limit once
+// that constraint is modelled, so forced grid-charging cannot exceed the site's headroom.
+func (site *Site) updateBatteryChargeValues() {
+	for _, dev := range site.batteryMeters {
+		instance := dev.Instance()
+		suggestion := site.holdChargeSuggestion(dev.Config().Name)
+
+		if powerLimiter, ok := api.Cap[api.BatteryChargePowerLimiter](instance); ok {
+			if err := powerLimiter.SetMaxChargePower(suggestion.Charge); err != nil && !errors.Is(err, api.ErrNotAvailable) {
+				site.log.ERROR.Printf("battery %s max charge power: %v", deviceTitleOrName(dev), err)
+			}
+		}
+
+		if setpointCtrl, ok := api.Cap[api.BatteryChargeSetpointController](instance); ok {
+			watt := suggestion.Charge
+			if watt <= 0 {
+				if powerLimiter, ok := api.Cap[api.BatteryPowerLimiter](instance); ok {
+					watt, _ = powerLimiter.GetPowerLimits()
+				}
+			}
+			if err := setpointCtrl.SetChargeSetpoint(watt); err != nil && !errors.Is(err, api.ErrNotAvailable) {
+				site.log.ERROR.Printf("battery %s charge setpoint: %v", deviceTitleOrName(dev), err)
+			}
+		}
+	}
 }
 
 func (site *Site) tariffRates(usage api.TariffUsage) (api.Rates, error) {

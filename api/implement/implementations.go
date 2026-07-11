@@ -38,6 +38,36 @@ func (i *iBatteryCapacity) Capacity() float64 {
 	return i.batteryCapacity0()
 }
 
+func BatteryChargePowerLimiter(batteryChargePowerLimiter0 func(float64) error) api.BatteryChargePowerLimiter {
+	if batteryChargePowerLimiter0 == nil {
+		return nil
+	}
+	return &iBatteryChargePowerLimiter{batteryChargePowerLimiter0}
+}
+
+type iBatteryChargePowerLimiter struct {
+	batteryChargePowerLimiter0 func(float64) error
+}
+
+func (i *iBatteryChargePowerLimiter) SetMaxChargePower(p0 float64) error {
+	return i.batteryChargePowerLimiter0(p0)
+}
+
+func BatteryChargeSetpointController(batteryChargeSetpointController0 func(float64) error) api.BatteryChargeSetpointController {
+	if batteryChargeSetpointController0 == nil {
+		return nil
+	}
+	return &iBatteryChargeSetpointController{batteryChargeSetpointController0}
+}
+
+type iBatteryChargeSetpointController struct {
+	batteryChargeSetpointController0 func(float64) error
+}
+
+func (i *iBatteryChargeSetpointController) SetChargeSetpoint(p0 float64) error {
+	return i.batteryChargeSetpointController0(p0)
+}
+
 func BatteryController(batteryController0 func(api.BatteryMode) error) api.BatteryController {
 	if batteryController0 == nil {
 		return nil
