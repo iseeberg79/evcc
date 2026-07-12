@@ -38,6 +38,12 @@ var (
 	// still a meaningful (~half) share of a rough NMC estimate. Small vs. arbitrage value; tune.
 	socDepletionCostHigh = float32(0.005)
 
+	// socDepletionCostLow is a small reserve-comfort price (€/h) that keeps the home battery off
+	// the low floor: it ramps from zero at 20% SOC to full at s_min. Not battery aging (low SOC is
+	// gentle) but a soft buffer for spontaneous loads / forecast deviation. Deliberately below the
+	// import price so it never triggers grid charging to hold the band and yields to real arbitrage.
+	socDepletionCostLow = float32(0.002)
+
 	mu               sync.Mutex
 	optimizerUpdated time.Time
 )
@@ -718,6 +724,10 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 
 	// nudge the optimizer away from parking the battery at very high SOC (calendar aging)
 	bat.PrcDplSocHigh = socDepletionCostHigh
+
+	// nudge the optimizer to keep a reserve buffer off the low floor (comfort, not aging) so a
+	// spontaneous load or forecast deviation is covered from the battery, not a grid purchase
+	bat.PrcDplSocLow = socDepletionCostLow
 
 	return bat, detail
 }
