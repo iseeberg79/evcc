@@ -108,7 +108,8 @@ type batteryDetail struct {
 	Name     string      `json:"name,omitempty"`
 	Capacity float64     `json:"capacity,omitempty"`
 
-	loadpoint *int // originating loadpoint id for loadpoint/vehicle entries
+	loadpoint    *int // originating loadpoint id for loadpoint/vehicle entries
+	controllable bool // battery exposes a controller; only these get suggestions
 }
 
 type batteryResult struct {
@@ -121,6 +122,12 @@ type batteryResult struct {
 // suggestionThreshold ignores numerical noise around zero power (W)
 const suggestionThreshold = 50
 
+// advisory actions for a loadpoint/vehicle slot; battery actions use api.BatteryMode
+const (
+	actionStop   = "stop"
+	actionCharge = "charge"
+)
+
 // currentSlotSuggestion maps the optimizer's first-slot corner result onto an advisory action.
 // Because the optimization is linear, the first slot is at an operating-range extreme, so it
 // maps cleanly onto the discrete battery mode / loadpoint intent that control would later apply.
@@ -132,7 +139,7 @@ const suggestionThreshold = 50
 // device's self-consumption logic absorbing surplus the plan deferred to a later slot. A slot the
 // plan does mean to charge (charge > 0) stays holdcharge too, capped at its planned value rather
 // than charging freely.
-func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gridImporting, gridExporting, pvActive, withholdCharge bool, slotHours float64) types.Suggestion {
+func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gridImporting, gridExporting, pvActive, withholdCharge bool, slotHours float64, current string) types.Suggestion {
 	if slotHours <= 0 || len(res.ChargingPower) == 0 || len(res.DischargingPower) == 0 {
 		return types.Suggestion{}
 	}
@@ -171,10 +178,13 @@ func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gr
 			s.Action = api.BatteryNormal.String()
 		}
 	} else if charge > suggestionThreshold {
-		s.Action = "charge"
+		s.Action = actionCharge
 	} else {
-		s.Action = "stop"
+		s.Action = actionStop
 	}
+
+	// actionable when the suggested action differs from the current operating mode
+	s.Actionable = s.Action != current
 
 	return s
 }
@@ -464,7 +474,19 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 		batResp := resp.JSON200.Batteries[i]
 		detail := details.BatteryDetails[i]
 
-		suggestion := currentSlotSuggestion(detail, batResp, gridImporting, gridExporting, pvActive, batReq.WithholdCharge && holdChargeGate, slotHours)
+		// current operating mode to detect an actionable change
+		var current string
+		if detail.Type == batteryTypeBattery {
+			current = site.GetBatteryMode().String()
+		} else if detail.loadpoint != nil {
+			if site.loadpoints[*detail.loadpoint].IsEnabled() {
+				current = actionCharge
+			} else {
+				current = actionStop
+			}
+		}
+
+		suggestion := currentSlotSuggestion(detail, batResp, gridImporting, gridExporting, pvActive, batReq.WithholdCharge && holdChargeGate, slotHours, current)
 
 		batResult := batteryResult{
 			batteryDetail: detail,
@@ -483,7 +505,10 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 			continue
 		}
 		if detail.Type == batteryTypeBattery {
-			suggestions[detail.Name] = suggestion
+			// uncontrollable batteries can't act on a suggestion
+			if detail.controllable {
+				suggestions[detail.Name] = suggestion
+			}
 		} else if detail.loadpoint != nil {
 			lpSuggestions[*detail.loadpoint] = suggestion
 		}
@@ -688,7 +713,8 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 
 	instance := dev.Instance()
 
-	if api.HasCap[api.BatteryController](instance) {
+	controllable := api.HasCap[api.BatteryController](instance)
+	if controllable {
 		bat.ChargeFromGrid = true
 	}
 
@@ -705,10 +731,11 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 	}
 
 	detail := batteryDetail{
-		Type:     batteryTypeBattery,
-		Name:     dev.Config().Name,
-		Title:    deviceProperties(dev).Title,
-		Capacity: *b.Capacity,
+		Type:         batteryTypeBattery,
+		Name:         dev.Config().Name,
+		Title:        deviceProperties(dev).Title,
+		Capacity:     *b.Capacity,
+		controllable: controllable,
 	}
 
 	// tariff forecast-based grid charging demand
