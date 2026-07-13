@@ -133,7 +133,17 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive bool, rate api.Rat
 		// follow the optimizer plan for the current slot; disabled while the battery
 		// estimator is active since the two hold charge sources must not fight over the
 		// same battery mode
-		res = keepUnlessModified(site.holdChargeMode())
+		if site.dischargeControlSessionActive(rate) {
+			// Hold wins over HoldCharge for the whole smart-cost/fast charge session: the
+			// case above already yields Hold via dischargeControlActive while the vehicle
+			// draws power, but that signal's StatusC gate drops out on brief status blips
+			// (PWM pause, phase switch, handshake retry). Bridging the session here keeps
+			// Hold instead of flickering to the more disruptive HoldCharge, which would
+			// also block the vehicle's charging.
+			res = keepUnlessModified(api.BatteryHold)
+		} else {
+			res = keepUnlessModified(site.holdChargeMode())
+		}
 	case batteryModeModified(batMode):
 		res = api.BatteryNormal
 	}
@@ -325,6 +335,30 @@ func (site *Site) dischargeControlActive(rate api.Rate) bool {
 		smartCostActive := site.smartCostActive(lp, rate)
 		if lp.GetStatus() == api.StatusC && (smartCostActive || lp.IsFastChargingActive()) {
 			return true
+		}
+	}
+
+	return false
+}
+
+// dischargeControlSessionActive mirrors dischargeControlActive but is tolerant of brief
+// loadpoint status gaps: it gates on a connected vehicle (StatusB or StatusC) instead of
+// active charging (StatusC only). During a smart-cost/fast charge the status drops from C
+// to B on normal blips (PWM pause, phase switch, handshake retry) while the session keeps
+// running; StatusB only clears on an actual unplug. It is used to keep Hold winning over
+// the fork's HoldCharge for the duration of the session, so such a blip does not flip Hold
+// to the more disruptive HoldCharge (which would also block the vehicle's charging) for a
+// single update cycle.
+func (site *Site) dischargeControlSessionActive(rate api.Rate) bool {
+	if !site.GetBatteryDischargeControl() {
+		return false
+	}
+
+	for _, lp := range site.Loadpoints() {
+		if status := lp.GetStatus(); status == api.StatusB || status == api.StatusC {
+			if site.smartCostActive(lp, rate) || lp.IsFastChargingActive() {
+				return true
+			}
 		}
 	}
 
