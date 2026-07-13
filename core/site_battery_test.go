@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/evcc-io/evcc/api"
+	"github.com/evcc-io/evcc/api/implement"
+	"github.com/evcc-io/evcc/core/types"
 	"github.com/evcc-io/evcc/util"
 	"github.com/evcc-io/evcc/util/config"
 	"github.com/stretchr/testify/assert"
@@ -82,6 +84,57 @@ func TestApplyBatteryMode(t *testing.T) {
 		}
 
 		ctrl.Finish()
+	}
+}
+
+// TestUpdateBatteryChargeValues guards that the current-slot charge values are pushed into
+// each battery's cell via the typed capabilities. The push is unconditional (not mode-gated)
+// - the mode lifecycle is enforced on the consuming side (batterymode case), so the cell only
+// needs to stay fresh. The charge setpoint falls back to the battery's own reported max charge
+// power when the optimizer has no current-slot suggestion.
+func TestUpdateBatteryChargeValues(t *testing.T) {
+	for _, tc := range []struct {
+		charge           float64
+		expectedCap      float64
+		expectedSetpoint float64
+	}{
+		{1234, 1234, 1234}, // suggestion available for both
+		{0, 0, 5000},       // no suggestion: cap stays 0, setpoint falls back to hardware max
+	} {
+		t.Logf("%+v", tc)
+
+		var pushedCap, pushedSetpoint float64
+
+		var bat api.Meter = &struct {
+			api.Meter
+			api.BatteryChargePowerLimiter
+			api.BatteryChargeSetpointController
+			api.BatteryPowerLimiter
+		}{
+			BatteryChargePowerLimiter: implement.BatteryChargePowerLimiter(func(watt float64) error {
+				pushedCap = watt
+				return nil
+			}),
+			BatteryChargeSetpointController: implement.BatteryChargeSetpointController(func(watt float64) error {
+				pushedSetpoint = watt
+				return nil
+			}),
+			BatteryPowerLimiter: implement.BatteryPowerLimiter(func() (float64, float64) {
+				return 5000, 5000
+			}),
+		}
+
+		site := &Site{
+			log:           util.NewLogger("foo"),
+			batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice(config.Named{Name: "battery1"}, bat)},
+			holdChargeSuggestions: map[string]types.Suggestion{
+				"battery1": {Charge: tc.charge},
+			},
+		}
+
+		site.updateBatteryChargeValues()
+		assert.Equal(t, tc.expectedCap, pushedCap, "charge power cap")
+		assert.Equal(t, tc.expectedSetpoint, pushedSetpoint, "charge setpoint")
 	}
 }
 

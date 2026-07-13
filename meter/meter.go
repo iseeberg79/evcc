@@ -27,12 +27,14 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 		pvMaxACPower `mapstructure:",squash"`
 
 		// battery
-		batteryCapacity    `mapstructure:",squash"`
-		batterySocLimits   `mapstructure:",squash"`
-		batteryPowerLimits `mapstructure:",squash"`
-		Soc                *plugin.Config // optional
-		LimitSoc           *plugin.Config // optional
-		BatteryMode        *plugin.Config // optional
+		batteryCapacity     `mapstructure:",squash"`
+		batterySocLimits    `mapstructure:",squash"`
+		batteryPowerLimits  `mapstructure:",squash"`
+		Soc                 *plugin.Config // optional
+		LimitSoc            *plugin.Config // optional
+		BatteryMode         *plugin.Config // optional
+		MaxChargePowerLimit *plugin.Config // optional
+		ChargeSetpoint      *plugin.Config // optional
 	}{
 		batterySocLimits: batterySocLimits{
 			MinSoc: 20,
@@ -43,6 +45,10 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 	if err := util.DecodeOther(other, &cc); err != nil {
 		return nil, err
 	}
+
+	// scope a device-local memory store so a site-pushed value (via a capability
+	// setter) and the batterymode control path that consumes it share one cell
+	ctx = plugin.WithMemoryStore(ctx)
 
 	powerG, energyG, returnG, err := cc.Energy.Configure(ctx)
 	if err != nil {
@@ -72,6 +78,24 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 		implement.May(m, implement.BatteryCapacity(cc.batteryCapacity.Decorator()))
 		implement.May(m, implement.BatterySocLimiter(cc.batterySocLimits.Decorator()))
 		implement.May(m, implement.BatteryPowerLimiter(cc.batteryPowerLimits.Decorator()))
+
+		if cc.MaxChargePowerLimit != nil {
+			maxChargePowerS, err := cc.MaxChargePowerLimit.FloatSetter(ctx, "maxChargePowerLimit")
+			if err != nil {
+				return nil, fmt.Errorf("battery max charge power limit: %w", err)
+			}
+
+			implement.Has(m, implement.BatteryChargePowerLimiter(maxChargePowerS))
+		}
+
+		if cc.ChargeSetpoint != nil {
+			chargeSetpointS, err := cc.ChargeSetpoint.FloatSetter(ctx, "chargeSetpoint")
+			if err != nil {
+				return nil, fmt.Errorf("battery charge setpoint: %w", err)
+			}
+
+			implement.Has(m, implement.BatteryChargeSetpointController(chargeSetpointS))
+		}
 
 		switch {
 		case cc.Soc != nil && cc.LimitSoc != nil:

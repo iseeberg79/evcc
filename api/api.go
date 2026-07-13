@@ -54,6 +54,17 @@ type BatteryPowerLimiter interface {
 	GetPowerLimits() (charge, discharge float64)
 }
 
+// BatteryChargePowerLimiter allows limiting the battery's current charge power to a target value in W
+type BatteryChargePowerLimiter interface {
+	SetMaxChargePower(power float64) error
+}
+
+// BatteryChargeSetpointController allows forcing the battery to charge at a target power in W,
+// e.g. during grid-charge tariff windows
+type BatteryChargeSetpointController interface {
+	SetChargeSetpoint(power float64) error
+}
+
 // BatterySocLimiter provides min/max battery soc in %
 type BatterySocLimiter interface {
 	GetSocLimits() (min, max float64)

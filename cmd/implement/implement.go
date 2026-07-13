@@ -60,6 +60,8 @@ func generate(out io.Writer) error {
 	for _, typ := range []reflect.Type{
 		reflect.TypeFor[api.Battery](),
 		reflect.TypeFor[api.BatteryCapacity](),
+		reflect.TypeFor[api.BatteryChargePowerLimiter](),
+		reflect.TypeFor[api.BatteryChargeSetpointController](),
 		reflect.TypeFor[api.BatteryController](),
 		reflect.TypeFor[api.BatteryPowerLimiter](),
 		reflect.TypeFor[api.BatterySocLimiter](),

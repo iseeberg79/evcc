@@ -142,25 +142,27 @@ render: |
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
       - case: 3 # charge
         set:
-          # optimizer-planned grid charge power (W) for this battery, forced via setpoint;
-          # fall back to maxchargepower when the optimizer has no value.
-          # scale -1 because register 1034 uses negative values for charging
-          source: state
-          key: evopt-batteries
-          scale: -1
-          jq: '(.[] | select(.name == "{{ .name }}").suggestion.charge) // {{ .maxchargepower }}'
+          # forced grid-charge setpoint, pushed by site into the chargesetpoint cell
+          # (see BatteryChargeSetpointController) and written here inside the batterymode
+          # watchdog, so it shares the mode's re-write/reset lifecycle
+          source: memory
+          name: chargesetpoint
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}
+            scale: -1 # register 1034 uses negative values for charging
             register:
               address: 1034 # Battery charge power (DC) setpoint, absolute [W]
               type: writemultiple
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
       - case: 4 # holdcharge
         set:
-          source: state
-          key: evopt-batteries
-          jq: '(.[] | select(.name == "{{ .name }}").suggestion.charge) // 0'
+          # charge power cap, pushed by site into the maxchargepowerlimit cell
+          # (see BatteryChargePowerLimiter) and written here inside the batterymode
+          # watchdog; on leaving holdcharge the switch stops writing 1038 and the
+          # inverter reverts to unlimited after its own timeout
+          source: memory
+          name: maxchargepowerlimit
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}
@@ -168,5 +170,11 @@ render: |
               address: 1038 # Battery max. charge power limit, absolute [W]
               type: writemultiple
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
+  maxchargepowerlimit: # site push target (BatteryChargePowerLimiter); consumed by batterymode case 4
+    source: memory
+    name: maxchargepowerlimit
+  chargesetpoint: # site push target (BatteryChargeSetpointController); consumed by batterymode case 3
+    source: memory
+    name: chargesetpoint
   {{- include "battery-params" . }}
   {{- end }}
