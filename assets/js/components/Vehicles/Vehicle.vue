@@ -122,7 +122,6 @@ export default defineComponent({
 		charging: Boolean,
 		vehicleClimaterActive: Boolean,
 		vehicleWelcomeActive: Boolean,
-		externalControlActive: Boolean,
 		connected: Boolean,
 		currency: String,
 		effectiveLimitSoc: Number,

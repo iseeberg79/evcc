@@ -347,20 +347,6 @@ func (mr *MockAPIMockRecorder) GetEnableThreshold() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEnableThreshold", reflect.TypeOf((*MockAPI)(nil).GetEnableThreshold))
 }
 
-// GetExternalControl mocks base method.
-func (m *MockAPI) GetExternalControl() bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetExternalControl")
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// GetExternalControl indicates an expected call of GetExternalControl.
-func (mr *MockAPIMockRecorder) GetExternalControl() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetExternalControl", reflect.TypeOf((*MockAPI)(nil).GetExternalControl))
-}
-
 // GetLimitEnergy mocks base method.
 func (m *MockAPI) GetLimitEnergy() float64 {
 	m.ctrl.T.Helper()
@@ -887,18 +873,6 @@ func (m *MockAPI) SetEnableThreshold(threshold float64) {
 func (mr *MockAPIMockRecorder) SetEnableThreshold(threshold any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetEnableThreshold", reflect.TypeOf((*MockAPI)(nil).SetEnableThreshold), threshold)
-}
-
-// SetExternalControl mocks base method.
-func (m *MockAPI) SetExternalControl(duration time.Duration) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetExternalControl", duration)
-}
-
-// SetExternalControl indicates an expected call of SetExternalControl.
-func (mr *MockAPIMockRecorder) SetExternalControl(duration any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetExternalControl", reflect.TypeOf((*MockAPI)(nil).SetExternalControl), duration)
 }
 
 // SetLimitEnergy mocks base method.

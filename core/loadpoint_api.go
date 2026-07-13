@@ -628,31 +628,6 @@ func (lp *Loadpoint) setBatteryBoost(boost int) {
 	lp.batteryBoost = boost
 }
 
-// GetExternalControl returns true if external control is active
-func (lp *Loadpoint) GetExternalControl() bool {
-	lp.RLock()
-	defer lp.RUnlock()
-	return lp.externalControlActive()
-}
-
-// SetExternalControl activates external control for the given duration.
-// A zero duration releases the lease immediately.
-func (lp *Loadpoint) SetExternalControl(duration time.Duration) {
-	lp.Lock()
-	defer lp.Unlock()
-
-	lp.log.DEBUG.Printf("set external control: %v", duration)
-
-	if duration > 0 {
-		lp.externalControlUntil = lp.clock.Now().Add(duration)
-	} else {
-		lp.externalControlUntil = time.Time{}
-	}
-
-	lp.publish(keys.ExternalControlActive, lp.externalControlActive())
-	lp.requestUpdate()
-}
-
 // SetBatteryBoost sets the battery boost
 func (lp *Loadpoint) SetBatteryBoost(enable bool) error {
 	lp.Lock()

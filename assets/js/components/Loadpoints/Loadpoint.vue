@@ -202,7 +202,6 @@ export default defineComponent({
 		// details
 		vehicleClimaterActive: Boolean as PropType<boolean | null>,
 		vehicleWelcomeActive: Boolean,
-		externalControlActive: Boolean,
 		chargePower: { type: Number, default: 0 },
 		chargedEnergy: { type: Number, default: 0 },
 		chargeRemainingDuration: { type: Number, default: 0 },

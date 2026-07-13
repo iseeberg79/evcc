@@ -10,9 +10,7 @@ import (
 	_ "github.com/evcc-io/evcc/hems/eebus"
 	_ "github.com/evcc-io/evcc/hems/fnn"
 	"github.com/evcc-io/evcc/hems/hems"
-	_ "github.com/evcc-io/evcc/hems/octopus"
 	_ "github.com/evcc-io/evcc/hems/relay"
-	_ "github.com/evcc-io/evcc/hems/tibber"
 )
 
 var registry = config.Registry

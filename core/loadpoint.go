@@ -111,18 +111,17 @@ type Loadpoint struct {
 	MinCurrent_    float64       `mapstructure:"minCurrent"`    // ignored, present for compatibility
 	MaxCurrent_    float64       `mapstructure:"maxCurrent"`    // ignored, present for compatibility
 
-	title                    string    // UI title
-	priority                 int       // Priority
-	minCurrent               float64   // PV mode: start current	Min+PV mode: min current
-	maxCurrent               float64   // Max allowed current. Physically ensured by the charger
-	phasesConfigured         int       // Charger configured phase mode 0/1/3
-	limitSoc                 int       // Session limit for soc
-	limitEnergy              float64   // Session limit for energy
-	smartCostLimit           *float64  // always charge if consumption cost is below this value
-	smartFeedInPriorityLimit *float64  // prevent charging if feed-in cost is above this value
-	batteryBoost             int       // battery boost state
-	batteryBoostLimit        int       // battery boost soc limit (0-100, 100=disabled)
-	externalControlUntil     time.Time // external control lease expiry
+	title                    string   // UI title
+	priority                 int      // Priority
+	minCurrent               float64  // PV mode: start current	Min+PV mode: min current
+	maxCurrent               float64  // Max allowed current. Physically ensured by the charger
+	phasesConfigured         int      // Charger configured phase mode 0/1/3
+	limitSoc                 int      // Session limit for soc
+	limitEnergy              float64  // Session limit for energy
+	smartCostLimit           *float64 // always charge if consumption cost is below this value
+	smartFeedInPriorityLimit *float64 // prevent charging if feed-in cost is above this value
+	batteryBoost             int      // battery boost state
+	batteryBoostLimit        int      // battery boost soc limit (0-100, 100=disabled)
 
 	mode                api.ChargeMode
 	enabled             bool      // Charger enabled state
@@ -791,10 +790,6 @@ func (lp *Loadpoint) setAndPublishEnabled(enabled bool) {
 
 // syncCharger updates charger status and synchronizes it with expectations
 func (lp *Loadpoint) syncCharger() error {
-	if lp.externalControlActive() {
-		return nil
-	}
-
 	enabled, err := lp.charger.Enabled()
 	if err != nil {
 		return fmt.Errorf("charger enabled: %w", err)
@@ -816,10 +811,6 @@ func (lp *Loadpoint) syncCharger() error {
 		enabled = true
 
 		if shouldBeConsistent {
-			if lp.externalControlActive() {
-				return nil
-			}
-
 			if err := lp.charger.Enable(true); err != nil { // also enable charger to correct internal state
 				return fmt.Errorf("charger enable: %w", err)
 			}
@@ -1274,11 +1265,6 @@ func (lp *Loadpoint) effectiveCurrent() float64 {
 	}
 
 	return lp.offeredCurrent
-}
-
-// externalControlActive returns true if an external system holds the control lease
-func (lp *Loadpoint) externalControlActive() bool {
-	return lp.clock.Now().Before(lp.externalControlUntil)
 }
 
 // elapsePVTimer puts the pv enable/disable timer into elapsed state
@@ -2131,7 +2117,6 @@ func (lp *Loadpoint) Update(sitePower, batteryBoostPower float64, consumption, f
 
 	mode := lp.GetMode()
 	lp.publish(keys.Mode, mode)
-	lp.publish(keys.ExternalControlActive, lp.externalControlActive())
 
 	// update and publish plan without being short-circuited by modes etc.
 	plannerActive := lp.plannerActive()
@@ -2155,9 +2140,6 @@ func (lp *Loadpoint) Update(sitePower, batteryBoostPower float64, consumption, f
 			lp.SetPhases(lp.phasesConfigured)
 			err = nil
 		}
-
-	case lp.externalControlActive():
-		// external system owns the charger — evcc does not touch enable/current
 
 	case mode == api.ModeOff:
 		var current float64

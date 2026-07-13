@@ -85,7 +85,6 @@ import VehicleLimitReachedIcon from "../MaterialIcon/VehicleLimitReached.vue";
 import VehicleLimitWarningIcon from "../MaterialIcon/VehicleLimitWarning.vue";
 import VehicleMinSocIcon from "../MaterialIcon/VehicleMinSoc.vue";
 import WelcomeIcon from "../MaterialIcon/Welcome.vue";
-import HemsIcon from "../MaterialIcon/Hems.vue";
 
 import SunPauseIcon from "../MaterialIcon/SunPause.vue";
 
@@ -140,7 +139,6 @@ export default defineComponent({
 		tariffFeedIn: { type: Number, default: 0 },
 		vehicleClimaterActive: Boolean,
 		vehicleWelcomeActive: Boolean,
-		externalControlActive: Boolean,
 		vehicleLimitSoc: { type: Number, default: 0 },
 		statusOverride: { type: Object as PropType<VehicleStatus>, default: undefined },
 	},
@@ -319,14 +317,6 @@ export default defineComponent({
 					tooltipContent: t("welcome"),
 					iconComponent: WelcomeIcon,
 					testId: "vehicle-status-welcome",
-				},
-				{
-					id: "externalControlActive",
-					visible: this.externalControlActive,
-					tooltipContent: t("externalControlActive"),
-					iconComponent: HemsIcon,
-					itemClass: "text-primary",
-					testId: "vehicle-status-external-control-active",
 				},
 				{
 					id: "awaitingAuthorization",
