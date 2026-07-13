@@ -77,6 +77,22 @@ func TestMemoryMissingName(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestMemoryInitial verifies that initial seeds the cell before any push, so a forward
+// reading it early (e.g. a control path applied before the first site push cycle) sees
+// the configured fallback instead of the zero value - and that a later push overwrites it.
+func TestMemoryInitial(t *testing.T) {
+	ctx := WithMemoryStore(t.Context())
+
+	initial := 3000.0
+	_, err := NewMemoryFromConfig(ctx, map[string]any{"name": "cap", "initial": initial})
+	require.NoError(t, err)
+
+	require.Equal(t, 3000.0, mustGet(t, memoryFloatGetter(t, ctx, "cap")), "seeded before any push")
+
+	memoryFloatSetter(t, ctx, map[string]any{"name": "cap"})(1500)
+	require.Equal(t, 1500.0, mustGet(t, memoryFloatGetter(t, ctx, "cap")), "push overwrites the seeded value")
+}
+
 func mustGet(t *testing.T, get func() (float64, error)) float64 {
 	t.Helper()
 	v, err := get()

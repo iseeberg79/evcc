@@ -72,8 +72,9 @@ func init() {
 // NewMemoryFromConfig creates a memory provider
 func NewMemoryFromConfig(ctx context.Context, other map[string]any) (Plugin, error) {
 	cc := struct {
-		Name string
-		Set  *Config
+		Name    string
+		Set     *Config
+		Initial *float64
 	}{}
 
 	if err := util.DecodeOther(other, &cc); err != nil {
@@ -84,9 +85,18 @@ func NewMemoryFromConfig(ctx context.Context, other map[string]any) (Plugin, err
 		return nil, errors.New("missing name")
 	}
 
+	store := memoryStoreFromContext(ctx)
+
+	// seed the cell before the first site push (e.g. a configured static fallback
+	// power), so a control path reading it before that gets a sane value instead of
+	// the zero value. Idempotent: harmless if set again by the sink/forward pair.
+	if cc.Initial != nil {
+		store.set(cc.Name, *cc.Initial)
+	}
+
 	return &Memory{
 		ctx:       ctx,
-		store:     memoryStoreFromContext(ctx),
+		store:     store,
 		name:      cc.Name,
 		setConfig: cc.Set,
 	}, nil

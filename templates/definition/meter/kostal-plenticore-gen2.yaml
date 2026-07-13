@@ -110,15 +110,6 @@ render: |
     source: sunspec
     {{- include "modbus" . | indent 2 }}
     value: 802:SoC # 802 battery control
-  # generic BatteryPowerLimiter fallback: updateBatteryChargeValues falls back to this when
-  # no optimizer plan is available for this battery (e.g. no optimizer configured, or plan
-  # stale) - without it, a batteryGridChargeLimit-triggered charge would stay at 0 W forever
-  {{- if .maxchargepower }}
-  maxChargePower: {{ .maxchargepower }} # W
-  {{- end }}
-  {{- if .maxdischargepower }}
-  maxDischargePower: {{ .maxdischargepower }} # W
-  {{- end }}
   batterymode:
     source: watchdog
     timeout: {{ .watchdog }} # re-write at timeout/2
@@ -178,5 +169,8 @@ render: |
   chargesetpoint: # site push target (BatteryChargeSetpointController); consumed by batterymode case 3
     source: memory
     name: chargesetpoint
+    {{- if .maxchargepower }}
+    initial: {{ .maxchargepower }} # W - matches the old template's static forced-charge fallback
+    {{- end }}
   {{- include "battery-params" . }}
   {{- end }}
