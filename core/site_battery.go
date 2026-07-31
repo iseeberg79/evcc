@@ -31,6 +31,27 @@ func (site *Site) hasBatteryControl() bool {
 	return false
 }
 
+// hasBatteryChargeControl reports whether any configured battery can have its charge power
+// capped or set to a target (BatteryChargePowerLimiter/BatteryChargeSetpointController).
+// This is the opt-in for following the optimizer's per-slot plan automatically: only a
+// battery whose template actually implements one of these capabilities can follow a partial
+// planned charge value, so the capability itself gates the automation instead of a separate
+// user-facing setting.
+func (site *Site) hasBatteryChargeControl() bool {
+	for _, dev := range site.batteryMeters {
+		if dev == nil {
+			continue
+		}
+		meter := dev.Instance()
+
+		if api.HasCap[api.BatteryChargePowerLimiter](meter) || api.HasCap[api.BatteryChargeSetpointController](meter) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // setBatteryMode sets the battery mode
 func (site *Site) setBatteryMode(batMode api.BatteryMode) {
 	site.batteryMode = batMode
@@ -129,9 +150,12 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive bool, rate api.Rat
 		res = keepUnlessModified(api.BatteryCharge)
 	case site.dischargeControlActive(rate):
 		res = keepUnlessModified(api.BatteryHold)
-	case !site.batteryEstimator && site.holdChargePlanAvailable():
+	case !site.batteryEstimator && site.hasBatteryChargeControl() && site.holdChargePlanAvailable():
 		// follow the optimizer's current-slot plan; disabled while the battery estimator is
-		// active since the two hold charge sources must not fight over the same battery mode
+		// active since the two hold charge sources must not fight over the same battery mode.
+		// gated on hasBatteryChargeControl() instead of a user-facing toggle: only a battery
+		// whose template implements the charge power/setpoint capability can actually follow
+		// a partial planned value, so the capability itself is the opt-in.
 		if site.dischargeControlSessionActive(rate) {
 			// Hold wins over HoldCharge for the whole smart-cost/fast charge session: the
 			// case above already yields Hold via dischargeControlActive while the vehicle

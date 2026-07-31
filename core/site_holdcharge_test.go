@@ -11,6 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// chargePowerLimiterMeter is a minimal api.Meter that also implements
+// BatteryChargePowerLimiter, so hasBatteryChargeControl() finds it - the capability is the
+// opt-in for following the optimizer's plan automatically (see requiredBatteryMode()).
+type chargePowerLimiterMeter struct{ api.Meter }
+
+func (chargePowerLimiterMeter) SetMaxChargePower(float64) error { return nil }
+
 func TestHoldChargeMode(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -65,7 +72,7 @@ func TestHoldChargeYieldsToSmartChargeSession(t *testing.T) {
 	} {
 		site := &Site{
 			log:                     util.NewLogger("site"),
-			batteryMeters:           []config.Device[api.Meter]{nil},
+			batteryMeters:           []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{}, chargePowerLimiterMeter{})},
 			batteryDischargeControl: true,
 			holdChargeSuggestions:   map[string]types.Suggestion{"b": {Action: api.BatteryHoldCharge.String()}},
 			holdChargeUpdated:       time.Now(),
