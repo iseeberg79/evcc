@@ -303,25 +303,27 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 		typ               batteryType
 		charge, disch     float32
 		importing, export bool
+		canCapCharge      bool
 		want              string
 	}{
-		{"battery grid charge", batteryTypeBattery, 3000, 0, true, false, "charge"},
-		{"battery pv charge (no import)", batteryTypeBattery, 3000, 0, false, true, "holdcharge"},
-		{"battery hold (idle while importing)", batteryTypeBattery, 0, 0, true, false, "hold"},
-		{"battery holdcharge (idle while exporting)", batteryTypeBattery, 0, 0, false, true, "holdcharge"},
-		{"battery discharge (self-consumption while importing)", batteryTypeBattery, 0, 2000, true, false, "normal"},
-		{"battery grid discharge (discharge while exporting)", batteryTypeBattery, 0, 2000, false, true, "discharge"},
-		{"battery idle balanced", batteryTypeBattery, 0, 0, false, false, "normal"},
-		{"loadpoint charge", batteryTypeLoadpoint, 11000, 0, false, false, "charge"},
-		{"loadpoint stop", batteryTypeLoadpoint, 0, 0, false, false, "stop"},
-		{"vehicle below threshold is stop", batteryTypeVehicle, 40, 0, false, false, "stop"},
+		{"battery grid charge", batteryTypeBattery, 3000, 0, true, false, true, "charge"},
+		{"battery pv charge (no import)", batteryTypeBattery, 3000, 0, false, true, true, "holdcharge"},
+		{"battery pv charge (no import, no charge-cap capability)", batteryTypeBattery, 3000, 0, false, true, false, "normal"},
+		{"battery hold (idle while importing)", batteryTypeBattery, 0, 0, true, false, true, "hold"},
+		{"battery holdcharge (idle while exporting)", batteryTypeBattery, 0, 0, false, true, true, "holdcharge"},
+		{"battery discharge (self-consumption while importing)", batteryTypeBattery, 0, 2000, true, false, true, "normal"},
+		{"battery grid discharge (discharge while exporting)", batteryTypeBattery, 0, 2000, false, true, true, "discharge"},
+		{"battery idle balanced", batteryTypeBattery, 0, 0, false, false, true, "normal"},
+		{"loadpoint charge", batteryTypeLoadpoint, 11000, 0, false, false, true, "charge"},
+		{"loadpoint stop", batteryTypeLoadpoint, 0, 0, false, false, true, "stop"},
+		{"vehicle below threshold is stop", batteryTypeVehicle, 40, 0, false, false, true, "stop"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			res := optimizer.BatteryResult{
 				ChargingPower:    []float32{tc.charge},
 				DischargingPower: []float32{tc.disch},
 			}
-			s := currentSlotSuggestion(batteryDetail{Type: tc.typ}, res, tc.importing, tc.export, 1)
+			s := currentSlotSuggestion(batteryDetail{Type: tc.typ}, res, tc.importing, tc.export, tc.canCapCharge, 1)
 			assert.Equal(t, tc.want, s.Action)
 			assert.InDelta(t, tc.charge, s.Charge, 1e-3)
 			assert.InDelta(t, tc.disch, s.Discharge, 1e-3)
@@ -336,7 +338,7 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 			DischargingPower: []float32{0, 0},
 		}
 		// slotHours is the short partial slot; slot 1 is scaled by the full-slot rate
-		s := currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, false, false, 285.0/3600)
+		s := currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, false, false, true, 285.0/3600)
 		assert.Equal(t, "holdcharge", s.Action)
 		assert.InDelta(t, 1592*slotsPerHour, s.Charge, 1e-3)
 	})
@@ -347,13 +349,13 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 			ChargingPower:    []float32{0, 0},
 			DischargingPower: []float32{500, 0}, // discharging now, idle next full slot
 		}
-		s := currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, true, false, 1)
+		s := currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, true, false, true, 1)
 		assert.InDelta(t, 500, s.Discharge, 1e-3)
 		assert.Equal(t, "normal", s.Action) // discharge > threshold while importing -> not hold
 	})
 
 	// no result yields an empty suggestion
-	assert.Empty(t, currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{}, true, false, 1))
+	assert.Empty(t, currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{}, true, false, true, 1))
 }
 
 // TestSuggestionActionable ensures the actionable flag follows the current state
