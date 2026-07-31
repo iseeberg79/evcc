@@ -43,8 +43,6 @@ const (
 
 	// battery settings
 	BatteryDischargeControl    = "batteryDischargeControl"
-	BatteryAutoHoldCharge      = "batteryAutoHoldCharge"
-	BatteryHoldChargeAlways    = "batteryHoldChargeAlways"
 	BatteryEstimator           = "batteryEstimator"
 	BatteryEstimatorFactor     = "batteryEstimatorFactor"
 	BatteryEstimatorTargetTime = "batteryEstimatorTargetTime"

@@ -75,19 +75,17 @@ type Site struct {
 	consumerMeters []config.Device[api.Meter] // Consumer meters
 
 	// battery settings
-	prioritySoc                float64                      // prefer battery up to this Soc
-	bufferSoc                  float64                      // continue charging on battery above this Soc
-	bufferStartSoc             float64                      // start charging on battery above this Soc
-	batteryDischargeControl    bool                         // prevent battery discharge for fast and planned charging
-	batteryAutoHoldCharge      bool                         // optimizer-driven hold charge: withhold charging for feed-in peak shaving
-	batteryHoldChargeAlways    bool                         // apply holdcharge whenever the optimizer plans zero charge, not only on a detected export-limit overshoot
-	batteryEstimator           bool                         // spread PV charging power over time to reach maxSoc by a target time, independent of the optimizer; mutually exclusive with batteryAutoHoldCharge
-	batteryEstimatorFactor     float64                      // battery estimator: PV forecast > consumption * factor to auto-activate (default 1.5)
-	batteryEstimatorTargetTime string                       // battery estimator: target time (HH:MM) by which the battery should be full (default 18:00)
+	prioritySoc                float64                     // prefer battery up to this Soc
+	bufferSoc                  float64                     // continue charging on battery above this Soc
+	bufferStartSoc             float64                     // start charging on battery above this Soc
+	batteryDischargeControl    bool                        // prevent battery discharge for fast and planned charging
+	batteryEstimator           bool                        // spread PV charging power over time to reach maxSoc by a target time, independent of the optimizer
+	batteryEstimatorFactor     float64                     // battery estimator: PV forecast > consumption * factor to auto-activate (default 1.5)
+	batteryEstimatorTargetTime string                      // battery estimator: target time (HH:MM) by which the battery should be full (default 18:00)
 	holdChargeSuggestions      map[string]types.Suggestion // current-slot plan (optimizer or battery estimator) per home battery name
 	holdChargeUpdated          time.Time                   // last update of holdChargeSuggestions
-	batteryGridChargeLimit     *float64                     // grid charging limit
-	gridExportLimit            *float64                     // grid export/feed-in limit (W) for optimizer peak shaving; nil = unlimited
+	batteryGridChargeLimit     *float64                    // grid charging limit
+	gridExportLimit            *float64                    // grid export/feed-in limit (W) for optimizer peak shaving; nil = unlimited
 
 	// optimizer settings
 	optimizerChargingStrategy string // optimizer grid charging strategy
@@ -373,16 +371,6 @@ func (site *Site) restoreSettings() error {
 	}
 	if v, err := settings.Bool(keys.BatteryDischargeControl); err == nil {
 		if err := site.SetBatteryDischargeControl(v); err != nil && !errors.Is(err, ErrBatteryControlNotAvailable) {
-			return err
-		}
-	}
-	if v, err := settings.Bool(keys.BatteryAutoHoldCharge); err == nil {
-		if err := site.SetBatteryAutoHoldCharge(v); err != nil {
-			return err
-		}
-	}
-	if v, err := settings.Bool(keys.BatteryHoldChargeAlways); err == nil {
-		if err := site.SetBatteryHoldChargeAlways(v); err != nil {
 			return err
 		}
 	}
@@ -1214,8 +1202,6 @@ func (site *Site) prepare() {
 	site.publish(keys.BufferStartSoc, site.bufferStartSoc)
 	site.publish(keys.BatteryMode, site.batteryMode)
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
-	site.publish(keys.BatteryAutoHoldCharge, site.batteryAutoHoldCharge)
-	site.publish(keys.BatteryHoldChargeAlways, site.batteryHoldChargeAlways)
 	site.publish(keys.BatteryEstimator, site.batteryEstimator)
 	site.publish(keys.BatteryEstimatorFactor, site.batteryEstimatorFactor)
 	site.publish(keys.BatteryEstimatorTargetTime, site.batteryEstimatorTargetTime)

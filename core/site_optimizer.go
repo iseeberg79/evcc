@@ -132,14 +132,9 @@ const (
 // Because the optimization is linear, the first slot is at an operating-range extreme, so it
 // maps cleanly onto the discrete battery mode / loadpoint intent that control would later apply.
 // Idle while importing means discharge is deliberately withheld (hold); idle while exporting
-// means charging is withheld (holdcharge) - this generic case catches surplus export even
-// without an explicit reservation plan. With withholdCharge set, PV production while not
-// importing yields holdcharge so the optimizer's plan for the slot is enforced (the device caps
-// charging at the planned value suggestion.charge, zero while the plan withholds) instead of the
-// device's self-consumption logic absorbing surplus the plan deferred to a later slot. A slot the
-// plan does mean to charge (charge > 0) stays holdcharge too, capped at its planned value rather
-// than charging freely.
-func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gridImporting, gridExporting, pvActive, withholdCharge bool, slotHours float64, current string) types.Suggestion {
+// means charging is withheld (holdcharge) - this catches surplus export even without an
+// explicit reservation plan.
+func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gridImporting, gridExporting bool, slotHours float64, current string) types.Suggestion {
 	if slotHours <= 0 || len(res.ChargingPower) == 0 || len(res.DischargingPower) == 0 {
 		return types.Suggestion{}
 	}
@@ -162,12 +157,6 @@ func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gr
 		case charge > suggestionThreshold && gridImporting:
 			// charging while importing means grid charging
 			s.Action = api.BatteryCharge.String()
-		case withholdCharge && pvActive && !gridImporting:
-			// peak-shaving reservation active with PV production and no import: enforce the
-			// optimizer's planned charge (capped at suggestion.charge, zero while withheld) so
-			// the device's self-consumption logic doesn't fill the battery from surplus the plan
-			// deferred to a later slot
-			s.Action = api.BatteryHoldCharge.String()
 		case idle && gridImporting:
 			// idle while importing: discharge is deliberately withheld
 			s.Action = api.BatteryHold.String()
@@ -441,30 +430,6 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 	// (numerical residual) does not count as importing for mode selection
 	gridImporting := len(resp.JSON200.GridImport) > 0 && float64(resp.JSON200.GridImport[0])/slotHours > suggestionThreshold
 	gridExporting := len(resp.JSON200.GridExport) > 0 && resp.JSON200.GridExport[0] > 0
-	// pvActive reflects real production: with the reservation active the inverter's own
-	// self-consumption would charge the battery from any surplus the optimizer did not plan
-	// (the plan hides it as balanced grid flow), so this real signal gates holdcharge
-	pvActive := site.pvPower > suggestionThreshold
-
-	// peakExportSlot mirrors the optimizer's peak_overshoot_slot check: true when any forecast
-	// slot has natural surplus (PV - load) exceeding the export limit, meaning the withhold
-	// penalty was active and planned charge rates must be enforced via holdcharge.
-	peakExportSlot := false
-	if req.Grid.PMaxExp > 0 {
-		for i, ft := range req.TimeSeries.Ft {
-			if i < len(req.TimeSeries.Gt) && i < len(req.TimeSeries.Dt) {
-				if float64(ft-req.TimeSeries.Gt[i]) > float64(req.Grid.PMaxExp)*float64(req.TimeSeries.Dt[i])/3600 {
-					peakExportSlot = true
-					break
-				}
-			}
-		}
-	}
-
-	// holdChargeGate widens peakExportSlot when batteryHoldChargeAlways is enabled: holdcharge
-	// then also applies whenever the optimizer plans zero charge on its own (e.g. the mild
-	// attenuate_grid_peaks timing preference), not only on a detected export-limit overshoot.
-	holdChargeGate := peakExportSlot || site.GetBatteryHoldChargeAlways()
 
 	var batteries []batteryResult
 	suggestions := make(map[string]types.Suggestion, len(req.Batteries))
@@ -486,7 +451,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 			}
 		}
 
-		suggestion := currentSlotSuggestion(detail, batResp, gridImporting, gridExporting, pvActive, batReq.WithholdCharge && holdChargeGate, slotHours, current)
+		suggestion := currentSlotSuggestion(detail, batResp, gridImporting, gridExporting, slotHours, current)
 
 		batResult := batteryResult{
 			batteryDetail: detail,
@@ -744,10 +709,6 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 			bat.PDemand = prorate(demand, firstSlotDuration)
 		}
 	}
-
-	// withhold_charge lets the optimizer pause charging below the solar peak under
-	// attenuate_grid_peaks so capacity stays free for the midday feed-in peak
-	bat.WithholdCharge = site.batteryAutoHoldCharge
 
 	// nudge the optimizer away from parking the battery at very high SOC (calendar aging)
 	bat.PrcDplSocHigh = socDepletionCostHigh

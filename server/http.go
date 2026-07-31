@@ -144,8 +144,6 @@ func (s *HTTPd) RegisterSiteHandlers(site site.API) {
 		"buffersoc":                  {"POST", "/buffersoc/{value:[0-9.]+}", floatHandler(site.SetBufferSoc, site.GetBufferSoc)},
 		"bufferstartsoc":             {"POST", "/bufferstartsoc/{value:[0-9.]+}", floatHandler(site.SetBufferStartSoc, site.GetBufferStartSoc)},
 		"batterydischargecontrol":    {"POST", "/batterydischargecontrol/{value:[01truefalse]+}", boolHandler(site.SetBatteryDischargeControl, site.GetBatteryDischargeControl)},
-		"batteryautoholdcharge":      {"POST", "/batteryautoholdcharge/{value:[01truefalse]+}", boolHandler(site.SetBatteryAutoHoldCharge, site.GetBatteryAutoHoldCharge)},
-		"batteryholdchargealways":    {"POST", "/batteryholdchargealways/{value:[01truefalse]+}", boolHandler(site.SetBatteryHoldChargeAlways, site.GetBatteryHoldChargeAlways)},
 		"batteryestimator":           {"POST", "/batteryestimator/{value:[01truefalse]+}", boolHandler(site.SetBatteryEstimator, site.GetBatteryEstimator)},
 		"batteryestimatorfactor":     {"POST", "/batteryestimatorfactor/{value:[0-9.]+}", floatHandler(site.SetBatteryEstimatorFactor, site.GetBatteryEstimatorFactor)},
 		"batteryestimatortargettime": {"POST", "/batteryestimatortargettime/{value:[0-9:]+}", stringHandler(site.SetBatteryEstimatorTargetTime, site.GetBatteryEstimatorTargetTime)},

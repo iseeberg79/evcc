@@ -268,6 +268,6 @@ replace github.com/grid-x/modbus => github.com/evcc-io/modbus v0.0.0-20250501165
 
 replace github.com/lorenzodonini/ocpp-go => github.com/evcc-io/ocpp-go v0.0.0-20251212212612-b7f92ee0443b
 
-// TEMP: build against local optimizer fork with withhold_charge (evcc-io/optimizer#79); remove before merge once the optimizer release is bumped
+// TEMP: build against local optimizer fork (unreleased fixes); remove once the optimizer release is bumped
 replace github.com/evcc-io/optimizer => ../optimizer
 replace github.com/enbility/eebus-go => github.com/evcc-io/eebus-go v0.0.0-20260707170747-eb60ff7e2025

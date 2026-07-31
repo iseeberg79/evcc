@@ -117,8 +117,6 @@ export interface State {
   prioritySoc?: number;
   bufferStartSoc?: number;
   batteryDischargeControl?: boolean;
-  batteryAutoHoldCharge?: boolean;
-  batteryHoldChargeAlways?: boolean;
   batteryEstimator?: boolean;
   batteryEstimatorFactor?: number;
   batteryEstimatorTargetTime?: string;

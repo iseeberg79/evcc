@@ -370,54 +370,6 @@ func (site *Site) SetBatteryDischargeControl(val bool) error {
 	return nil
 }
 
-// GetBatteryAutoHoldCharge returns whether optimizer-driven hold charge is enabled
-func (site *Site) GetBatteryAutoHoldCharge() bool {
-	site.RLock()
-	defer site.RUnlock()
-	return site.batteryAutoHoldCharge
-}
-
-// SetBatteryAutoHoldCharge enables optimizer-driven hold charge (withhold charging for feed-in peak shaving)
-func (site *Site) SetBatteryAutoHoldCharge(val bool) error {
-	site.log.DEBUG.Println("set battery auto hold charge:", val)
-
-	site.Lock()
-	defer site.Unlock()
-
-	if site.batteryAutoHoldCharge != val {
-		site.batteryAutoHoldCharge = val
-		settings.SetBool(keys.BatteryAutoHoldCharge, val)
-		site.publish(keys.BatteryAutoHoldCharge, val)
-	}
-
-	return nil
-}
-
-// GetBatteryHoldChargeAlways returns whether holdcharge applies whenever the optimizer
-// plans zero charge, instead of only on a detected export-limit overshoot
-func (site *Site) GetBatteryHoldChargeAlways() bool {
-	site.RLock()
-	defer site.RUnlock()
-	return site.batteryHoldChargeAlways
-}
-
-// SetBatteryHoldChargeAlways sets whether holdcharge applies whenever the optimizer
-// plans zero charge, instead of only on a detected export-limit overshoot
-func (site *Site) SetBatteryHoldChargeAlways(val bool) error {
-	site.log.DEBUG.Println("set battery hold charge always:", val)
-
-	site.Lock()
-	defer site.Unlock()
-
-	if site.batteryHoldChargeAlways != val {
-		site.batteryHoldChargeAlways = val
-		settings.SetBool(keys.BatteryHoldChargeAlways, val)
-		site.publish(keys.BatteryHoldChargeAlways, val)
-	}
-
-	return nil
-}
-
 // GetBatteryEstimator returns whether the battery estimator (spreading PV charging power
 // over time to reach maxSoc by a target time, independent of the optimizer) is enabled
 func (site *Site) GetBatteryEstimator() bool {
@@ -426,9 +378,7 @@ func (site *Site) GetBatteryEstimator() bool {
 	return site.batteryEstimator
 }
 
-// SetBatteryEstimator enables the battery estimator. Mutually exclusive with the
-// optimizer-driven hold charge (batteryAutoHoldCharge): while enabled it takes over the
-// hold charge decision instead of the optimizer plan.
+// SetBatteryEstimator enables the battery estimator.
 func (site *Site) SetBatteryEstimator(val bool) error {
 	site.log.DEBUG.Println("set battery estimator:", val)
 

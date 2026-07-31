@@ -20,8 +20,6 @@
 			:priority-soc="state.prioritySoc"
 			:buffer-start-soc="state.bufferStartSoc"
 			:battery-discharge-control="state.batteryDischargeControl"
-			:battery-auto-hold-charge="state.batteryAutoHoldCharge"
-			:battery-hold-charge-always="state.batteryHoldChargeAlways"
 			:battery-estimator="state.batteryEstimator"
 			:battery-estimator-factor="state.batteryEstimatorFactor"
 			:battery-estimator-target-time="state.batteryEstimatorTargetTime"

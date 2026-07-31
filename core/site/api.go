@@ -87,18 +87,7 @@ type API interface {
 	GetBatteryDischargeControl() bool
 	SetBatteryDischargeControl(bool) error
 
-	// GetBatteryAutoHoldCharge returns whether optimizer-driven hold charge is enabled
-	GetBatteryAutoHoldCharge() bool
-	// SetBatteryAutoHoldCharge enables optimizer-driven hold charge
-	SetBatteryAutoHoldCharge(bool) error
-
-	// GetBatteryHoldChargeAlways returns whether holdcharge applies on any zero-charge plan
-	GetBatteryHoldChargeAlways() bool
-	// SetBatteryHoldChargeAlways sets whether holdcharge applies on any zero-charge plan
-	SetBatteryHoldChargeAlways(bool) error
-
-	// GetBatteryEstimator returns whether the battery estimator (spread charging,
-	// mutually exclusive with batteryAutoHoldCharge) is enabled
+	// GetBatteryEstimator returns whether the battery estimator (spread charging) is enabled
 	GetBatteryEstimator() bool
 	// SetBatteryEstimator enables the battery estimator
 	SetBatteryEstimator(bool) error
