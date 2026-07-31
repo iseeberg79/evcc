@@ -306,7 +306,7 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 		want              string
 	}{
 		{"battery grid charge", batteryTypeBattery, 3000, 0, true, false, "charge"},
-		{"battery pv charge (no import)", batteryTypeBattery, 3000, 0, false, true, "normal"},
+		{"battery pv charge (no import)", batteryTypeBattery, 3000, 0, false, true, "holdcharge"},
 		{"battery hold (idle while importing)", batteryTypeBattery, 0, 0, true, false, "hold"},
 		{"battery holdcharge (idle while exporting)", batteryTypeBattery, 0, 0, false, true, "holdcharge"},
 		{"battery discharge (self-consumption while importing)", batteryTypeBattery, 0, 2000, true, false, "normal"},
@@ -337,7 +337,7 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 		}
 		// slotHours is the short partial slot; slot 1 is scaled by the full-slot rate
 		s := currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, false, false, 285.0/3600)
-		assert.Equal(t, "normal", s.Action)
+		assert.Equal(t, "holdcharge", s.Action)
 		assert.InDelta(t, 1592*slotsPerHour, s.Charge, 1e-3)
 	})
 

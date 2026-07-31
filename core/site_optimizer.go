@@ -175,7 +175,12 @@ func suggestionEvent(detail batteryDetail, s types.Suggestion) (string, messenge
 // Because the optimization is linear, the first slot is at an operating-range extreme, so it
 // maps cleanly onto the discrete battery mode / loadpoint intent that control would later apply.
 // An idle battery is interpreted from the grid flow: importing means discharge is withheld
-// (hold), exporting means charging is withheld (holdcharge).
+// (hold), exporting means charging is withheld (holdcharge). Charging without importing (pure
+// self-consumption) is capped at the planned value via holdcharge too - without this, a battery
+// whose template only implements the charge-power-cap capability would let its own
+// self-consumption logic charge past a planned partial value up to whatever PV/BMS delivers,
+// defeating the point of following the optimizer's plan. Mirrors the removed withhold_charge
+// mechanism's side effect (see d452873fd), now unconditional instead of gated by that toggle.
 func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gridImporting, gridExporting bool, slotHours float64) types.Suggestion {
 	if slotHours <= 0 || len(res.ChargingPower) == 0 || len(res.DischargingPower) == 0 {
 		return types.Suggestion{}
@@ -199,6 +204,11 @@ func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gr
 		case charge > suggestionThreshold && gridImporting:
 			// charging while importing means grid charging
 			s.Action = api.BatteryCharge.String()
+		case charge > suggestionThreshold && !gridImporting:
+			// self-consumption charging with a planned partial power: cap it via holdcharge
+			// so the plan's target is enforced instead of the device's own self-consumption
+			// logic charging past it
+			s.Action = api.BatteryHoldCharge.String()
 		case idle && gridImporting:
 			// idle while importing: discharge is deliberately withheld
 			s.Action = api.BatteryHold.String()
