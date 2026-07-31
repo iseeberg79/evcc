@@ -902,6 +902,13 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 	// spontaneous load or forecast deviation is covered from the battery, not a grid purchase
 	bat.PrcDplSocLow = socDepletionCostLow
 
+	// prefer charging the home battery as early as cost-neutral, so it doesn't idle mid-band
+	// (20-80% SOC) for no real reason, deferring a full charge to a later day. Real economics
+	// (price arbitrage, PrcDplSocHigh/Low) still dominate this tie-break by construction.
+	// Deliberately not set for EV/loadpoint requests (loadpointRequest): unlike a home battery
+	// they may unplug before a deferred full charge completes.
+	bat.BatteryFirst = true
+
 	return bat, detail
 }
 
