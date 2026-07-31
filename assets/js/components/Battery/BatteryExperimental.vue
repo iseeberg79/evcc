@@ -23,7 +23,9 @@
 			:battery-estimator="state.batteryEstimator"
 			:battery-estimator-factor="state.batteryEstimatorFactor"
 			:battery-estimator-target-time="state.batteryEstimatorTargetTime"
+			:battery-grid-discharge="state.batteryGridDischarge"
 			:battery="state.battery"
+			:experimental="state.experimental"
 		/>
 
 		<Card

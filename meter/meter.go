@@ -27,20 +27,15 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 		pvMaxACPower `mapstructure:",squash"`
 
 		// battery
-		batteryCapacity     `mapstructure:",squash"`
-		batterySocLimits    `mapstructure:",squash"`
-		batteryPowerLimits  `mapstructure:",squash"`
-		Soc                 *plugin.Config // optional
-		LimitSoc            *plugin.Config // optional
-		BatteryMode         *plugin.Config // optional
-		MaxChargePowerLimit *plugin.Config // optional
-		ChargeSetpoint      *plugin.Config // optional
-	}{
-		batterySocLimits: batterySocLimits{
-			MinSoc: 20,
-			MaxSoc: 95,
-		},
-	}
+		batteryCapacityCtx    `mapstructure:",squash"`
+		batterySocLimitsCtx   `mapstructure:",squash"`
+		batteryPowerLimitsCtx `mapstructure:",squash"`
+		Soc                   *plugin.Config // optional
+		LimitSoc              *plugin.Config // optional
+		BatteryMode           *plugin.Config // optional
+		MaxChargePowerLimit   *plugin.Config // optional
+		ChargeSetpoint        *plugin.Config // optional
+	}{}
 
 	if err := util.DecodeOther(other, &cc); err != nil {
 		return nil, err
@@ -49,6 +44,14 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 	// scope a device-local memory store so a site-pushed value (via a capability
 	// setter) and the batterymode control path that consumes it share one cell
 	ctx = plugin.WithMemoryStore(ctx)
+
+	// default soc limits (nil-preset avoids mapstructure coercing plugin config into the default's type)
+	if cc.batterySocLimitsCtx.MinSoc == nil {
+		cc.batterySocLimitsCtx.MinSoc = 20
+	}
+	if cc.batterySocLimitsCtx.MaxSoc == nil {
+		cc.batterySocLimitsCtx.MaxSoc = 95
+	}
 
 	powerG, energyG, returnG, err := cc.Energy.Configure(ctx)
 	if err != nil {
@@ -74,10 +77,25 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 	}
 
 	if socG != nil {
+		capacity, err := cc.batteryCapacityCtx.Decorator(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		socLimiter, err := cc.batterySocLimitsCtx.Decorator(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		powerLimiter, err := cc.batteryPowerLimitsCtx.Decorator(ctx)
+		if err != nil {
+			return nil, err
+		}
+
 		implement.Has(m, implement.Battery(socG))
-		implement.May(m, implement.BatteryCapacity(cc.batteryCapacity.Decorator()))
-		implement.May(m, implement.BatterySocLimiter(cc.batterySocLimits.Decorator()))
-		implement.May(m, implement.BatteryPowerLimiter(cc.batteryPowerLimits.Decorator()))
+		implement.May(m, implement.BatteryCapacity(capacity))
+		implement.May(m, implement.BatterySocLimiter(socLimiter))
+		implement.May(m, implement.BatteryPowerLimiter(powerLimiter))
 
 		if cc.MaxChargePowerLimit != nil {
 			maxChargePowerS, err := cc.MaxChargePowerLimit.FloatSetter(ctx, "maxChargePowerLimit")
@@ -104,7 +122,12 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 				return nil, fmt.Errorf("battery limit soc: %w", err)
 			}
 
-			implement.Has(m, implement.BatteryController(cc.batterySocLimits.LimitController(socG, limitSocS)))
+			limitController, err := cc.batterySocLimitsCtx.LimitController(ctx, socG, limitSocS)
+			if err != nil {
+				return nil, err
+			}
+
+			implement.Has(m, implement.BatteryController(limitController))
 
 		case cc.BatteryMode != nil:
 			modeS, err := cc.BatteryMode.IntSetter(ctx, "batteryMode")

@@ -99,8 +99,7 @@
 								<pre
 									class="p-3 overflow-auto"
 									style="background-color: var(--evcc-gray-10)"
-									>{{ formattedRequest }}</pre
-								>
+									>{{ formattedRequest }}</pre>
 								<CopyButton :content="formattedRequest" />
 							</div>
 						</div>
@@ -111,8 +110,7 @@
 								<pre
 									class="p-3 overflow-auto"
 									style="background-color: var(--evcc-gray-10)"
-									>{{ formattedResponse }}</pre
-								>
+									>{{ formattedResponse }}</pre>
 								<CopyButton :content="formattedResponse" />
 							</div>
 						</div>

@@ -101,6 +101,7 @@ export interface State {
   tariffFeedIn?: number;
   tariffCo2?: number;
   tariffSolar?: number;
+  tariffTemperature?: number;
   mqtt?: MqttConfig;
   influx?: InfluxConfig;
   hems?: ConfigStatus<HemsConfig, HemsStatus>;
@@ -120,6 +121,8 @@ export interface State {
   batteryEstimator?: boolean;
   batteryEstimatorFactor?: number;
   batteryEstimatorTargetTime?: string;
+  batteryGridDischarge?: boolean; // battery may discharge to grid (experimental)
+  solarAdjusted?: boolean;
   batteryGridChargeLimit?: number | null;
   gridExportLimit?: number | null;
   smartCostAvailable?: boolean;
@@ -333,6 +336,7 @@ export interface Loadpoint {
   effectiveLimitSoc: number;
   effectiveMaxCurrent: number;
   effectiveMinCurrent: number;
+  effectiveMinSoc: number;
   effectivePlanId: number;
   effectivePlanSoc: number;
   effectivePlanTime: string | null;
@@ -345,6 +349,7 @@ export interface Loadpoint {
   limitSoc: number;
   maxCurrent: number;
   minCurrent: number;
+  minSoc: number;
   minSocNotReached: boolean;
   mode: CHARGE_MODE;
   offeredCurrent: number;
@@ -362,6 +367,8 @@ export interface Loadpoint {
   priority: number;
   pvAction: PV_ACTION;
   pvRemaining: number;
+  last24hEnergy?: number;
+  last7dEnergy?: number;
   sessionCo2PerKWh: number | null;
   sessionEnergy: number;
   sessionPrice: number | null;
@@ -375,6 +382,7 @@ export interface Loadpoint {
   smartFeedInPriorityNextStart: string | null;
   suggestion?: LoadpointSuggestion | null;
   title: string;
+  todayEnergy?: number;
   vehicleClimaterActive: boolean | null;
   vehicleDetectionActive: boolean;
   vehicleLimitSoc: number;
@@ -440,6 +448,7 @@ export enum CURRENCY {
   ZAR = "ZAR",
   TRY = "TRY",
   MYR = "MYR",
+  THB = "THB",
 }
 
 export enum ICON_SIZE {
@@ -505,7 +514,9 @@ export type SessionInfoKey =
   | "avgPrice"
   | "price"
   | "emission"
-  | "co2";
+  | "co2"
+  | "last24hEnergy"
+  | "last7dEnergy";
 
 export interface SponsorStatus {
   name?: string;
@@ -624,6 +635,7 @@ export enum MESSAGING_EVENTS {
   GUEST = "guest",
   ASLEEP = "asleep",
   PLANOVERRUN = "planoverrun",
+  SUGGESTION = "suggestion",
 }
 
 export interface MessagingEvent {
@@ -677,7 +689,7 @@ export interface Battery {
 }
 
 export interface BatterySuggestion {
-  action: "normal" | "hold" | "charge" | "holdcharge";
+  action: "normal" | "hold" | "charge" | "holdcharge" | "discharge";
   charge?: number; // recommended charge power, W
   discharge?: number; // recommended discharge power, W
   actionable?: boolean; // suggestion differs from the current operating mode
@@ -748,6 +760,7 @@ export interface Forecast {
   consumption?: ConsumptionDetails;
   planner?: ForecastSlot[];
   feedin?: ForecastSlot[];
+  temperature?: ForecastSlot[];
 }
 
 export interface ConsumptionDetails {
@@ -772,7 +785,7 @@ export type DeviceType =
   | "hems";
 export type MeterType = "grid" | "pv" | "battery" | "charge" | "aux" | "ext" | "consumer";
 export type MeterTemplateUsage = "grid" | "pv" | "battery" | "charge" | "aux";
-export type TariffType = "grid" | "feedIn" | "co2" | "planner" | "solar";
+export type TariffType = "grid" | "feedIn" | "co2" | "planner" | "solar" | "temperature";
 
 // see https://stackoverflow.com/a/54178819
 type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>;

@@ -14,7 +14,7 @@ import (
 )
 
 type solarDetails struct {
-	Scale            *float64     `json:"scale,omitempty"`            // scale factor yield/forecasted today (display)
+	Scale            float64      `json:"scale"`                      // scale factor yield/forecasted today, 1 if unscaled
 	ScaleMedian      *float64     `json:"scaleMedian,omitempty"`      // trailing-median scale fed to the optimizer
 	Today            dailyDetails `json:"today,omitempty"`            // tomorrow
 	Tomorrow         dailyDetails `json:"tomorrow,omitempty"`         // tomorrow
@@ -93,6 +93,9 @@ func (site *Site) publishTariffs(greenShareHome float64, greenShareLoadpoints fl
 	if v, err := tariff.Now(site.GetTariff(api.TariffUsageSolar)); err == nil {
 		site.publish(keys.TariffSolar, v)
 	}
+	if v, err := tariff.Now(site.GetTariff(api.TariffUsageTemperature)); err == nil {
+		site.publish(keys.TariffTemperature, v)
+	}
 	if v := site.effectivePrice(greenShareHome); v != nil {
 		site.publish(keys.TariffPriceHome, v)
 	}
@@ -113,11 +116,13 @@ func (site *Site) publishTariffs(greenShareHome float64, greenShareLoadpoints fl
 		Planner     api.Rates           `json:"planner,omitempty"`
 		Solar       *solarDetails       `json:"solar,omitempty"`
 		Consumption *consumptionDetails `json:"consumption,omitempty"`
+		Temperature api.Rates           `json:"temperature,omitempty"`
 	}{
-		Co2:     tariff.Rates(site.GetTariff(api.TariffUsageCo2)),
-		FeedIn:  tariff.Rates(site.GetTariff(api.TariffUsageFeedIn)),
-		Planner: tariff.Rates(site.GetTariff(api.TariffUsagePlanner)),
-		Grid:    tariff.Rates(site.GetTariff(api.TariffUsageGrid)),
+		Co2:         tariff.Rates(site.GetTariff(api.TariffUsageCo2)),
+		FeedIn:      tariff.Rates(site.GetTariff(api.TariffUsageFeedIn)),
+		Planner:     tariff.Rates(site.GetTariff(api.TariffUsagePlanner)),
+		Grid:        tariff.Rates(site.GetTariff(api.TariffUsageGrid)),
+		Temperature: tariff.Rates(site.GetTariff(api.TariffUsageTemperature)),
 	}
 
 	// calculate adjusted solar rates
@@ -131,6 +136,38 @@ func (site *Site) publishTariffs(greenShareHome float64, greenShareLoadpoints fl
 	}
 
 	site.publish(keys.Forecast, util.NewSharder(keys.Forecast, fc))
+
+	site.persistTariffs()
+}
+
+// persistTariffs stores tariff values once per 15min boundary. Like the meter
+// collectors it is driven by the update loop, skipping the partial boot slot.
+func (site *Site) persistTariffs() {
+	slot := time.Now().Truncate(tariff.SlotDuration)
+
+	last := site.tariffSlot
+	site.tariffSlot = slot
+
+	// skip repeat ticks within the slot and the partial boot slot
+	if last.IsZero() || !slot.After(last) {
+		return
+	}
+
+	value := func(u api.TariffUsage) *float64 {
+		if r, err := tariff.At(site.GetTariff(u), slot); err == nil {
+			return &r.Value
+		}
+		return nil
+	}
+
+	if err := metrics.PersistTariffs(slot,
+		value(api.TariffUsageGrid),
+		value(api.TariffUsageFeedIn),
+		value(api.TariffUsageCo2),
+		value(api.TariffUsageTemperature),
+	); err != nil {
+		site.log.ERROR.Printf("persist tariffs: %v", err)
+	}
 }
 
 func (site *Site) solarDetails(solar api.Rates) solarDetails {
@@ -167,15 +204,27 @@ func (site *Site) solarDetails(solar api.Rates) solarDetails {
 		}
 	}
 
-	if scale := site.solarScale(); scale != 1 {
-		res.Scale = &scale
+	if r, err := tariff.At(site.GetTariff(api.TariffUsageTemperature), time.Now()); err == nil {
+		if err := site.collectors[metrics.Temperature].SetSocTemp(r.Value, true); err != nil {
+			site.log.ERROR.Printf("temperature collector soc_temp: %v", err)
+		}
 	}
 
+	res.Scale = site.solarScale()
 	if median := site.solarScaleMedian(); median != 1 {
 		res.ScaleMedian = &median
 	}
 
 	return res
+}
+
+// effectiveSolarScale returns the solar forecast scale if forecast adjustment
+// is enabled, 1 otherwise.
+func (site *Site) effectiveSolarScale() float64 {
+	if !site.GetSolarAdjusted() {
+		return 1
+	}
+	return site.solarScale()
 }
 
 // solarScale returns the ratio of produced solar energy to forecasted solar

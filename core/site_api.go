@@ -448,6 +448,33 @@ func (site *Site) SetBatteryEstimatorTargetTime(val string) error {
 	return nil
 }
 
+// GetBatteryGridDischarge returns whether the battery may discharge to grid (experimental)
+func (site *Site) GetBatteryGridDischarge() bool {
+	site.RLock()
+	defer site.RUnlock()
+	return site.batteryGridDischarge
+}
+
+// SetBatteryGridDischarge sets whether the battery may discharge to grid (experimental)
+func (site *Site) SetBatteryGridDischarge(val bool) error {
+	site.log.DEBUG.Println("set battery grid discharge:", val)
+
+	if !site.hasBatteryControl() {
+		return ErrBatteryControlNotAvailable
+	}
+
+	site.Lock()
+	defer site.Unlock()
+
+	if site.batteryGridDischarge != val {
+		site.batteryGridDischarge = val
+		settings.SetBool(keys.BatteryGridDischarge, val)
+		site.publish(keys.BatteryGridDischarge, val)
+	}
+
+	return nil
+}
+
 // GetOptimizerForecastAdjust returns whether the solar and consumption forecasts
 // are scaled by measured data before being sent to the optimizer
 func (site *Site) GetOptimizerForecastAdjust() bool {
@@ -471,6 +498,27 @@ func (site *Site) SetOptimizerForecastAdjust(val bool) error {
 	}
 
 	return nil
+}
+
+// GetSolarAdjusted returns if the solar forecast is adjusted to real production data
+func (site *Site) GetSolarAdjusted() bool {
+	site.RLock()
+	defer site.RUnlock()
+	return site.solarAdjusted
+}
+
+// SetSolarAdjusted sets if the solar forecast is adjusted to real production data
+func (site *Site) SetSolarAdjusted(val bool) {
+	site.log.DEBUG.Println("set solar adjusted:", val)
+
+	site.Lock()
+	defer site.Unlock()
+
+	if site.solarAdjusted != val {
+		site.solarAdjusted = val
+		settings.SetBool(keys.SolarAdjusted, val)
+		site.publish(keys.SolarAdjusted, val)
+	}
 }
 
 func (site *Site) GetBatteryGridChargeLimit() *float64 {

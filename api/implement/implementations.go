@@ -203,7 +203,7 @@ func (i *iCurrentGetter) GetMaxCurrent() (float64, error) {
 	return i.currentGetter0()
 }
 
-func Curtailer(curtailer0 func() (bool, error), curtailer1 func(int) error) api.Curtailer {
+func Curtailer(curtailer0 func() (int, error), curtailer1 func(int) error) api.Curtailer {
 	if curtailer0 == nil || curtailer1 == nil {
 		return nil
 	}
@@ -211,11 +211,11 @@ func Curtailer(curtailer0 func() (bool, error), curtailer1 func(int) error) api.
 }
 
 type iCurtailer struct {
-	curtailer0 func() (bool, error)
+	curtailer0 func() (int, error)
 	curtailer1 func(int) error
 }
 
-func (i *iCurtailer) Curtailed() (bool, error) {
+func (i *iCurtailer) CurtailedPercent() (int, error) {
 	return i.curtailer0()
 }
 
