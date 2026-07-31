@@ -187,14 +187,18 @@ func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gr
 		return types.Suggestion{}
 	}
 
-	// index 0 is the short remainder of the ongoing 15-min slot (dt[0]); the optimizer
-	// routinely leaves its charge at 0 and starts charging at the next full slot, so a
-	// deferred charge never surfaces in slot 0. Read the first full slot for the charge
-	// intent. Discharge in the partial slot is reliable and left as-is.
+	// index 0 is the short remainder of the ongoing 15-min slot (dt[0]). This used to be
+	// unreliable for charge - the optimizer's LP is indifferent about *when* within a locally
+	// flat price window to charge, so the solver could arbitrarily defer all of it past the
+	// short first slot into a later, larger one - but the optimizer's battery_first tie-break
+	// (set unconditionally for every home battery request) now resolves that degeneracy in
+	// slot 0's favor, so charge is trustworthy there like discharge always was. For loadpoints/
+	// vehicles the same degeneracy can still occur (no battery_first there - an EV may unplug
+	// before a deferred charge completes), but their suggestion only ever feeds the advisory UI
+	// (see loadpointSuggestion), never real charge control, so an occasionally-stale "stop"
+	// instead of "charge" is cosmetic - matching upstream, which reads index 0 unconditionally
+	// for the same reason.
 	charge := float64(res.ChargingPower[0]) / slotHours
-	if len(res.ChargingPower) > 1 {
-		charge = float64(res.ChargingPower[1]) * slotsPerHour
-	}
 	discharge := float64(res.DischargingPower[0]) / slotHours
 
 	s := types.Suggestion{Charge: charge, Discharge: discharge}

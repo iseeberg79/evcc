@@ -330,17 +330,17 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 		})
 	}
 
-	// a deferred charge sits at 0 in the short partial current slot but at full power
-	// in the first full slot - the charge intent must be read from slot 1
-	t.Run("charge read from first full slot, not the partial remainder", func(t *testing.T) {
+	// charge always reads the current slot (slot 0), even when a later slot ([1]) also holds a
+	// value - the optimizer's battery_first tie-break (set for every home battery request) keeps
+	// slot 0 trustworthy, so there is no more reason to peek ahead into slot 1
+	t.Run("charge reads the current slot, not a later one", func(t *testing.T) {
 		res := optimizer.BatteryResult{
-			ChargingPower:    []float32{0, 1592}, // slot 0 = partial remainder (0), slot 1 = full slot
+			ChargingPower:    []float32{0, 1592}, // slot 0 idle, slot 1 would charge - slot 1 must be ignored
 			DischargingPower: []float32{0, 0},
 		}
-		// slotHours is the short partial slot; slot 1 is scaled by the full-slot rate
 		s := currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, false, false, true, 285.0/3600)
-		assert.Equal(t, "holdcharge", s.Action)
-		assert.InDelta(t, 1592*slotsPerHour, s.Charge, 1e-3)
+		assert.Equal(t, "normal", s.Action)
+		assert.InDelta(t, 0, s.Charge, 1e-3)
 	})
 
 	// discharge stays on the current slot (slot 0), unaffected by the charge change
