@@ -302,7 +302,8 @@ func (site *Site) applyBatteryMode(mode api.BatteryMode) error {
 //
 // Charge power cap (holdcharge): the raw current-slot suggestion. Charge setpoint (forced
 // grid charge): the suggestion, or the battery's own reported max charge power when the
-// optimizer has no current-slot value (no optimizer, or plan stale).
+// optimizer has no current-slot value at all (no optimizer, or plan stale) - not merely
+// because the current-slot suggestion is a deliberate 0 W (hold/holdcharge/normal).
 //
 // TODO: guard the pushed setpoint against an active circuit/load-management limit once
 // that constraint is modelled, so forced grid-charging cannot exceed the site's headroom.
@@ -319,7 +320,7 @@ func (site *Site) updateBatteryChargeValues() {
 
 		if setpointCtrl, ok := api.Cap[api.BatteryChargeSetpointController](instance); ok {
 			watt := suggestion.Charge
-			if watt <= 0 {
+			if suggestion.Action == "" {
 				if powerLimiter, ok := api.Cap[api.BatteryPowerLimiter](instance); ok {
 					watt, _ = powerLimiter.GetPowerLimits()
 				}

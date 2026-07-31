@@ -91,15 +91,21 @@ func TestApplyBatteryMode(t *testing.T) {
 // each battery's cell via the typed capabilities. The push is unconditional (not mode-gated)
 // - the mode lifecycle is enforced on the consuming side (batterymode case), so the cell only
 // needs to stay fresh. The charge setpoint falls back to the battery's own reported max charge
-// power when the optimizer has no current-slot suggestion.
+// power only when there is no current-slot suggestion at all (Action == ""), not merely
+// because a real suggestion's charge value happens to be 0 (hold/holdcharge/normal) - conflating
+// the two used to leave the setpoint cell armed with the hardware max while holdcharge (case 4)
+// was in control, which then got applied at full power the moment mode switched to charge
+// (case 3).
 func TestUpdateBatteryChargeValues(t *testing.T) {
 	for _, tc := range []struct {
-		charge           float64
+		name             string
+		suggestion       *types.Suggestion
 		expectedCap      float64
 		expectedSetpoint float64
 	}{
-		{1234, 1234, 1234}, // suggestion available for both
-		{0, 0, 5000},       // no suggestion: cap stays 0, setpoint falls back to hardware max
+		{"suggestion available for both", &types.Suggestion{Action: "charge", Charge: 1234}, 1234, 1234},
+		{"holdcharge: real suggestion, deliberately 0 W - must not fall back", &types.Suggestion{Action: "holdcharge", Charge: 0}, 0, 0},
+		{"no suggestion at all: cap stays 0, setpoint falls back to hardware max", nil, 0, 5000},
 	} {
 		t.Logf("%+v", tc)
 
@@ -124,12 +130,15 @@ func TestUpdateBatteryChargeValues(t *testing.T) {
 			}),
 		}
 
+		suggestions := make(map[string]types.Suggestion)
+		if tc.suggestion != nil {
+			suggestions["battery1"] = *tc.suggestion
+		}
+
 		site := &Site{
-			log:           util.NewLogger("foo"),
-			batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice(config.Named{Name: "battery1"}, bat)},
-			holdChargeSuggestions: map[string]types.Suggestion{
-				"battery1": {Charge: tc.charge},
-			},
+			log:                   util.NewLogger("foo"),
+			batteryMeters:         []config.Device[api.Meter]{config.NewStaticDevice(config.Named{Name: "battery1"}, bat)},
+			holdChargeSuggestions: suggestions,
 		}
 
 		site.updateBatteryChargeValues()
