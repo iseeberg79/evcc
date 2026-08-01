@@ -727,11 +727,12 @@ func buildHoldChargePlan(details requestDetails, res *optimizer.OptimizationResu
 		// same power threshold as charge/discharge, so a trickle (numerical residual)
 		// does not count as importing for mode selection
 		gridImporting := i < len(res.GridImport) && float64(res.GridImport[i])/slotHours > suggestionThreshold
-		gridExporting := i < len(res.GridExport) && res.GridExport[i] > 0
+		gridExporting := i < len(res.GridExport) && float64(res.GridExport[i])/slotHours > suggestionThreshold
 
 		slot := make(map[string]types.Suggestion)
 		for bi, detail := range details.BatteryDetails {
-			if detail.Type != batteryTypeBattery || bi >= len(res.Batteries) {
+			// uncontrollable batteries can't act on a suggestion
+			if detail.Type != batteryTypeBattery || !detail.controllable || bi >= len(res.Batteries) {
 				continue
 			}
 			if s := slotSuggestion(detail, res.Batteries[bi], i, gridImporting, gridExporting, canCapCharge, slotHours); s.Action != "" {

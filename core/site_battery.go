@@ -209,8 +209,12 @@ func singleSlotHoldChargePlan(now time.Time, suggestions map[string]types.Sugges
 }
 
 // suggestions returns the plan's slot covering now, or nil if none does.
+// suggestions returns the plan's slot covering now, or nil if the plan is stale or no
+// slot covers now. The single staleness check here is what holdChargePlanAvailable,
+// holdChargeMode, and holdChargeSuggestion all resolve against - keeping "is this plan
+// still trusted" in one place instead of each caller re-deriving it.
 func (p *holdChargePlan) suggestions(now time.Time) map[string]types.Suggestion {
-	if p == nil {
+	if p == nil || now.Sub(p.updated) >= holdChargeStale {
 		return nil
 	}
 	for i, start := range p.starts {
@@ -225,9 +229,6 @@ func (p *holdChargePlan) suggestions(now time.Time) map[string]types.Suggestion 
 func (site *Site) holdChargePlanAvailable() bool {
 	site.RLock()
 	defer site.RUnlock()
-	if site.holdChargePlan == nil || time.Since(site.holdChargePlan.updated) >= holdChargeStale {
-		return false
-	}
 	return len(site.holdChargePlan.suggestions(time.Now())) > 0
 }
 
