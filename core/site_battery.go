@@ -32,36 +32,16 @@ func (site *Site) hasBatteryControl() bool {
 	return false
 }
 
-// hasBatteryChargeControl reports whether any configured battery can have its charge power
-// capped or set to a target (BatteryChargePowerLimiter/BatteryPowerSetpointController).
-// This is the opt-in for following the optimizer's per-slot plan automatically: only a
-// battery whose template actually implements one of these capabilities can follow a partial
-// planned charge value, so the capability itself gates the automation instead of a separate
-// user-facing setting.
-func (site *Site) hasBatteryChargeControl() bool {
-	for _, dev := range site.batteryMeters {
-		if dev == nil {
-			continue
-		}
-		meter := dev.Instance()
-
-		if api.HasCap[api.BatteryChargePowerLimiter](meter) || api.HasCap[api.BatteryPowerSetpointController](meter) {
-			return true
-		}
-	}
-
-	return false
-}
-
 // hasBatteryChargeCap reports whether any configured battery can have its charge power
-// capped (BatteryChargePowerLimiter specifically, not BatteryPowerSetpointController). A
-// cap and a forced setpoint are different mechanisms: a cap is an upper bound the device's
-// own self-consumption logic still respects, a setpoint forces an exact power regardless of
-// available PV. Self-consumption holdcharge (see slotSuggestion) needs cap semantics - gating
-// it on hasBatteryChargeControl()'s broader OR would let a setpoint-only battery force a
-// deliberate charge to a fixed value (or 0) during wanted PV charging instead of just leaving
-// self-consumption alone, so this check must stay independent of what the device template
-// happens to wire the setpoint capability to.
+// capped (BatteryChargePowerLimiter). A cap is an upper bound the device's own
+// self-consumption logic still respects - unlike BatteryPowerSetpointController, which
+// forces an exact power regardless of available PV. This gates only the self-consumption
+// holdcharge case in slotSuggestion, not the optimizer-follows-the-plan automation as a
+// whole: hold/charge/holdcharge already work via api.BatteryController alone on every
+// upstream device template (each implements holdcharge as an unconditional 0 W block),
+// with no dependency on either of the two push capabilities. Without this cap capability,
+// a battery still gets that upstream-style holdcharge (stop charging) when the plan calls
+// for it, just never the partial-power variant this capability enables.
 func (site *Site) hasBatteryChargeCap() bool {
 	for _, dev := range site.batteryMeters {
 		if dev == nil {
@@ -173,12 +153,9 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive bool, rate api.Rat
 		res = keepUnlessModified(api.BatteryCharge)
 	case site.dischargeControlActive(rate):
 		res = keepUnlessModified(api.BatteryHold)
-	case !site.batteryEstimator && site.hasBatteryChargeControl() && site.holdChargePlanAvailable():
+	case !site.batteryEstimator && site.holdChargePlanAvailable():
 		// follow the optimizer's current-slot plan; disabled while the battery estimator is
 		// active since the two hold charge sources must not fight over the same battery mode.
-		// gated on hasBatteryChargeControl() instead of a user-facing toggle: only a battery
-		// whose template implements the charge power/setpoint capability can actually follow
-		// a partial planned value, so the capability itself is the opt-in.
 		if site.dischargeControlSessionActive(rate) {
 			// Hold wins over HoldCharge for the whole smart-cost/fast charge session: the
 			// case above already yields Hold via dischargeControlActive while the vehicle

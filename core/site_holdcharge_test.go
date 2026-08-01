@@ -12,36 +12,45 @@ import (
 )
 
 // chargePowerLimiterMeter is a minimal api.Meter that also implements
-// BatteryChargePowerLimiter, so hasBatteryChargeControl() finds it - the capability is the
-// opt-in for following the optimizer's plan automatically (see requiredBatteryMode()).
+// BatteryChargePowerLimiter, so hasBatteryChargeCap() finds it.
 type chargePowerLimiterMeter struct{ api.Meter }
 
 func (chargePowerLimiterMeter) SetMaxChargePower(float64) error { return nil }
 
 // powerSetpointMeter implements only BatteryPowerSetpointController, not
-// BatteryChargePowerLimiter - used to guard that hasBatteryChargeCap() (unlike the
-// broader hasBatteryChargeControl()) does not treat the two as interchangeable.
+// BatteryChargePowerLimiter - used to guard that hasBatteryChargeCap() does not treat
+// the two as interchangeable (a setpoint forces an exact power, a cap doesn't).
 type powerSetpointMeter struct{ api.Meter }
 
 func (powerSetpointMeter) SetPowerSetpoint(float64) error { return nil }
 
 // TestHasBatteryChargeCap guards that hasBatteryChargeCap() requires
-// BatteryChargePowerLimiter specifically. It gates the self-consumption holdcharge case
-// in slotSuggestion, which needs cap semantics (an upper bound the device's own
-// self-consumption logic still respects); a battery with only
-// BatteryPowerSetpointController would force an exact value instead, so it must not
-// satisfy this check even though it does satisfy hasBatteryChargeControl().
+// BatteryChargePowerLimiter specifically, not BatteryPowerSetpointController - it gates
+// the self-consumption holdcharge case in slotSuggestion, which needs cap semantics (an
+// upper bound the device's own self-consumption logic still respects).
 func TestHasBatteryChargeCap(t *testing.T) {
 	newSite := func(bat api.Meter) *Site {
 		return &Site{batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{}, bat)}}
 	}
 
-	setpointOnly := newSite(powerSetpointMeter{})
-	require.True(t, setpointOnly.hasBatteryChargeControl(), "setpoint alone is enough for the broader automation opt-in")
-	require.False(t, setpointOnly.hasBatteryChargeCap(), "setpoint alone must not satisfy the cap-specific check")
+	require.False(t, newSite(powerSetpointMeter{}).hasBatteryChargeCap(), "setpoint alone must not satisfy the cap-specific check")
+	require.True(t, newSite(chargePowerLimiterMeter{}).hasBatteryChargeCap())
+}
 
-	withLimiter := newSite(chargePowerLimiterMeter{})
-	require.True(t, withLimiter.hasBatteryChargeCap())
+// TestRequiredBatteryModeIndependentOfCapability guards that the optimizer-follows-the-
+// plan automation activates regardless of BatteryChargePowerLimiter/
+// BatteryPowerSetpointController: hold/charge/holdcharge already work via
+// api.BatteryController alone on upstream device templates (holdcharge as an
+// unconditional 0 W block), so requiring either push capability here would silently
+// disable the automation for every battery template that doesn't implement them.
+func TestRequiredBatteryModeIndependentOfCapability(t *testing.T) {
+	site := &Site{
+		batteryMeters:  []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{}, &struct{ api.Meter }{})},
+		holdChargePlan: singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryHoldCharge.String()}}),
+	}
+
+	got := site.requiredBatteryMode(false, api.Rate{})
+	require.Equal(t, api.BatteryHoldCharge.String(), got.String())
 }
 
 func TestHoldChargeMode(t *testing.T) {
