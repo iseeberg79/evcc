@@ -970,13 +970,7 @@ func (site *Site) updateMeters() error {
 		return err
 	}
 
-	// re-run as soon as we cross into a new slot, not merely 15 minutes after the
-	// last run: the run timestamp floats with request duration/jitter, so gating on
-	// elapsed time alone lets it drift behind the slot grid - res.ChargingPower[0]
-	// etc. (currentSlotSuggestion) are read on the assumption that slot 0 is always
-	// the current slot, so a stale run leaves that assumption violated for however
-	// far the drift has grown, not just the intended short first-slot remainder.
-	if sponsor.IsAuthorized() && optimizerEnabled() && time.Now().Truncate(tariff.SlotDuration).After(optimizerUpdated.Truncate(tariff.SlotDuration)) {
+	if sponsor.IsAuthorized() && optimizerEnabled() && time.Since(optimizerUpdated) >= tariff.SlotDuration {
 		go site.optimizerUpdateAsync()
 	}
 
