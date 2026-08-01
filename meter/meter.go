@@ -34,7 +34,7 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 		LimitSoc              *plugin.Config // optional
 		BatteryMode           *plugin.Config // optional
 		MaxChargePowerLimit   *plugin.Config // optional
-		ChargeSetpoint        *plugin.Config // optional
+		PowerSetpoint         *plugin.Config // optional
 	}{}
 
 	if err := util.DecodeOther(other, &cc); err != nil {
@@ -106,13 +106,13 @@ func NewConfigurableFromConfig(ctx context.Context, other map[string]any) (api.M
 			implement.Has(m, implement.BatteryChargePowerLimiter(maxChargePowerS))
 		}
 
-		if cc.ChargeSetpoint != nil {
-			chargeSetpointS, err := cc.ChargeSetpoint.FloatSetter(ctx, "chargeSetpoint")
+		if cc.PowerSetpoint != nil {
+			powerSetpointS, err := cc.PowerSetpoint.FloatSetter(ctx, "powerSetpoint")
 			if err != nil {
-				return nil, fmt.Errorf("battery charge setpoint: %w", err)
+				return nil, fmt.Errorf("battery power setpoint: %w", err)
 			}
 
-			implement.Has(m, implement.BatteryChargeSetpointController(chargeSetpointS))
+			implement.Has(m, implement.BatteryPowerSetpointController(powerSetpointS))
 		}
 
 		switch {

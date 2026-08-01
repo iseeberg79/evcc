@@ -33,7 +33,7 @@ func (site *Site) hasBatteryControl() bool {
 }
 
 // hasBatteryChargeControl reports whether any configured battery can have its charge power
-// capped or set to a target (BatteryChargePowerLimiter/BatteryChargeSetpointController).
+// capped or set to a target (BatteryChargePowerLimiter/BatteryPowerSetpointController).
 // This is the opt-in for following the optimizer's per-slot plan automatically: only a
 // battery whose template actually implements one of these capabilities can follow a partial
 // planned charge value, so the capability itself gates the automation instead of a separate
@@ -45,7 +45,7 @@ func (site *Site) hasBatteryChargeControl() bool {
 		}
 		meter := dev.Instance()
 
-		if api.HasCap[api.BatteryChargePowerLimiter](meter) || api.HasCap[api.BatteryChargeSetpointController](meter) {
+		if api.HasCap[api.BatteryChargePowerLimiter](meter) || api.HasCap[api.BatteryPowerSetpointController](meter) {
 			return true
 		}
 	}
@@ -345,7 +345,7 @@ func (site *Site) applyBatteryMode(mode api.BatteryMode) error {
 // current mode) keeps the cell fresh, so the consuming case reads the right value the
 // moment the mode applies.
 //
-// Charge power cap (holdcharge): the raw current-slot suggestion. Charge setpoint (forced
+// Charge power cap (holdcharge): the raw current-slot suggestion. Power setpoint (forced
 // grid charge): the suggestion, or the battery's own reported max charge power when the
 // optimizer has no current-slot value at all (no optimizer, or plan stale) - not merely
 // because the current-slot suggestion is a deliberate 0 W (hold/holdcharge/normal).
@@ -364,7 +364,7 @@ func (site *Site) updateBatteryChargeValues() {
 			}
 		}
 
-		if setpointCtrl, ok := api.Cap[api.BatteryChargeSetpointController](instance); ok {
+		if setpointCtrl, ok := api.Cap[api.BatteryPowerSetpointController](instance); ok {
 			watt := suggestion.Charge
 			fallback := suggestion.Action == ""
 			if fallback {
@@ -372,9 +372,9 @@ func (site *Site) updateBatteryChargeValues() {
 					watt, _ = powerLimiter.GetPowerLimits()
 				}
 			}
-			site.log.TRACE.Printf("battery %s charge setpoint: %.0fW action=%q fallback=%v", deviceTitleOrName(dev), watt, suggestion.Action, fallback)
-			if err := setpointCtrl.SetChargeSetpoint(watt); err != nil && !errors.Is(err, api.ErrNotAvailable) {
-				site.log.ERROR.Printf("battery %s charge setpoint: %v", deviceTitleOrName(dev), err)
+			site.log.TRACE.Printf("battery %s power setpoint: %.0fW action=%q fallback=%v", deviceTitleOrName(dev), watt, suggestion.Action, fallback)
+			if err := setpointCtrl.SetPowerSetpoint(watt); err != nil && !errors.Is(err, api.ErrNotAvailable) {
+				site.log.ERROR.Printf("battery %s power setpoint: %v", deviceTitleOrName(dev), err)
 			}
 		}
 	}

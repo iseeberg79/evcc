@@ -140,11 +140,11 @@ render: |
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
       - case: 3 # charge
         set:
-          # forced grid-charge setpoint, pushed by site into the chargesetpoint cell
-          # (see BatteryChargeSetpointController) and written here inside the batterymode
+          # forced grid-charge setpoint, pushed by site into the powersetpoint cell
+          # (see BatteryPowerSetpointController) and written here inside the batterymode
           # watchdog, so it shares the mode's re-write/reset lifecycle
           source: memory
-          name: chargesetpoint
+          name: powersetpoint
           set:
             source: modbus
             {{- include "modbus" . | indent 10 }}
@@ -168,12 +168,23 @@ render: |
               address: 1038 # Battery max. charge power limit, absolute [W]
               type: writemultiple
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
+      - case: 5 # discharge (forced feed-in arbitrage)
+        set:
+          source: memory
+          name: powersetpoint
+          set:
+            source: modbus
+            {{- include "modbus" . | indent 10 }}
+            register:
+              address: 1034 # Battery charge power (DC) setpoint, absolute [W];
+              type: writemultiple
+              encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
   maxchargepowerlimit: # site push target (BatteryChargePowerLimiter); consumed by batterymode case 4
     source: memory
     name: maxchargepowerlimit
-  chargesetpoint: # site push target (BatteryChargeSetpointController); consumed by batterymode case 3
+  powersetpoint: # site push target (BatteryPowerSetpointController); consumed by batterymode case 3
     source: memory
-    name: chargesetpoint
+    name: powersetpoint
     {{- if .maxchargepower }}
     initial: {{ .maxchargepower }} # W - matches the old template's static forced-charge fallback
     {{- end }}

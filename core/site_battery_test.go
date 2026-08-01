@@ -114,14 +114,14 @@ func TestUpdateBatteryChargeValues(t *testing.T) {
 		var bat api.Meter = &struct {
 			api.Meter
 			api.BatteryChargePowerLimiter
-			api.BatteryChargeSetpointController
+			api.BatteryPowerSetpointController
 			api.BatteryPowerLimiter
 		}{
 			BatteryChargePowerLimiter: implement.BatteryChargePowerLimiter(func(watt float64) error {
 				pushedCap = watt
 				return nil
 			}),
-			BatteryChargeSetpointController: implement.BatteryChargeSetpointController(func(watt float64) error {
+			BatteryPowerSetpointController: implement.BatteryPowerSetpointController(func(watt float64) error {
 				pushedSetpoint = watt
 				return nil
 			}),
