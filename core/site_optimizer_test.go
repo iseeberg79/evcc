@@ -363,6 +363,39 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{ChargingPower: []float32{0}, DischargingPower: []float32{0}}, 5, true, false, true, 1))
 }
 
+// TestBuildHoldChargePlanTrimsHorizon guards that the plan only retains slots within
+// holdChargeStale, not the full (potentially multi-day) optimizer horizon -
+// holdChargePlanAvailable() would never look up the rest anyway.
+func TestBuildHoldChargePlanTrimsHorizon(t *testing.T) {
+	now := time.Now()
+	const minLen = 192 // 2 days at 15-min slots, matching the optimizer's own cap
+
+	dt := timeSteps(minLen, now)
+	details := requestDetails{
+		Timestamps: asTimestamps(dt, now),
+		BatteryDetails: []batteryDetail{
+			{Type: batteryTypeBattery, Name: "b"},
+		},
+	}
+	res := &optimizer.OptimizationResult{
+		Batteries: []optimizer.BatteryResult{{
+			ChargingPower:    make([]float32, minLen),
+			DischargingPower: make([]float32, minLen),
+		}},
+	}
+
+	plan := buildHoldChargePlan(details, res, dt, true)
+
+	assert.Less(t, len(plan.starts), minLen, "plan should be trimmed well below the full horizon")
+	require.NotEmpty(t, plan.starts)
+
+	// the last retained slot must still cover the full stale window from the first slot's
+	// start, so a lookup anywhere within holdChargePlanAvailable()'s trust window succeeds
+	lastEnd := plan.ends[len(plan.ends)-1]
+	assert.False(t, lastEnd.Before(plan.starts[0].Add(holdChargeStale)),
+		"last slot (ends %v) must cover the stale window from %v", lastEnd, plan.starts[0].Add(holdChargeStale))
+}
+
 // TestSuggestionActionable ensures the actionable flag follows the current state
 // instead of the state at optimizer run time
 func TestSuggestionActionable(t *testing.T) {

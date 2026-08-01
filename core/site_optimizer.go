@@ -696,9 +696,26 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 // "now" instead of always trusting slot 0 of a cached response that ages between
 // optimizer runs (see holdChargePlan in site_battery.go).
 func buildHoldChargePlan(details requestDetails, res *optimizer.OptimizationResult, dt []int, canCapCharge bool) *holdChargePlan {
-	starts := details.Timestamps
-	ends := make([]time.Time, len(dt))
-	slots := make([]map[string]types.Suggestion, len(dt))
+	now := time.Now()
+
+	// holdChargePlanAvailable() discards the whole plan once it's older than
+	// holdChargeStale, so slots starting beyond that horizon are never looked up -
+	// skip computing and storing them. With a 15-min slot duration and a 30-min
+	// stale window, this trims down to a handful of slots instead of the full
+	// (up to multi-day) optimizer horizon.
+	n := len(dt)
+	cutoff := now.Add(holdChargeStale)
+	for i, s := range details.Timestamps {
+		if !s.Before(cutoff) {
+			n = i
+			break
+		}
+	}
+
+	starts := details.Timestamps[:n]
+	dt = dt[:n]
+	ends := make([]time.Time, n)
+	slots := make([]map[string]types.Suggestion, n)
 
 	for i := range dt {
 		slotHours := float64(dt[i]) / 3600
@@ -724,7 +741,7 @@ func buildHoldChargePlan(details requestDetails, res *optimizer.OptimizationResu
 		slots[i] = slot
 	}
 
-	return &holdChargePlan{updated: time.Now(), starts: starts, ends: ends, slots: slots}
+	return &holdChargePlan{updated: now, starts: starts, ends: ends, slots: slots}
 }
 
 func (site *Site) addBatteryForecastTotals(req []optimizer.BatteryConfig, resp []optimizer.BatteryResult) *types.BatteryForecast {
