@@ -115,9 +115,8 @@ type batteryDetail struct {
 	Name     string      `json:"name,omitempty"`
 	Capacity float64     `json:"capacity,omitempty"`
 
-	loadpoint                *int // originating loadpoint id for loadpoint/vehicle entries
-	controllable             bool // battery exposes a controller; only these get suggestions
-	hasBatteryChargeLimitCap bool // battery exposes BatteryChargePowerLimiter; gates self-consumption holdcharge (see slotSuggestion)
+	loadpoint    *int // originating loadpoint id for loadpoint/vehicle entries
+	controllable bool // battery exposes a controller; only these get suggestions
 }
 
 type batteryResult struct {
@@ -177,10 +176,13 @@ func suggestionEvent(detail batteryDetail, s types.Suggestion) (string, messenge
 // maps cleanly onto the discrete battery mode / loadpoint intent that control would later apply.
 // An idle battery is interpreted from the grid flow: importing means discharge is withheld
 // (hold), exporting means charging is withheld (holdcharge). Charging without importing (pure
-// self-consumption) is capped at the planned value via holdcharge too, but only when the
-// battery can actually follow a capped value (detail.hasBatteryChargeLimitCap) - otherwise
-// there is nothing to gain from holdcharge over normal, since no capability would apply the cap.
-func slotSuggestion(detail batteryDetail, res optimizer.BatteryResult, i int, gridImporting, gridExporting bool, slotHours float64) types.Suggestion {
+// self-consumption) is capped at the planned value via holdcharge too, but only when canCapCharge
+// - otherwise there is nothing to gain from holdcharge over normal, since no capability would
+// apply the cap. canCapCharge must hold for every home battery, not just this one: the resulting
+// mode is dispatched site-wide (applyBatteryMode has no per-battery mode concept), so if any
+// other battery lacked the cap it would receive the same HoldCharge mode and, without a value
+// push of its own, fall back to an unconditional 0 W block instead of the intended partial cap.
+func slotSuggestion(detail batteryDetail, res optimizer.BatteryResult, i int, gridImporting, gridExporting, canCapCharge bool, slotHours float64) types.Suggestion {
 	if slotHours <= 0 || i < 0 || i >= len(res.ChargingPower) || i >= len(res.DischargingPower) {
 		return types.Suggestion{}
 	}
@@ -208,7 +210,7 @@ func slotSuggestion(detail batteryDetail, res optimizer.BatteryResult, i int, gr
 		case charge > suggestionThreshold && gridImporting:
 			// charging while importing means grid charging
 			s.Action = api.BatteryCharge.String()
-		case charge > suggestionThreshold && !gridImporting && detail.hasBatteryChargeLimitCap:
+		case charge > suggestionThreshold && !gridImporting && canCapCharge:
 			// self-consumption charging with a planned partial power: cap it via holdcharge
 			// so the plan's target is enforced instead of the device's own self-consumption
 			// logic charging past it. Without a charge-cap capability, holdcharge would apply
@@ -624,6 +626,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 	// (numerical residual) does not count as importing for mode selection
 	gridImporting := len(resp.JSON200.GridImport) > 0 && float64(resp.JSON200.GridImport[0])/slotHours > suggestionThreshold
 	gridExporting := len(resp.JSON200.GridExport) > 0 && resp.JSON200.GridExport[0] > 0
+	canCapCharge := site.allBatteriesHaveChargeCap()
 
 	var batteries []batteryResult
 	suggestions := make(map[string]types.Suggestion, len(req.Batteries))
@@ -633,7 +636,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 		batResp := resp.JSON200.Batteries[i]
 		detail := details.BatteryDetails[i]
 
-		suggestion := slotSuggestion(detail, batResp, 0, gridImporting, gridExporting, slotHours)
+		suggestion := slotSuggestion(detail, batResp, 0, gridImporting, gridExporting, canCapCharge, slotHours)
 
 		batResult := batteryResult{
 			batteryDetail: detail,
@@ -667,7 +670,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 	site.publish("evopt-batteries", batteries)
 
 	site.Lock()
-	site.holdChargePlan = buildHoldChargePlan(details, resp.JSON200, dt)
+	site.holdChargePlan = buildHoldChargePlan(details, resp.JSON200, dt, canCapCharge)
 	site.Unlock()
 
 	site.setSuggestions(suggestions, lpSuggestions)
@@ -690,7 +693,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 // slot, so holdChargeMode/updateBatteryChargeValues can look up whichever slot covers
 // "now" instead of always trusting slot 0 of a cached response that ages between
 // optimizer runs (see holdChargePlan in site_battery.go).
-func buildHoldChargePlan(details requestDetails, res *optimizer.OptimizationResult, dt []int) *holdChargePlan {
+func buildHoldChargePlan(details requestDetails, res *optimizer.OptimizationResult, dt []int, canCapCharge bool) *holdChargePlan {
 	now := time.Now()
 
 	// holdChargePlanAvailable() discards the whole plan once it's older than
@@ -730,7 +733,7 @@ func buildHoldChargePlan(details requestDetails, res *optimizer.OptimizationResu
 			if detail.Type != batteryTypeBattery || !detail.controllable || bi >= len(res.Batteries) {
 				continue
 			}
-			if s := slotSuggestion(detail, res.Batteries[bi], i, gridImporting, gridExporting, slotHours); s.Action != "" {
+			if s := slotSuggestion(detail, res.Batteries[bi], i, gridImporting, gridExporting, canCapCharge, slotHours); s.Action != "" {
 				slot[detail.Name] = s
 			}
 		}
@@ -940,12 +943,11 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 	}
 
 	detail := batteryDetail{
-		Type:                     batteryTypeBattery,
-		Name:                     dev.Config().Name,
-		Title:                    deviceProperties(dev).Title,
-		Capacity:                 *b.Capacity,
-		controllable:             controllable,
-		hasBatteryChargeLimitCap: api.HasCap[api.BatteryChargePowerLimiter](instance),
+		Type:         batteryTypeBattery,
+		Name:         dev.Config().Name,
+		Title:        deviceProperties(dev).Title,
+		Capacity:     *b.Capacity,
+		controllable: controllable,
 	}
 
 	// tariff forecast-based grid charging demand

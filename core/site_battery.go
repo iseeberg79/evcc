@@ -32,6 +32,25 @@ func (site *Site) hasBatteryControl() bool {
 	return false
 }
 
+// allBatteriesHaveChargeCap reports whether every configured battery can have its charge
+// power capped (BatteryChargePowerLimiter). It gates only the self-consumption holdcharge
+// case in slotSuggestion, which needs every battery to follow a capped value: the resulting
+// mode is dispatched site-wide (applyBatteryMode has no per-battery mode concept), so if any
+// battery lacked the cap it would receive the same HoldCharge mode and, without a value push
+// of its own, fall back to an unconditional 0 W block instead of the intended partial cap.
+func (site *Site) allBatteriesHaveChargeCap() bool {
+	for _, dev := range site.batteryMeters {
+		if dev == nil {
+			continue
+		}
+		if !api.HasCap[api.BatteryChargePowerLimiter](dev.Instance()) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // setBatteryMode sets the battery mode
 func (site *Site) setBatteryMode(batMode api.BatteryMode) {
 	site.batteryMode = batMode

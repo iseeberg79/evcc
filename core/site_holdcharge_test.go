@@ -17,6 +17,27 @@ type chargePowerLimiterMeter struct{ api.Meter }
 
 func (chargePowerLimiterMeter) SetMaxChargePower(float64) error { return nil }
 
+// TestAllBatteriesHaveChargeCap guards that allBatteriesHaveChargeCap() requires every
+// configured battery to have BatteryChargePowerLimiter, not just one: the self-consumption
+// holdcharge suggestion it gates is dispatched as one site-wide mode (applyBatteryMode has
+// no per-battery mode concept), so a single battery lacking the cap would receive the same
+// HoldCharge mode without a value push of its own and fall back to a hard 0 W block.
+func TestAllBatteriesHaveChargeCap(t *testing.T) {
+	newSite := func(bats ...api.Meter) *Site {
+		devs := make([]config.Device[api.Meter], len(bats))
+		for i, bat := range bats {
+			devs[i] = config.NewStaticDevice[api.Meter](config.Named{}, bat)
+		}
+		return &Site{batteryMeters: devs}
+	}
+
+	require.True(t, newSite().allBatteriesHaveChargeCap(), "no batteries: vacuously true")
+	require.True(t, newSite(chargePowerLimiterMeter{}).allBatteriesHaveChargeCap())
+	require.False(t, newSite(&struct{ api.Meter }{}).allBatteriesHaveChargeCap(), "no cap capability")
+	require.False(t, newSite(chargePowerLimiterMeter{}, &struct{ api.Meter }{}).allBatteriesHaveChargeCap(),
+		"one battery without the cap must fail the check for all")
+}
+
 // TestRequiredBatteryModeIndependentOfCapability guards that the optimizer-follows-the-
 // plan automation activates regardless of BatteryChargePowerLimiter/
 // BatteryPowerSetpointController: hold/charge/holdcharge already work via
