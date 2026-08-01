@@ -136,9 +136,9 @@ func TestUpdateBatteryChargeValues(t *testing.T) {
 		}
 
 		site := &Site{
-			log:                   util.NewLogger("foo"),
-			batteryMeters:         []config.Device[api.Meter]{config.NewStaticDevice(config.Named{Name: "battery1"}, bat)},
-			holdChargeSuggestions: suggestions,
+			log:            util.NewLogger("foo"),
+			batteryMeters:  []config.Device[api.Meter]{config.NewStaticDevice(config.Named{Name: "battery1"}, bat)},
+			holdChargePlan: singleSlotHoldChargePlan(time.Now(), suggestions),
 		}
 
 		site.updateBatteryChargeValues()

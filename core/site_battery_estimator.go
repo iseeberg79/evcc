@@ -275,9 +275,9 @@ func (site *Site) estimateTotalHoldChargePower(totalDeficit float64) float64 {
 }
 
 // updateBatteryEstimatorSuggestions computes the estimator's per-battery hold charge power
-// and stores it using the same current-slot-suggestion contract the optimizer uses
-// (site.holdChargeSuggestions and the "evopt-batteries" publish), so device templates such
-// as the Kostal Reg 1038 holdcharge case apply it without any changes.
+// and stores it using the same plan contract the optimizer uses (site.holdChargePlan and
+// the "evopt-batteries" publish), so device templates such as the Kostal Reg 1038
+// holdcharge case apply it without any changes.
 func (site *Site) updateBatteryEstimatorSuggestions() {
 	deficits := make(map[string]float64, len(site.batteryMeters))
 	var totalDeficit float64
@@ -324,8 +324,7 @@ func (site *Site) updateBatteryEstimatorSuggestions() {
 	site.publish("batteryEstimatorForecast", site.estimatorForecast(deficits))
 
 	site.Lock()
-	site.holdChargeSuggestions = suggestions
-	site.holdChargeUpdated = time.Now()
+	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), suggestions)
 	site.Unlock()
 }
 

@@ -32,7 +32,7 @@ func TestHoldChargeMode(t *testing.T) {
 		{"holdcharge wins over charge", map[string]types.Suggestion{"a": {Action: api.BatteryCharge.String()}, "b": {Action: api.BatteryHoldCharge.String()}}, api.BatteryHoldCharge},
 		{"hold wins over charge", map[string]types.Suggestion{"a": {Action: api.BatteryCharge.String()}, "b": {Action: api.BatteryHold.String()}}, api.BatteryHold},
 	} {
-		site := &Site{holdChargeSuggestions: tc.suggestions}
+		site := &Site{holdChargePlan: singleSlotHoldChargePlan(time.Now(), tc.suggestions)}
 		require.Equal(t, tc.want, site.holdChargeMode(), tc.name)
 	}
 }
@@ -74,8 +74,7 @@ func TestHoldChargeYieldsToSmartChargeSession(t *testing.T) {
 			log:                     util.NewLogger("site"),
 			batteryMeters:           []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{}, chargePowerLimiterMeter{})},
 			batteryDischargeControl: true,
-			holdChargeSuggestions:   map[string]types.Suggestion{"b": {Action: api.BatteryHoldCharge.String()}},
-			holdChargeUpdated:       time.Now(),
+			holdChargePlan:          singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryHoldCharge.String()}}),
 			loadpoints:              []*Loadpoint{newLoadpoint(tc.status, &limit)},
 		}
 		site.batteryMode = tc.batMode
@@ -89,10 +88,32 @@ func TestHoldChargePlanAvailable(t *testing.T) {
 	site := &Site{}
 	require.False(t, site.holdChargePlanAvailable(), "no plan")
 
-	site.holdChargeSuggestions = map[string]types.Suggestion{"b": {Charge: 1000}}
-	site.holdChargeUpdated = time.Now()
+	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Charge: 1000}})
 	require.True(t, site.holdChargePlanAvailable(), "fresh plan")
 
-	site.holdChargeUpdated = time.Now().Add(-2 * holdChargeStale)
+	site.holdChargePlan.updated = time.Now().Add(-2 * holdChargeStale)
 	require.False(t, site.holdChargePlanAvailable(), "stale plan")
+}
+
+// TestHoldChargePlanSlotLookup guards the actual bug this design fixes: a multi-slot
+// plan retains a suggestion per slot, so looking it up by wall-clock time resolves to
+// the slot that actually covers "now" instead of the frozen slot 0 it was built with -
+// even though the plan itself (its "updated" timestamp) may be many minutes old.
+func TestHoldChargePlanSlotLookup(t *testing.T) {
+	base := time.Date(2026, 8, 1, 10, 42, 0, 0, time.UTC)
+	plan := &holdChargePlan{
+		updated: base,
+		starts:  []time.Time{base, base.Add(3 * time.Minute), base.Add(18 * time.Minute)},
+		ends:    []time.Time{base.Add(3 * time.Minute), base.Add(18 * time.Minute), base.Add(33 * time.Minute)},
+		slots: []map[string]types.Suggestion{
+			{"b": {Action: "normal"}},
+			{"b": {Action: "holdcharge"}},
+			{"b": {Action: "hold"}},
+		},
+	}
+
+	require.Equal(t, "normal", plan.suggestions(base)["b"].Action, "at run time: slot 0")
+	require.Equal(t, "holdcharge", plan.suggestions(base.Add(10*time.Minute))["b"].Action, "10:52, within slot 1's window: slot 1, not the frozen slot 0")
+	require.Equal(t, "hold", plan.suggestions(base.Add(20*time.Minute))["b"].Action, "11:02, within slot 2's window: slot 2")
+	require.Nil(t, plan.suggestions(base.Add(40*time.Minute)), "beyond the plan's horizon: no slot matches")
 }

@@ -175,29 +175,74 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive bool, rate api.Rat
 	return res
 }
 
-// holdChargeStale bounds how long a stored optimizer plan is trusted
+// holdChargeStale bounds how long a stored plan is trusted, regardless of whether its
+// slots still cover "now" - the plan's inputs (SoC, PV, prices) age independently of
+// slot coverage.
 const holdChargeStale = 30 * time.Minute
 
-// holdChargePlanAvailable reports whether a recent optimizer plan exists
+// holdChargePlan is an immutable per-slot snapshot of each home battery's planned
+// action (from the optimizer or the battery estimator), keyed by battery name.
+// slotSuggestion only depends on plan data, never on live measurements, so the full
+// horizon is computed once per run instead of being
+// re-derived from a single frozen "slot 0" on every site cycle - which drifted behind
+// the wall clock the longer the cached plan was reused (see FORK_CHANGES_evcc.md).
+// The producer (optimizerUpdate/updateBatteryEstimatorSuggestions) swaps the pointer
+// under site.Lock; consumers read it once under RLock, so a run landing mid-cycle can
+// never mix mode and charge value from two different plans.
+type holdChargePlan struct {
+	updated time.Time
+	starts  []time.Time
+	ends    []time.Time
+	slots   []map[string]types.Suggestion
+}
+
+// singleSlotHoldChargePlan wraps a one-off suggestion in the same plan shape the
+// optimizer produces, for the battery estimator, which recomputes live every cycle
+// instead of solving a multi-slot horizon.
+func singleSlotHoldChargePlan(now time.Time, suggestions map[string]types.Suggestion) *holdChargePlan {
+	return &holdChargePlan{
+		updated: now,
+		starts:  []time.Time{now},
+		ends:    []time.Time{now.Add(holdChargeStale)},
+		slots:   []map[string]types.Suggestion{suggestions},
+	}
+}
+
+// suggestions returns the plan's slot covering now, or nil if none does.
+func (p *holdChargePlan) suggestions(now time.Time) map[string]types.Suggestion {
+	if p == nil {
+		return nil
+	}
+	for i, start := range p.starts {
+		if !now.Before(start) && now.Before(p.ends[i]) {
+			return p.slots[i]
+		}
+	}
+	return nil
+}
+
+// holdChargePlanAvailable reports whether a recent plan exists with a slot for now
 func (site *Site) holdChargePlanAvailable() bool {
 	site.RLock()
 	defer site.RUnlock()
-	return len(site.holdChargeSuggestions) > 0 && time.Since(site.holdChargeUpdated) < holdChargeStale
+	if site.holdChargePlan == nil || time.Since(site.holdChargePlan.updated) >= holdChargeStale {
+		return false
+	}
+	return len(site.holdChargePlan.suggestions(time.Now())) > 0
 }
 
-// holdChargeMode collapses the optimizer's current-slot per-battery suggestions
-// into the single global battery mode that applies to all home batteries. The
-// optimizer already classifies each battery (normal/hold/charge/holdcharge), so
-// we map that action directly instead of re-deriving it from raw charge power.
-// On conflicting suggestions the peak-shaving intent wins: holdcharge > hold >
-// charge > normal. Order-independent (holdcharge short-circuits; the rest only
-// upgrade the priority).
+// holdChargeMode collapses the plan's current-slot per-battery suggestions into the
+// single global battery mode that applies to all home batteries. The optimizer already
+// classifies each battery (normal/hold/charge/holdcharge), so we map that action
+// directly instead of re-deriving it from raw charge power. On conflicting suggestions
+// the peak-shaving intent wins: holdcharge > hold > charge > normal. Order-independent
+// (holdcharge short-circuits; the rest only upgrade the priority).
 func (site *Site) holdChargeMode() api.BatteryMode {
 	site.RLock()
 	defer site.RUnlock()
 
 	mode := api.BatteryNormal
-	for _, s := range site.holdChargeSuggestions {
+	for _, s := range site.holdChargePlan.suggestions(time.Now()) {
 		switch s.Action {
 		case "holdcharge":
 			return api.BatteryHoldCharge
@@ -246,7 +291,7 @@ func (site *Site) batteryMaxSocReached(dev config.Device[api.Meter]) (bool, erro
 func (site *Site) holdChargeSuggestion(name string) types.Suggestion {
 	site.RLock()
 	defer site.RUnlock()
-	return site.holdChargeSuggestions[name]
+	return site.holdChargePlan.suggestions(time.Now())[name]
 }
 
 // applyBatteryMode applies the mode to each battery

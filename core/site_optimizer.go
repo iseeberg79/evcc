@@ -171,8 +171,8 @@ func suggestionEvent(detail batteryDetail, s types.Suggestion) (string, messenge
 	}
 }
 
-// currentSlotSuggestion maps the optimizer's first-slot corner result onto an advisory action.
-// Because the optimization is linear, the first slot is at an operating-range extreme, so it
+// slotSuggestion maps the optimizer's slot-i corner result onto an advisory action.
+// Because the optimization is linear, each slot is at an operating-range extreme, so it
 // maps cleanly onto the discrete battery mode / loadpoint intent that control would later apply.
 // An idle battery is interpreted from the grid flow: importing means discharge is withheld
 // (hold), exporting means charging is withheld (holdcharge). Charging without importing (pure
@@ -182,24 +182,25 @@ func suggestionEvent(detail batteryDetail, s types.Suggestion) (string, messenge
 // apply the cap. Mirrors the removed withhold_charge mechanism's side effect (see d452873fd),
 // now unconditional on that toggle but still gated on charge-control capability like the rest
 // of the optimizer-follows-the-plan automation (see hasBatteryChargeControl in site_battery.go).
-func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, gridImporting, gridExporting, canCapCharge bool, slotHours float64) types.Suggestion {
-	if slotHours <= 0 || len(res.ChargingPower) == 0 || len(res.DischargingPower) == 0 {
+func slotSuggestion(detail batteryDetail, res optimizer.BatteryResult, i int, gridImporting, gridExporting, canCapCharge bool, slotHours float64) types.Suggestion {
+	if slotHours <= 0 || i < 0 || i >= len(res.ChargingPower) || i >= len(res.DischargingPower) {
 		return types.Suggestion{}
 	}
 
-	// index 0 is the short remainder of the ongoing 15-min slot (dt[0]). This used to be
-	// unreliable for charge - the optimizer's LP is indifferent about *when* within a locally
-	// flat price window to charge, so the solver could arbitrarily defer all of it past the
-	// short first slot into a later, larger one - but the optimizer's battery_first tie-break
-	// (set unconditionally for every home battery request) now resolves that degeneracy in
-	// slot 0's favor, so charge is trustworthy there like discharge always was. For loadpoints/
-	// vehicles the same degeneracy can still occur (no battery_first there - an EV may unplug
-	// before a deferred charge completes), but their suggestion only ever feeds the advisory UI
-	// (see loadpointSuggestion), never real charge control, so an occasionally-stale "stop"
-	// instead of "charge" is cosmetic - matching upstream, which reads index 0 unconditionally
-	// for the same reason.
-	charge := float64(res.ChargingPower[0]) / slotHours
-	discharge := float64(res.DischargingPower[0]) / slotHours
+	// slot i's charge value used to be unreliable - the optimizer's LP is indifferent about
+	// *when* within a locally flat price window to charge, so the solver could arbitrarily
+	// defer all of it into a later, larger slot - but the optimizer's battery_first tie-break
+	// (set unconditionally for every home battery request) biases the whole horizon towards
+	// charging as early as cost-neutral, resolving that degeneracy in favor of whichever slot
+	// is evaluated, so charge is trustworthy at any index like discharge always was. For
+	// loadpoints/vehicles the same degeneracy can still occur (no battery_first there - an EV
+	// may unplug before a deferred charge completes), but their suggestion only ever feeds the
+	// advisory UI (see loadpointSuggestion), never real charge control, so an occasionally-stale
+	// "stop" instead of "charge" is cosmetic - matching upstream, which reads slot 0
+	// unconditionally for the same reason (loadpoints/vehicles are never plan-cached across
+	// slots, only batteries are - see holdChargePlan in site_battery.go).
+	charge := float64(res.ChargingPower[i]) / slotHours
+	discharge := float64(res.DischargingPower[i]) / slotHours
 
 	s := types.Suggestion{Charge: charge, Discharge: discharge}
 
@@ -635,7 +636,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 		batResp := resp.JSON200.Batteries[i]
 		detail := details.BatteryDetails[i]
 
-		suggestion := currentSlotSuggestion(detail, batResp, gridImporting, gridExporting, canCapCharge, slotHours)
+		suggestion := slotSuggestion(detail, batResp, 0, gridImporting, gridExporting, canCapCharge, slotHours)
 
 		batResult := batteryResult{
 			batteryDetail: detail,
@@ -668,16 +669,8 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 
 	site.publish("evopt-batteries", batteries)
 
-	// store the current-slot plan per home battery so the battery mode can follow it
-	holdChargeSuggestions := make(map[string]types.Suggestion, len(batteries))
-	for _, b := range batteries {
-		if b.Type == batteryTypeBattery {
-			holdChargeSuggestions[b.Name] = b.Suggestion
-		}
-	}
 	site.Lock()
-	site.holdChargeSuggestions = holdChargeSuggestions
-	site.holdChargeUpdated = time.Now()
+	site.holdChargePlan = buildHoldChargePlan(details, resp.JSON200, dt, canCapCharge)
 	site.Unlock()
 
 	site.setSuggestions(suggestions, lpSuggestions)
@@ -696,6 +689,42 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 	}
 
 	return nil
+}
+
+// buildHoldChargePlan precomputes each home battery's suggestion for every planning
+// slot, so holdChargeMode/updateBatteryChargeValues can look up whichever slot covers
+// "now" instead of always trusting slot 0 of a cached response that ages between
+// optimizer runs (see holdChargePlan in site_battery.go).
+func buildHoldChargePlan(details requestDetails, res *optimizer.OptimizationResult, dt []int, canCapCharge bool) *holdChargePlan {
+	starts := details.Timestamps
+	ends := make([]time.Time, len(dt))
+	slots := make([]map[string]types.Suggestion, len(dt))
+
+	for i := range dt {
+		slotHours := float64(dt[i]) / 3600
+		ends[i] = starts[i].Add(time.Duration(dt[i]) * time.Second)
+		if slotHours <= 0 {
+			continue
+		}
+
+		// same power threshold as charge/discharge, so a trickle (numerical residual)
+		// does not count as importing for mode selection
+		gridImporting := i < len(res.GridImport) && float64(res.GridImport[i])/slotHours > suggestionThreshold
+		gridExporting := i < len(res.GridExport) && res.GridExport[i] > 0
+
+		slot := make(map[string]types.Suggestion)
+		for bi, detail := range details.BatteryDetails {
+			if detail.Type != batteryTypeBattery || bi >= len(res.Batteries) {
+				continue
+			}
+			if s := slotSuggestion(detail, res.Batteries[bi], i, gridImporting, gridExporting, canCapCharge, slotHours); s.Action != "" {
+				slot[detail.Name] = s
+			}
+		}
+		slots[i] = slot
+	}
+
+	return &holdChargePlan{updated: time.Now(), starts: starts, ends: ends, slots: slots}
 }
 
 func (site *Site) addBatteryForecastTotals(req []optimizer.BatteryConfig, resp []optimizer.BatteryResult) *types.BatteryForecast {

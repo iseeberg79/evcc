@@ -88,8 +88,7 @@ type Site struct {
 	batteryEstimator           bool                        // spread PV charging power over time to reach maxSoc by a target time, independent of the optimizer
 	batteryEstimatorFactor     float64                     // battery estimator: PV forecast > consumption * factor to auto-activate (default 1.5)
 	batteryEstimatorTargetTime string                      // battery estimator: target time (HH:MM) by which the battery should be full (default 18:00)
-	holdChargeSuggestions      map[string]types.Suggestion // current-slot plan (optimizer or battery estimator) per home battery name
-	holdChargeUpdated          time.Time                   // last update of holdChargeSuggestions
+	holdChargePlan             *holdChargePlan             // per-slot plan (optimizer or battery estimator) per home battery name
 	batteryGridChargeLimit     *float64                    // grid charging limit
 	batteryGridDischarge       bool                        // allow battery discharge to grid (experimental)
 	gridExportLimit            *float64                    // grid export/feed-in limit (W) for optimizer peak shaving; nil = unlimited

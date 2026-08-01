@@ -323,39 +323,44 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 				ChargingPower:    []float32{tc.charge},
 				DischargingPower: []float32{tc.disch},
 			}
-			s := currentSlotSuggestion(batteryDetail{Type: tc.typ}, res, tc.importing, tc.export, tc.canCapCharge, 1)
+			s := slotSuggestion(batteryDetail{Type: tc.typ}, res, 0, tc.importing, tc.export, tc.canCapCharge, 1)
 			assert.Equal(t, tc.want, s.Action)
 			assert.InDelta(t, tc.charge, s.Charge, 1e-3)
 			assert.InDelta(t, tc.disch, s.Discharge, 1e-3)
 		})
 	}
 
-	// charge always reads the current slot (slot 0), even when a later slot ([1]) also holds a
-	// value - the optimizer's battery_first tie-break (set for every home battery request) keeps
-	// slot 0 trustworthy, so there is no more reason to peek ahead into slot 1
-	t.Run("charge reads the current slot, not a later one", func(t *testing.T) {
+	// each index reads its own slot, not slot 0 - the optimizer's battery_first tie-break
+	// (set for every home battery request) keeps every slot trustworthy, so callers can
+	// look up whichever slot covers "now" instead of always trusting slot 0
+	t.Run("index reads its own slot, not slot 0", func(t *testing.T) {
 		res := optimizer.BatteryResult{
-			ChargingPower:    []float32{0, 1592}, // slot 0 idle, slot 1 would charge - slot 1 must be ignored
+			ChargingPower:    []float32{0, 1592}, // slot 0 idle, slot 1 would charge
 			DischargingPower: []float32{0, 0},
 		}
-		s := currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, false, false, true, 285.0/3600)
-		assert.Equal(t, "normal", s.Action)
-		assert.InDelta(t, 0, s.Charge, 1e-3)
+		s0 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 0, false, false, true, 285.0/3600)
+		assert.Equal(t, "normal", s0.Action)
+		assert.InDelta(t, 0, s0.Charge, 1e-3)
+
+		s1 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 1, false, false, true, 900.0/3600)
+		assert.Equal(t, "holdcharge", s1.Action)
+		assert.InDelta(t, 1592/(900.0/3600), s1.Charge, 1e-3) // Wh -> W at the full-slot rate
 	})
 
-	// discharge stays on the current slot (slot 0), unaffected by the charge change
-	t.Run("discharge read from current slot", func(t *testing.T) {
+	// discharge is read from the requested slot
+	t.Run("discharge read from the requested slot", func(t *testing.T) {
 		res := optimizer.BatteryResult{
 			ChargingPower:    []float32{0, 0},
 			DischargingPower: []float32{500, 0}, // discharging now, idle next full slot
 		}
-		s := currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, true, false, true, 1)
+		s := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 0, true, false, true, 1)
 		assert.InDelta(t, 500, s.Discharge, 1e-3)
 		assert.Equal(t, "normal", s.Action) // discharge > threshold while importing -> not hold
 	})
 
-	// no result yields an empty suggestion
-	assert.Empty(t, currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{}, true, false, true, 1))
+	// an out-of-range index yields an empty suggestion
+	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{}, 0, true, false, true, 1))
+	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{ChargingPower: []float32{0}, DischargingPower: []float32{0}}, 5, true, false, true, 1))
 }
 
 // TestSuggestionActionable ensures the actionable flag follows the current state
