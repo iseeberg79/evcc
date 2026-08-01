@@ -313,6 +313,7 @@ func (site *Site) updateBatteryChargeValues() {
 		suggestion := site.holdChargeSuggestion(dev.Config().Name)
 
 		if powerLimiter, ok := api.Cap[api.BatteryChargePowerLimiter](instance); ok {
+			site.log.TRACE.Printf("battery %s max charge power: %.0fW action=%q", deviceTitleOrName(dev), suggestion.Charge, suggestion.Action)
 			if err := powerLimiter.SetMaxChargePower(suggestion.Charge); err != nil && !errors.Is(err, api.ErrNotAvailable) {
 				site.log.ERROR.Printf("battery %s max charge power: %v", deviceTitleOrName(dev), err)
 			}
@@ -320,11 +321,13 @@ func (site *Site) updateBatteryChargeValues() {
 
 		if setpointCtrl, ok := api.Cap[api.BatteryChargeSetpointController](instance); ok {
 			watt := suggestion.Charge
-			if suggestion.Action == "" {
+			fallback := suggestion.Action == ""
+			if fallback {
 				if powerLimiter, ok := api.Cap[api.BatteryPowerLimiter](instance); ok {
 					watt, _ = powerLimiter.GetPowerLimits()
 				}
 			}
+			site.log.TRACE.Printf("battery %s charge setpoint: %.0fW action=%q fallback=%v", deviceTitleOrName(dev), watt, suggestion.Action, fallback)
 			if err := setpointCtrl.SetChargeSetpoint(watt); err != nil && !errors.Is(err, api.ErrNotAvailable) {
 				site.log.ERROR.Printf("battery %s charge setpoint: %v", deviceTitleOrName(dev), err)
 			}
