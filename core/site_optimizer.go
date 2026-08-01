@@ -177,11 +177,9 @@ func suggestionEvent(detail batteryDetail, s types.Suggestion) (string, messenge
 // An idle battery is interpreted from the grid flow: importing means discharge is withheld
 // (hold), exporting means charging is withheld (holdcharge). Charging without importing (pure
 // self-consumption) is capped at the planned value via holdcharge too, but only when the
-// battery can actually follow a capped value (canCapCharge, i.e. site.hasBatteryChargeControl())
+// battery can actually follow a capped value (canCapCharge, i.e. site.hasBatteryChargeCap())
 // - otherwise there is nothing to gain from holdcharge over normal, since no capability would
-// apply the cap. Mirrors the removed withhold_charge mechanism's side effect (see d452873fd),
-// now unconditional on that toggle but still gated on charge-control capability like the rest
-// of the optimizer-follows-the-plan automation (see hasBatteryChargeControl in site_battery.go).
+// apply the cap.
 func slotSuggestion(detail batteryDetail, res optimizer.BatteryResult, i int, gridImporting, gridExporting, canCapCharge bool, slotHours float64) types.Suggestion {
 	if slotHours <= 0 || i < 0 || i >= len(res.ChargingPower) || i >= len(res.DischargingPower) {
 		return types.Suggestion{}
@@ -626,7 +624,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 	// (numerical residual) does not count as importing for mode selection
 	gridImporting := len(resp.JSON200.GridImport) > 0 && float64(resp.JSON200.GridImport[0])/slotHours > suggestionThreshold
 	gridExporting := len(resp.JSON200.GridExport) > 0 && resp.JSON200.GridExport[0] > 0
-	canCapCharge := site.hasBatteryChargeControl()
+	canCapCharge := site.hasBatteryChargeCap()
 
 	var batteries []batteryResult
 	suggestions := make(map[string]types.Suggestion, len(req.Batteries))

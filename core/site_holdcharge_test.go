@@ -18,6 +18,32 @@ type chargePowerLimiterMeter struct{ api.Meter }
 
 func (chargePowerLimiterMeter) SetMaxChargePower(float64) error { return nil }
 
+// powerSetpointMeter implements only BatteryPowerSetpointController, not
+// BatteryChargePowerLimiter - used to guard that hasBatteryChargeCap() (unlike the
+// broader hasBatteryChargeControl()) does not treat the two as interchangeable.
+type powerSetpointMeter struct{ api.Meter }
+
+func (powerSetpointMeter) SetPowerSetpoint(float64) error { return nil }
+
+// TestHasBatteryChargeCap guards that hasBatteryChargeCap() requires
+// BatteryChargePowerLimiter specifically. It gates the self-consumption holdcharge case
+// in slotSuggestion, which needs cap semantics (an upper bound the device's own
+// self-consumption logic still respects); a battery with only
+// BatteryPowerSetpointController would force an exact value instead, so it must not
+// satisfy this check even though it does satisfy hasBatteryChargeControl().
+func TestHasBatteryChargeCap(t *testing.T) {
+	newSite := func(bat api.Meter) *Site {
+		return &Site{batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{}, bat)}}
+	}
+
+	setpointOnly := newSite(powerSetpointMeter{})
+	require.True(t, setpointOnly.hasBatteryChargeControl(), "setpoint alone is enough for the broader automation opt-in")
+	require.False(t, setpointOnly.hasBatteryChargeCap(), "setpoint alone must not satisfy the cap-specific check")
+
+	withLimiter := newSite(chargePowerLimiterMeter{})
+	require.True(t, withLimiter.hasBatteryChargeCap())
+}
+
 func TestHoldChargeMode(t *testing.T) {
 	for _, tc := range []struct {
 		name        string

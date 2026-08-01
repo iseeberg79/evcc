@@ -53,6 +53,28 @@ func (site *Site) hasBatteryChargeControl() bool {
 	return false
 }
 
+// hasBatteryChargeCap reports whether any configured battery can have its charge power
+// capped (BatteryChargePowerLimiter specifically, not BatteryPowerSetpointController). A
+// cap and a forced setpoint are different mechanisms: a cap is an upper bound the device's
+// own self-consumption logic still respects, a setpoint forces an exact power regardless of
+// available PV. Self-consumption holdcharge (see slotSuggestion) needs cap semantics - gating
+// it on hasBatteryChargeControl()'s broader OR would let a setpoint-only battery force a
+// deliberate charge to a fixed value (or 0) during wanted PV charging instead of just leaving
+// self-consumption alone, so this check must stay independent of what the device template
+// happens to wire the setpoint capability to.
+func (site *Site) hasBatteryChargeCap() bool {
+	for _, dev := range site.batteryMeters {
+		if dev == nil {
+			continue
+		}
+		if api.HasCap[api.BatteryChargePowerLimiter](dev.Instance()) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // setBatteryMode sets the battery mode
 func (site *Site) setBatteryMode(batMode api.BatteryMode) {
 	site.batteryMode = batMode
