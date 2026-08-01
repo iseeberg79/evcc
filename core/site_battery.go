@@ -32,29 +32,6 @@ func (site *Site) hasBatteryControl() bool {
 	return false
 }
 
-// hasBatteryChargeCap reports whether any configured battery can have its charge power
-// capped (BatteryChargePowerLimiter). A cap is an upper bound the device's own
-// self-consumption logic still respects - unlike BatteryPowerSetpointController, which
-// forces an exact power regardless of available PV. This gates only the self-consumption
-// holdcharge case in slotSuggestion, not the optimizer-follows-the-plan automation as a
-// whole: hold/charge/holdcharge already work via api.BatteryController alone on every
-// upstream device template (each implements holdcharge as an unconditional 0 W block),
-// with no dependency on either of the two push capabilities. Without this cap capability,
-// a battery still gets that upstream-style holdcharge (stop charging) when the plan calls
-// for it, just never the partial-power variant this capability enables.
-func (site *Site) hasBatteryChargeCap() bool {
-	for _, dev := range site.batteryMeters {
-		if dev == nil {
-			continue
-		}
-		if api.HasCap[api.BatteryChargePowerLimiter](dev.Instance()) {
-			return true
-		}
-	}
-
-	return false
-}
-
 // setBatteryMode sets the battery mode
 func (site *Site) setBatteryMode(batMode api.BatteryMode) {
 	site.batteryMode = batMode

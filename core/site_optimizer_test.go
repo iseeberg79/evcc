@@ -323,7 +323,7 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 				ChargingPower:    []float32{tc.charge},
 				DischargingPower: []float32{tc.disch},
 			}
-			s := slotSuggestion(batteryDetail{Type: tc.typ}, res, 0, tc.importing, tc.export, tc.canCapCharge, 1)
+			s := slotSuggestion(batteryDetail{Type: tc.typ, hasBatteryChargeLimitCap: tc.canCapCharge}, res, 0, tc.importing, tc.export, 1)
 			assert.Equal(t, tc.want, s.Action)
 			assert.InDelta(t, tc.charge, s.Charge, 1e-3)
 			assert.InDelta(t, tc.disch, s.Discharge, 1e-3)
@@ -338,11 +338,11 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 			ChargingPower:    []float32{0, 1592}, // slot 0 idle, slot 1 would charge
 			DischargingPower: []float32{0, 0},
 		}
-		s0 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 0, false, false, true, 285.0/3600)
+		s0 := slotSuggestion(batteryDetail{Type: batteryTypeBattery, hasBatteryChargeLimitCap: true}, res, 0, false, false, 285.0/3600)
 		assert.Equal(t, "normal", s0.Action)
 		assert.InDelta(t, 0, s0.Charge, 1e-3)
 
-		s1 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 1, false, false, true, 900.0/3600)
+		s1 := slotSuggestion(batteryDetail{Type: batteryTypeBattery, hasBatteryChargeLimitCap: true}, res, 1, false, false, 900.0/3600)
 		assert.Equal(t, "holdcharge", s1.Action)
 		assert.InDelta(t, 1592/(900.0/3600), s1.Charge, 1e-3) // Wh -> W at the full-slot rate
 	})
@@ -353,14 +353,14 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 			ChargingPower:    []float32{0, 0},
 			DischargingPower: []float32{500, 0}, // discharging now, idle next full slot
 		}
-		s := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 0, true, false, true, 1)
+		s := slotSuggestion(batteryDetail{Type: batteryTypeBattery, hasBatteryChargeLimitCap: true}, res, 0, true, false, 1)
 		assert.InDelta(t, 500, s.Discharge, 1e-3)
 		assert.Equal(t, "normal", s.Action) // discharge > threshold while importing -> not hold
 	})
 
 	// an out-of-range index yields an empty suggestion
-	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{}, 0, true, false, true, 1))
-	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{ChargingPower: []float32{0}, DischargingPower: []float32{0}}, 5, true, false, true, 1))
+	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery, hasBatteryChargeLimitCap: true}, optimizer.BatteryResult{}, 0, true, false, 1))
+	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery, hasBatteryChargeLimitCap: true}, optimizer.BatteryResult{ChargingPower: []float32{0}, DischargingPower: []float32{0}}, 5, true, false, 1))
 }
 
 // TestBuildHoldChargePlanTrimsHorizon guards that the plan only retains slots within
@@ -374,7 +374,7 @@ func TestBuildHoldChargePlanTrimsHorizon(t *testing.T) {
 	details := requestDetails{
 		Timestamps: asTimestamps(dt, now),
 		BatteryDetails: []batteryDetail{
-			{Type: batteryTypeBattery, Name: "b"},
+			{Type: batteryTypeBattery, Name: "b", controllable: true, hasBatteryChargeLimitCap: true},
 		},
 	}
 	res := &optimizer.OptimizationResult{
@@ -384,7 +384,7 @@ func TestBuildHoldChargePlanTrimsHorizon(t *testing.T) {
 		}},
 	}
 
-	plan := buildHoldChargePlan(details, res, dt, true)
+	plan := buildHoldChargePlan(details, res, dt)
 
 	assert.Less(t, len(plan.starts), minLen, "plan should be trimmed well below the full horizon")
 	require.NotEmpty(t, plan.starts)

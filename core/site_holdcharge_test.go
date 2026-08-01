@@ -12,30 +12,10 @@ import (
 )
 
 // chargePowerLimiterMeter is a minimal api.Meter that also implements
-// BatteryChargePowerLimiter, so hasBatteryChargeCap() finds it.
+// BatteryChargePowerLimiter.
 type chargePowerLimiterMeter struct{ api.Meter }
 
 func (chargePowerLimiterMeter) SetMaxChargePower(float64) error { return nil }
-
-// powerSetpointMeter implements only BatteryPowerSetpointController, not
-// BatteryChargePowerLimiter - used to guard that hasBatteryChargeCap() does not treat
-// the two as interchangeable (a setpoint forces an exact power, a cap doesn't).
-type powerSetpointMeter struct{ api.Meter }
-
-func (powerSetpointMeter) SetPowerSetpoint(float64) error { return nil }
-
-// TestHasBatteryChargeCap guards that hasBatteryChargeCap() requires
-// BatteryChargePowerLimiter specifically, not BatteryPowerSetpointController - it gates
-// the self-consumption holdcharge case in slotSuggestion, which needs cap semantics (an
-// upper bound the device's own self-consumption logic still respects).
-func TestHasBatteryChargeCap(t *testing.T) {
-	newSite := func(bat api.Meter) *Site {
-		return &Site{batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{}, bat)}}
-	}
-
-	require.False(t, newSite(powerSetpointMeter{}).hasBatteryChargeCap(), "setpoint alone must not satisfy the cap-specific check")
-	require.True(t, newSite(chargePowerLimiterMeter{}).hasBatteryChargeCap())
-}
 
 // TestRequiredBatteryModeIndependentOfCapability guards that the optimizer-follows-the-
 // plan automation activates regardless of BatteryChargePowerLimiter/
@@ -148,7 +128,7 @@ func TestHoldChargePlanSlotLookup(t *testing.T) {
 	}
 
 	require.Equal(t, "normal", plan.suggestions(base)["b"].Action, "at run time: slot 0")
-	require.Equal(t, "holdcharge", plan.suggestions(base.Add(10*time.Minute))["b"].Action, "10:52, within slot 1's window: slot 1, not the frozen slot 0")
-	require.Equal(t, "hold", plan.suggestions(base.Add(20*time.Minute))["b"].Action, "11:02, within slot 2's window: slot 2")
+	require.Equal(t, "holdcharge", plan.suggestions(base.Add(10 * time.Minute))["b"].Action, "10:52, within slot 1's window: slot 1, not the frozen slot 0")
+	require.Equal(t, "hold", plan.suggestions(base.Add(20 * time.Minute))["b"].Action, "11:02, within slot 2's window: slot 2")
 	require.Nil(t, plan.suggestions(base.Add(40*time.Minute)), "beyond the plan's horizon: no slot matches")
 }
