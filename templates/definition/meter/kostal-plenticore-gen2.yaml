@@ -140,10 +140,7 @@ render: |
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
       - case: 3 # charge
         set:
-          # forced grid-charge setpoint, pushed by site into the powersetpoint cell
-          # (see BatteryPowerSetpointController) and written here inside the batterymode
-          # watchdog, so it shares the mode's re-write/reset lifecycle
-          source: memory
+          source: memory # powersetpoint cell (BatteryPowerSetpointController)
           name: powersetpoint
           set:
             source: modbus
@@ -155,11 +152,7 @@ render: |
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
       - case: 4 # holdcharge
         set:
-          # charge power cap, pushed by site into the maxchargepowerlimit cell
-          # (see BatteryChargePowerLimiter) and written here inside the batterymode
-          # watchdog; on leaving holdcharge the switch stops writing 1038 and the
-          # inverter reverts to unlimited after its own timeout
-          source: memory
+          source: memory # maxchargepowerlimit cell (BatteryChargePowerLimiter)
           name: maxchargepowerlimit
           set:
             source: modbus

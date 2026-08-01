@@ -8,17 +8,13 @@ import (
 	"github.com/evcc-io/evcc/util"
 )
 
-// Memory holds a single named value in a device-local store. It is the in-process,
-// typed counterpart to the state plugin: instead of reading a process-wide published
-// value navigated by jq, both ends share a per-device cell addressed by name.
-//
-// It has two roles, selected by whether a nested setter is configured:
-//   - sink (no set): its Setter stores the incoming value. This is the endpoint a
-//     site-driven capability writes to (e.g. BatteryChargePowerLimiter).
-//   - forward (set): its Setter ignores the incoming value, reads the stored one and
-//     forwards it to the nested setter. This is used inside a device's control path
-//     (e.g. a batterymode switch case that writes the stored value to a register),
-//     so the value rides the same watchdog/reset lifecycle as the mode itself.
+// Memory holds a single named value in a device-local store, addressed by name. It has
+// two roles, selected by whether a nested setter is configured:
+//   - sink (no set): its Setter stores the incoming value (e.g. a site-driven capability
+//     such as BatteryChargePowerLimiter).
+//   - forward (set): its Setter ignores the incoming value, reads the stored one, and
+//     forwards it to the nested setter (e.g. a batterymode switch case, so the value
+//     rides the mode's watchdog/reset lifecycle).
 type Memory struct {
 	ctx       context.Context
 	store     *memoryStore
@@ -89,7 +85,7 @@ func NewMemoryFromConfig(ctx context.Context, other map[string]any) (Plugin, err
 
 	// seed the cell before the first site push (e.g. a configured static fallback
 	// power), so a control path reading it before that gets a sane value instead of
-	// the zero value. Idempotent: harmless if set again by the sink/forward pair.
+	// the zero value.
 	if cc.Initial != nil {
 		store.set(cc.Name, *cc.Initial)
 	}
@@ -122,8 +118,7 @@ func (p *Memory) forward(param string) (func() error, error) {
 
 var _ FloatSetter = (*Memory)(nil)
 
-// FloatSetter stores the incoming value (sink), or forwards the stored value to the
-// nested setter ignoring the input (forward), depending on whether set is configured.
+// FloatSetter implements the sink/forward roles described on Memory.
 func (p *Memory) FloatSetter(param string) (func(float64) error, error) {
 	if p.setConfig == nil {
 		return func(val float64) error {
