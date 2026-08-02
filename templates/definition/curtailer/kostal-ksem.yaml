@@ -6,14 +6,14 @@ products:
 requirements:
   description:
     de: |
-      REST-Schnittstelle des KSEM (/api/kostal-energyflow/configuration). Erzeugen 
-      und im KSEM-Webinterface unter Einstellungen > API-Token freigeben: 
-      POST /api/access-token/token mit {"name": "evcc", "role": "api"}. 
+      REST-Schnittstelle des KSEM (/api/kostal-energyflow/configuration). Erzeugen
+      und im KSEM-Webinterface unter Einstellungen > API-Token freigeben:
+      POST /api/access-token/token mit {"name": "evcc", "role": "api"}.
       Nicht offiziell unterstützt, kann sich mit KSEM-Firmware-Updates ändern.
     en: |
-      REST interface of the KSEM (/api/kostal-energyflow/configuration). Create 
-      and approve in the KSEM web UI under Settings > API Tokens: 
-      POST /api/access-token/token with {"name": "evcc", "role": "api"}. 
+      REST interface of the KSEM (/api/kostal-energyflow/configuration). Create
+      and approve in the KSEM web UI under Settings > API Tokens:
+      POST /api/access-token/token with {"name": "evcc", "role": "api"}.
       Not officially supported, may break with KSEM firmware updates.
 params:
   - name: host
