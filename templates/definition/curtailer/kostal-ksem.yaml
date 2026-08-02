@@ -1,0 +1,153 @@
+template: kostal-ksem
+products:
+  - brand: Kostal
+    description:
+      generic: Smart Energy Meter (Einspeisebegrenzung)
+requirements:
+  description:
+    de: |
+      REST-Schnittstelle des KSEM (/api/kostal-energyflow/configuration). Erzeugen 
+      und im KSEM-Webinterface unter Einstellungen > API-Token freigeben: 
+      POST /api/access-token/token mit {"name": "evcc", "role": "api"}. 
+      Nicht offiziell unterstützt, kann sich mit KSEM-Firmware-Updates ändern.
+    en: |
+      REST interface of the KSEM (/api/kostal-energyflow/configuration). Create 
+      and approve in the KSEM web UI under Settings > API Tokens: 
+      POST /api/access-token/token with {"name": "evcc", "role": "api"}. 
+      Not officially supported, may break with KSEM firmware updates.
+params:
+  - name: host
+    required: true
+  - name: token
+    required: true
+    description:
+      de: API-Token
+      en: API token
+  - name: productionnominalmax
+    type: float
+    unit: Wp
+    required: true
+    description:
+      en: Installed generator power
+      de: Installierte Generatorleistung
+    help:
+      en: Rated generator/module power of the installation (reference value according to § 9 EEG).
+      de: Gesamtnennleistung bzw. Modul- oder Generatorleistung der Anlage (Bezugsgröße nach § 9 EEG).
+render: |
+  type: custom
+  curtail: # PUT the full config back (read-modify-write); percent -> absolute W limit
+    source: go
+    in:
+    - name: version
+      type: int
+      config:
+        source: http
+        uri: http://{{ .host }}/api/kostal-energyflow/configuration
+        headers:
+          - authorization: Bearer {{ .token }}
+        jq: .version
+        cache: 2s
+    - name: controllerType
+      type: string
+      config:
+        source: http
+        uri: http://{{ .host }}/api/kostal-energyflow/configuration
+        headers:
+          - authorization: Bearer {{ .token }}
+        jq: .selected_controller_type
+        cache: 2s
+    - name: interval
+      type: int
+      config:
+        source: http
+        uri: http://{{ .host }}/api/kostal-energyflow/configuration
+        headers:
+          - authorization: Bearer {{ .token }}
+        jq: .powerreduction.interval
+        cache: 2s
+    - name: avgInterval
+      type: int
+      config:
+        source: http
+        uri: http://{{ .host }}/api/kostal-energyflow/configuration
+        headers:
+          - authorization: Bearer {{ .token }}
+        jq: .powerreduction.avg_interval
+        cache: 2s
+    - name: avgTeridian
+      type: int
+      config:
+        source: http
+        uri: http://{{ .host }}/api/kostal-energyflow/configuration
+        headers:
+          - authorization: Bearer {{ .token }}
+        jq: .powerreduction.avg_teridian
+        cache: 2s
+    - name: maxpower
+      type: int
+      config:
+        source: http
+        uri: http://{{ .host }}/api/kostal-energyflow/configuration
+        headers:
+          - authorization: Bearer {{ .token }}
+        jq: .powerreduction.maxpower
+        cache: 2s
+    - name: batteryUsage
+      type: bool
+      config:
+        source: http
+        uri: http://{{ .host }}/api/kostal-energyflow/configuration
+        headers:
+          - authorization: Bearer {{ .token }}
+        jq: .batteryusage
+        cache: 2s
+    script: |
+      enabled := curtail < 100
+      limit := int(float64({{ maxf .productionnominalmax 1 }}) * float64(curtail) / 100)
+      fmt.Sprintf(`{"enabled":%t,"selected_controller_type":%q,"powerreduction":{"enabled":%t,"limit":%d,"interval":%d,"avg_interval":%d,"avg_teridian":%d,"maxpower":%d},"batteryusage":%t,"version":%d}`,
+        enabled, controllerType, enabled, limit, interval, avgInterval, avgTeridian, maxpower, batteryUsage, version)
+    out:
+    - name: body
+      type: string
+      config:
+        source: http
+        uri: http://{{ .host }}/api/kostal-energyflow/configuration
+        method: PUT
+        headers:
+          - content-type: application/json
+          - authorization: Bearer {{ .token }}
+        body: ${body}
+  curtailed: # effective limit as percent of installed generator power
+    source: go
+    in:
+    - name: enabled
+      type: bool
+      config:
+        source: http
+        uri: http://{{ .host }}/api/kostal-energyflow/configuration
+        headers:
+          - authorization: Bearer {{ .token }}
+        jq: .enabled and .powerreduction.enabled
+        cache: 5s
+    - name: limit
+      type: int
+      config:
+        source: http
+        uri: http://{{ .host }}/api/kostal-energyflow/configuration
+        headers:
+          - authorization: Bearer {{ .token }}
+        jq: .powerreduction.limit
+        cache: 5s
+    script: |
+      percent := 100
+      if enabled {
+        p := float64(limit) * 100 / {{ maxf .productionnominalmax 1 }}
+        percent = int(p + 0.5)
+        if percent < 0 {
+          percent = 0
+        }
+        if percent > 100 {
+          percent = 100
+        }
+      }
+      percent
