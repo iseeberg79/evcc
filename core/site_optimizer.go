@@ -50,17 +50,24 @@ var (
 	optimizerUpdated time.Time
 )
 
+// optimizerChargeBeforeExport is kept as a selectable config value even though optimizer PR
+// 126 removed it from the API's own charging_strategy enum - it is no longer a string the
+// optimizer itself accepts, translated to none + battery_first at the API boundary instead
+// (see batteryRequest and the Strategy construction below), so existing site configs and the
+// UI dropdown keep working unchanged.
+const optimizerChargeBeforeExport = "charge_before_export"
+
 // optimizerChargingStrategies are the valid grid charging strategies; the first
 // entry is the default and preserves the previous hard-coded behavior.
 var optimizerChargingStrategies = []string{
-	string(optimizer.OptimizerStrategyChargingStrategyChargeBeforeExport),
+	optimizerChargeBeforeExport,
 	string(optimizer.OptimizerStrategyChargingStrategyAttenuateDemandPeaks),
 	string(optimizer.OptimizerStrategyChargingStrategyAttenuateFeedinPeaks),
 	string(optimizer.OptimizerStrategyChargingStrategyAttenuateGridPeaks),
 	string(optimizer.OptimizerStrategyChargingStrategyNone),
 }
 
-const defaultOptimizerChargingStrategy = string(optimizer.OptimizerStrategyChargingStrategyChargeBeforeExport)
+const defaultOptimizerChargingStrategy = optimizerChargeBeforeExport
 
 // optimizerDecaySlots is the number of slots over which measured values decay into the forecast
 const optimizerDecaySlots = 4
@@ -187,18 +194,22 @@ func slotSuggestion(detail batteryDetail, res optimizer.BatteryResult, i int, gr
 		return types.Suggestion{}
 	}
 
-	// slot i's charge value used to be unreliable - the optimizer's LP is indifferent about
-	// *when* within a locally flat price window to charge, so the solver could arbitrarily
-	// defer all of it into a later, larger slot - but the optimizer's battery_first tie-break
-	// (set unconditionally for every home battery request) biases the whole horizon towards
-	// charging as early as cost-neutral, resolving that degeneracy in favor of whichever slot
-	// is evaluated, so charge is trustworthy at any index like discharge always was. For
-	// loadpoints/vehicles the same degeneracy can still occur (no battery_first there - an EV
-	// may unplug before a deferred charge completes), but their suggestion only ever feeds the
-	// advisory UI (see loadpointSuggestion), never real charge control, so an occasionally-stale
-	// "stop" instead of "charge" is cosmetic - matching upstream, which reads slot 0
-	// unconditionally for the same reason (loadpoints/vehicles are never plan-cached across
-	// slots, only batteries are - see holdChargePlan in site_battery.go).
+	// slot i's charge value used to be unreliable under the old peak+ramp leveling - the LP
+	// was indifferent about *when* within a locally flat price window to charge, so the
+	// solver could arbitrarily defer all of it into a later, larger slot. We used to rely on
+	// battery_first (set unconditionally for every home battery request) to bias the tie
+	// towards charging early and make slot i trustworthy at any index. That flag is no longer
+	// set (see batteryRequest): it moved from a per-battery field to one shared by the whole
+	// request in optimizer PR 126, and controlled A/B runs against real production requests
+	// found no measurable effect once PR 130's level-deviation leveling is in place - that
+	// term on its own already prefers a spread schedule over an arbitrary one, which is
+	// presumably why toggling battery_first moved nothing: there was no genuine tie left to
+	// break. If slot readings ever look stale again, re-check that assumption first.
+	// For loadpoints/vehicles the same degeneracy can still occur, but their suggestion only
+	// ever feeds the advisory UI (see loadpointSuggestion), never real charge control, so an
+	// occasionally-stale "stop" instead of "charge" is cosmetic - matching upstream, which
+	// reads slot 0 unconditionally for the same reason (loadpoints/vehicles are never
+	// plan-cached across slots, only batteries are - see holdChargePlan in site_battery.go).
 	charge := float64(res.ChargingPower[i]) / slotHours
 	discharge := float64(res.DischargingPower[i]) / slotHours
 
@@ -498,9 +509,23 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 		ft = prorate(ftSlots, firstSlotDuration)
 	}
 
+	// charge_before_export was removed from the optimizer's charging_strategy enum by PR 126:
+	// it was exactly "no profile shaping, plus fill as early as cost-neutral", so it is now
+	// spelled that way (none + battery_first) instead of being its own strategy value. Kept
+	// as a selectable, non-breaking config option here; translated at the API boundary so a
+	// site still configured for it keeps its old schedules instead of erroring against the
+	// now-invalid string.
+	chargingStrategy := site.GetOptimizerChargingStrategy()
+	batteryFirst := false
+	if chargingStrategy == optimizerChargeBeforeExport {
+		chargingStrategy = string(optimizer.OptimizerStrategyChargingStrategyNone)
+		batteryFirst = true
+	}
+
 	req := optimizer.OptimizationInput{
 		Strategy: optimizer.OptimizerStrategy{
-			ChargingStrategy:    optimizer.OptimizerStrategyChargingStrategy(site.GetOptimizerChargingStrategy()),
+			ChargingStrategy:    optimizer.OptimizerStrategyChargingStrategy(chargingStrategy),
+			BatteryFirst:        batteryFirst,
 			DischargingStrategy: optimizer.OptimizerStrategyDischargingStrategyDischargeBeforeImport,
 		},
 		EtaC: eta,
@@ -964,12 +989,15 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 	// spontaneous load or forecast deviation is covered from the battery, not a grid purchase
 	bat.PrcDplSocLow = socDepletionCostLow
 
-	// prefer charging the home battery as early as cost-neutral, so it doesn't idle mid-band
-	// (20-80% SOC) for no real reason, deferring a full charge to a later day. Real economics
-	// (price arbitrage, PrcDplSocHigh/Low) still dominate this tie-break by construction.
-	// Deliberately not set for EV/loadpoint requests (loadpointRequest): unlike a home battery
-	// they may unplug before a deferred full charge completes.
-	bat.BatteryFirst = true
+	// battery_first (optimizer PR 126) moved from a per-battery field to a single
+	// strategy-level flag shared by the whole request - home batteries and any
+	// concurrently charging EV loadpoint alike, since both land in the same req.Batteries.
+	// Controlled A/B runs against real production requests (identical schedules, W-for-W,
+	// with the flag on and off under attenuate_grid_peaks) found no measurable effect: PA
+	// via PrcDplSocHigh/Low already keeps the battery off both floor and ceiling, and PR
+	// 130's level-deviation leveling on its own already prefers a spread schedule over an
+	// arbitrary one, leaving no genuine cost-neutral tie left for earliness to break. Not
+	// worth the now-shared-with-EVs blast radius for an unproven effect - left unset.
 
 	return bat, detail
 }
