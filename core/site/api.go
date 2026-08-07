@@ -44,6 +44,7 @@ type API interface {
 	//
 
 	GetBatterySoc() float64
+	GetBatteryMaxDischargePower() float64
 	GetPrioritySoc() float64
 	SetPrioritySoc(float64) error
 	GetBufferSoc() float64
@@ -55,10 +56,6 @@ type API interface {
 	GetBatteryGridChargeLimit() *float64
 	// SetBatteryGridChargeLimit sets the grid charge limit
 	SetBatteryGridChargeLimit(limit *float64) error
-	// GetGridExportLimit gets the grid export/feed-in limit (W), nil if unlimited
-	GetGridExportLimit() *float64
-	// SetGridExportLimit sets the grid export/feed-in limit (W) for optimizer peak shaving
-	SetGridExportLimit(limit *float64) error
 
 	// GetOptimizerChargingStrategy gets the optimizer grid charging strategy
 	GetOptimizerChargingStrategy() string
@@ -72,6 +69,8 @@ type API interface {
 	GetGridPower() float64
 	GetResidualPower() float64
 	SetResidualPower(float64) error
+	GetGridExportLimit() float64
+	SetGridExportLimit(float64) error
 
 	//
 	// tariffs and costs

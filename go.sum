@@ -30,8 +30,8 @@ github.com/andig/gosunspec v0.0.0-20260705113727-6d585e133512 h1:1y8dS4GaBB9WUu/
 github.com/andig/gosunspec v0.0.0-20260705113727-6d585e133512/go.mod h1:c6P6szcR+ROkqZruOR4f6qbDKFjZX6OitPpj+yJ/r8k=
 github.com/andig/mbserver v0.0.0-20230310211055-1d29cbb5820e h1:m/NTP3JWpR7M0ljLxiQU4fzR25jjhe1LDtxLMNcoNJQ=
 github.com/andig/mbserver v0.0.0-20230310211055-1d29cbb5820e/go.mod h1:4VtYzTm//oUipwvO3yh0g/udTE7pYJM+U/kyAuFDsgM=
-github.com/andig/spine-go v0.7.1-0.20260729105813-e3e33d07b702 h1:aSME6GPyu2LeTp282plM4nrCFBwBiNnnjWxuAIYGnhs=
-github.com/andig/spine-go v0.7.1-0.20260729105813-e3e33d07b702/go.mod h1:ddWZU5BQGyzRGF20Z7rUKFFzbCp+cfu9mZgYtOMW/fM=
+github.com/andig/spine-go v0.7.1-0.20260804073026-f9a8d8e8fd18 h1:FVKqjwJJLo8vV47jXt1lNN4EVJXCyV3LSTNFt9eeimU=
+github.com/andig/spine-go v0.7.1-0.20260804073026-f9a8d8e8fd18/go.mod h1:ddWZU5BQGyzRGF20Z7rUKFFzbCp+cfu9mZgYtOMW/fM=
 github.com/andybalholm/cascadia v1.3.3 h1:AG2YHrzJIm4BZ19iwJ/DAua6Btl3IwJX+VI4kktS1LM=
 github.com/andybalholm/cascadia v1.3.3/go.mod h1:xNd9bqTn98Ln4DwST8/nG+H0yuB8Hmgu1YHNnWw0GeA=
 github.com/antihax/optional v1.0.0 h1:xK2lYat7ZLaVVcIuj82J8kIro4V6kDe0AUDFboUCwcg=
@@ -152,8 +152,6 @@ github.com/evcc-io/ocpp-go v0.0.0-20260727074919-195c10b8758d h1:UxgSUmwiuVURrma
 github.com/evcc-io/ocpp-go v0.0.0-20260727074919-195c10b8758d/go.mod h1:2kcukDdhui4u730VfnYVWuwzDLgw+mBRGDir/QAyBhg=
 github.com/evcc-io/openapi-mcp v0.6.1-0.20260701153510-26c442199ef4 h1:aGM3NwDsKbnmiaO10ptbvEolRAUThWJEsObiAWFDU/c=
 github.com/evcc-io/openapi-mcp v0.6.1-0.20260701153510-26c442199ef4/go.mod h1:YyOx4zwr6xVUcchAETHERZ+75cZMIrdcjVIZFwBlE1Q=
-github.com/evcc-io/optimizer v0.0.0-20260728084523-a51031d7607f h1:mwExmgCCH8ldBLe8qNIXmMy7qT+OTsptXwnI6LQo+mQ=
-github.com/evcc-io/optimizer v0.0.0-20260728084523-a51031d7607f/go.mod h1:cHMeq6GfoXQ8LxqY4LH1wn/hrgYEn+ka5RPI1CF37SY=
 github.com/evcc-io/rct v0.2.0 h1:qjXKI7NKwW5YpEKEb27MwLMBaR4ne2Kd2cPV2PYTKn4=
 github.com/evcc-io/rct v0.2.0/go.mod h1:n6MTBU36QOadGlxxiADu86VaT5l0eYdbmFBHF14AD/s=
 github.com/evcc-io/tesla-proxy-client v0.0.0-20260722080120-05ada06c7368 h1:Vek18PwCpXWBVaNfzq7qwru0VsQgWtlL5yIQbLqFwWg=

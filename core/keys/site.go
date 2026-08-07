@@ -18,7 +18,6 @@ const (
 	PvEnergy              = "pvEnergy"
 	PvPower               = "pvPower"
 	ResidualPower         = "residualPower"
-	GridExportLimit       = "gridExportLimit"
 	SiteTitle             = "siteTitle"
 	SmartCostType         = "smartCostType"
 	Statistics            = "statistics"
@@ -52,6 +51,9 @@ const (
 	BatteryGridDischarge       = "batteryGridDischarge"
 	BufferSoc                  = "bufferSoc"
 	BufferStartSoc             = "bufferStartSoc"
+
+	// grid settings
+	GridExportLimit = "gridExportLimit"
 
 	// forecast settings
 	SolarAdjusted = "solarAdjusted"
