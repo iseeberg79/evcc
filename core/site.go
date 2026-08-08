@@ -34,7 +34,6 @@ import (
 	"github.com/evcc-io/evcc/util"
 	"github.com/evcc-io/evcc/util/config"
 	"github.com/evcc-io/evcc/util/modbus"
-	"github.com/evcc-io/evcc/util/sponsor"
 	"github.com/evcc-io/evcc/util/telemetry"
 	"github.com/samber/lo"
 	"github.com/smallnest/chanx"
@@ -121,9 +120,11 @@ type Site struct {
 	batteryMode              api.BatteryMode             // Battery mode (runtime only, not persisted)
 	batteryModeExternal      api.BatteryMode             // Battery mode (external, runtime only, not persisted)
 	batteryModeExternalTimer time.Time                   // Battery mode timer for external control
-	batterySuggestions       map[string]types.Suggestion // Optimizer suggestions by battery meter name
-	loadpointSuggestions     map[int]types.Suggestion    // Optimizer suggestions by loadpoint id
+	suggestions              map[string]types.Suggestion // Optimizer suggestions by device key
 	suggestionActions        map[string]string           // last notified actionable optimizer action by device key
+
+	optimizerMu      sync.Mutex // guards optimizer runs
+	optimizerUpdated time.Time  // last optimizer run, guarded by optimizerMu
 }
 
 // MetersConfig contains the site's meter configuration
@@ -816,8 +817,9 @@ func (site *Site) updateBatteryMeters() {
 
 // publishBattery applies the optimizer suggestions and publishes the battery state
 func (site *Site) publishBattery() {
+	mode := site.GetBatteryMode().String()
 	for i, d := range site.battery.Devices {
-		site.battery.Devices[i].Suggestion = site.batterySuggestion(d.Name)
+		site.battery.Devices[i].Suggestion = site.suggestion(batteryKey(d.Name), mode)
 	}
 
 	site.publish(keys.Battery, site.battery)
@@ -909,7 +911,7 @@ func (site *Site) updateGridMeter() error {
 		return nil
 	}
 
-	mm := types.Measurement{Name: site.Meters.GridMeterRef}
+	mm := types.Measurement{Name: site.gridMeter.Config().Name}
 
 	meter := site.gridMeter.Instance()
 
@@ -963,7 +965,9 @@ func (site *Site) updateGridMeter() error {
 		}
 	}
 
-	site.collectors[site.Meters.GridMeterRef].AddEnergy(mm.Energy, mm.ReturnEnergy, mm.Power)
+	if c, ok := site.collectors[site.gridMeter.Config().Name]; ok {
+		c.AddEnergy(mm.Energy, mm.ReturnEnergy, mm.Power)
+	}
 
 	site.publish(keys.Grid, mm)
 
@@ -985,9 +989,7 @@ func (site *Site) updateMeters() error {
 		return err
 	}
 
-	if sponsor.IsAuthorized() && optimizerEnabled() && time.Since(optimizerUpdated) >= tariff.SlotDuration {
-		go site.optimizerUpdateAsync()
-	}
+	go site.optimizerUpdateAsync(tariff.SlotDuration)
 
 	return nil
 }

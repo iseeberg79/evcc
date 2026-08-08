@@ -310,6 +310,7 @@
     "form": {
       "danger": "Achtung",
       "deprecated": "veraltet",
+      "durationUnit": "Zeiteinheit für {label}",
       "example": "Beispiel",
       "optional": "optional"
     },
@@ -1103,6 +1104,8 @@
     "version": {
       "availableLong": "neue Version verfügbar",
       "community": "evcc Community",
+      "labelEmail": "E-Mail",
+      "labelPhone": "Telefon",
       "labelRelease": "Release",
       "labelVersion": "Version",
       "labelWebsite": "Website",
@@ -1185,6 +1188,7 @@
     "sessions": "Ladevorgänge"
   },
   "help": {
+    "contactButton": "Kontakt aufnehmen",
     "discussionsButton": "GitHub Discussions",
     "documentationButton": "Dokumentation",
     "issueButton": "Problem melden",
@@ -1224,7 +1228,10 @@
     "additionalContext": "Zusätzlicher Kontext",
     "additionalContextPlaceholder": "Alle zusätzlichen Informationen, die hilfreich sein könnten...\n- Konfigurationsdetails\n- Was du versucht hast\n- Umgebungsdetails",
     "createButtonDiscussion": "GitHub Diskussion starten...",
+    "createButtonEmail": "Anfrage per E-Mail senden",
     "createButtonIssue": "GitHub Issue erstellen...",
+    "downloadButton": "Debug-Informationen herunterladen",
+    "downloadHint": "Hänge diese Datei an deine E-Mail an, falls weitere Informationen benötigt werden.",
     "description": "Deine Installation funktioniert nicht wie erwartet? Nutze diese Seite um Hilfe zu bekommen oder Probleme zu melden. Gib genügend Details an, damit wir das Problem verstehen und reproduzieren können. Halte deine Beschreibung prägnant, klar und leicht verständlich.",
     "helpType": {
       "discussion": "Brauche Hilfe bei meiner Einrichtung",
@@ -1237,6 +1244,7 @@
     "issueTitle": "Titel",
     "stepsToReproduce": "Schritte zur Reproduktion",
     "subTitleDiscussion": "Beschreibe dein Problem",
+    "subTitleEmail": "Beschreibe dein Problem",
     "subTitleIssue": "Beschreibe das Problem",
     "summary": {
       "confirmationButtonDiscussion": "GitHub Diskussion starten",
