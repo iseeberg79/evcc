@@ -77,6 +77,11 @@
 					<FormRow id="mqttClientKey" :label="$t('config.mqtt.labelClientKey')" optional>
 						<PropertyCertField id="mqttClientKey" v-model="values.clientKey" />
 					</FormRow>
+					<p class="mt-n2 mb-3">
+						<a href="#" @click.prevent="useDeviceIdentity(values)">
+							{{ $t("config.general.useDeviceIdentity") }}
+						</a>
+					</p>
 				</template>
 			</PropertyCollapsible>
 		</template>
@@ -88,10 +93,22 @@ import JsonModal from "./JsonModal.vue";
 import FormRow from "./FormRow.vue";
 import PropertyCollapsible from "./PropertyCollapsible.vue";
 import PropertyCertField from "./PropertyCertField.vue";
+import api from "../../api";
 
 export default {
 	name: "MqttModal",
 	components: { FormRow, JsonModal, PropertyCollapsible, PropertyCertField },
 	emits: ["changed"],
+	methods: {
+		async useDeviceIdentity(values) {
+			try {
+				const res = await api.get("config/devicecert");
+				values.clientCert = res.data.cert;
+				values.clientKey = res.data.key;
+			} catch (e) {
+				console.error(e);
+			}
+		},
+	},
 };
 </script>

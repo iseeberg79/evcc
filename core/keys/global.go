@@ -39,4 +39,5 @@ const (
 	AuthDisabled       = "authDisabled"
 	AuthProviders      = "authProviders"
 	DeviceColors       = "deviceColors"
+	DeviceCertificate  = "deviceCertificate"
 )
