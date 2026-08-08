@@ -8,14 +8,47 @@ import (
 	"github.com/benbjohnson/clock"
 )
 
+// rollbackConfirmations is the number of consecutive drops below a
+// meterTotal's value required to treat it as a reset/rollover rather than a
+// transient glitch (#29286, #30555).
+const rollbackConfirmations = 2
+
+// meterTotal tracks a cumulative meter reading (kWh), debouncing drops below
+// the current value so a lone glitch can't rebase it.
+type meterTotal struct {
+	value    *float64
+	rollback int
+}
+
+// apply folds v into the total, returning the resulting delta and whether v
+// was accepted rather than withheld pending rollback confirmation.
+func (m *meterTotal) apply(v float64) (delta float64, accepted bool) {
+	if m.value == nil {
+		m.value = new(v)
+		return 0, true
+	}
+
+	if v < *m.value {
+		if m.rollback++; m.rollback < rollbackConfirmations {
+			return 0, false
+		}
+	} else {
+		delta = v - *m.value
+	}
+
+	m.rollback = 0
+	m.value = new(v)
+	return delta, true
+}
+
 type Accumulator struct {
-	clock             clock.Clock
-	updated           time.Time
-	energyMeter       *float64 // kWh
-	returnEnergyMeter *float64 // kWh
-	Energy            float64  `json:"energy"`       // kWh
-	ReturnEnergy      float64  `json:"returnEnergy"` // kWh
-	SocTemp           *float64 `json:"socTemp,omitempty"`
+	clock        clock.Clock
+	updated      time.Time
+	energyTotal  meterTotal
+	returnTotal  meterTotal
+	Energy       float64  `json:"energy"`       // kWh
+	ReturnEnergy float64  `json:"returnEnergy"` // kWh
+	SocTemp      *float64 `json:"socTemp,omitempty"`
 }
 
 // AccumulatorState is the resumable meter-reading checkpoint of an Accumulator.
@@ -26,13 +59,13 @@ type AccumulatorState struct {
 
 // Snapshot returns the current meter readings for persistence.
 func (m *Accumulator) Snapshot() AccumulatorState {
-	return AccumulatorState{EnergyMeter: m.energyMeter, ReturnEnergyMeter: m.returnEnergyMeter}
+	return AccumulatorState{EnergyMeter: m.energyTotal.value, ReturnEnergyMeter: m.returnTotal.value}
 }
 
 // Restore seeds the meter readings so the first delta covers the downtime.
 func (m *Accumulator) Restore(s AccumulatorState) {
-	m.energyMeter = s.EnergyMeter
-	m.returnEnergyMeter = s.ReturnEnergyMeter
+	m.energyTotal.value = s.EnergyMeter
+	m.returnTotal.value = s.ReturnEnergyMeter
 }
 
 // CompleteFor reports whether the state can seed a collector of the given group.
@@ -72,13 +105,13 @@ func (m *Accumulator) Updated() time.Time {
 func (m *Accumulator) String() string {
 	b := new(bytes.Buffer)
 	fmt.Fprintf(b, "Accumulated: %.3fkWh energy, %.3fkWh return energy, updated: %v", m.Energy, m.ReturnEnergy, m.updated.Truncate(time.Second))
-	if m.energyMeter != nil || m.returnEnergyMeter != nil {
+	if m.energyTotal.value != nil || m.returnTotal.value != nil {
 		fmt.Fprintf(b, " energy total:")
-		if m.energyMeter != nil {
-			fmt.Fprintf(b, " %.3fkWh", *m.energyMeter)
+		if m.energyTotal.value != nil {
+			fmt.Fprintf(b, " %.3fkWh", *m.energyTotal.value)
 		}
-		if m.returnEnergyMeter != nil {
-			fmt.Fprintf(b, " %.3fkWh return energy", *m.returnEnergyMeter)
+		if m.returnTotal.value != nil {
+			fmt.Fprintf(b, " %.3fkWh return energy", *m.returnTotal.value)
 		}
 	}
 	return b.String()
@@ -86,33 +119,17 @@ func (m *Accumulator) String() string {
 
 // SetEnergyMeterTotal adds the difference to the last total meter value in kWh
 func (m *Accumulator) SetEnergyMeterTotal(v float64) {
-	defer func() {
+	if delta, ok := m.energyTotal.apply(v); ok {
+		m.Energy += delta
 		m.updated = m.clock.Now()
-		m.energyMeter = new(v)
-	}()
-
-	if m.energyMeter == nil {
-		return
-	}
-
-	if v >= *m.energyMeter {
-		m.Energy += v - *m.energyMeter
 	}
 }
 
 // SetReturnEnergyMeterTotal adds the difference to the last total meter value in kWh
 func (m *Accumulator) SetReturnEnergyMeterTotal(v float64) {
-	defer func() {
+	if delta, ok := m.returnTotal.apply(v); ok {
+		m.ReturnEnergy += delta
 		m.updated = m.clock.Now()
-		m.returnEnergyMeter = new(v)
-	}()
-
-	if m.returnEnergyMeter == nil {
-		return
-	}
-
-	if v >= *m.returnEnergyMeter {
-		m.ReturnEnergy += v - *m.returnEnergyMeter
 	}
 }
 

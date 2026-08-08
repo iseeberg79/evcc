@@ -203,8 +203,8 @@ func (c *Collector) AddEnergy(energyTotal, returnEnergyTotal *float64, power flo
 	return c.process(func() {
 		// a direction that ever reported a total is metered, so a nil read is a
 		// transient failure rather than a power-only meter
-		hasEnergyMeter := energyTotal != nil || c.accu.energyMeter != nil
-		hasReturnMeter := returnEnergyTotal != nil || c.accu.returnEnergyMeter != nil
+		hasEnergyMeter := energyTotal != nil || c.accu.energyTotal.value != nil
+		hasReturnMeter := returnEnergyTotal != nil || c.accu.returnTotal.value != nil
 
 		// integrate power for the unmetered direction first, since applying a
 		// meter total advances the accumulator clock
