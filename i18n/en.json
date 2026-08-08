@@ -353,6 +353,7 @@
       "templateLoading": "Loading...",
       "title": "Title",
       "typeDeprecated": "The type '{type}' is outdated and will be removed in a future version. Please check the changelog and recreate this device.",
+      "useDeviceIdentity": "Use evcc device identity",
       "validateSave": "Validate & save"
     },
     "grid": {

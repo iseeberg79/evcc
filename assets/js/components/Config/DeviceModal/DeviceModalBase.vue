@@ -158,15 +158,20 @@
 										v-model:timeout="values['timeout']"
 										component-id="device"
 									/>
-									<PropertyEntry
-										v-for="param in advancedParams"
-										:id="`${deviceType}Param${param.Name}`"
-										:key="param.Name"
-										v-bind="param"
-										v-model="values[param.Name]"
-										:service-values="serviceValues[param.Name]"
-										:currency="currency"
-									/>
+									<template v-for="param in advancedParams" :key="param.Name">
+										<PropertyEntry
+											:id="`${deviceType}Param${param.Name}`"
+											v-bind="param"
+											v-model="values[param.Name]"
+											:service-values="serviceValues[param.Name]"
+											:currency="currency"
+										/>
+										<p v-if="param.Name === 'clientcert' && hasClientCertPair" class="mt-n2 mb-3">
+											<a href="#" @click.prevent="useDeviceIdentity">
+												{{ $t("config.general.useDeviceIdentity") }}
+											</a>
+										</p>
+									</template>
 								</template>
 								<template v-if="$slots['collapsible-more']" #more>
 									<slot name="collapsible-more" :values="values"></slot>
@@ -213,6 +218,7 @@ import DeviceInfoButton from "./DeviceInfoButton.vue";
 import { closeModal } from "@/configModal";
 import ErrorMessage from "../../Helper/ErrorMessage.vue";
 import PropertyEntry from "../PropertyEntry.vue";
+import api from "../../../api";
 import PropertyCollapsible from "../PropertyCollapsible.vue";
 import Modbus from "./Modbus.vue";
 import ModbusAdvanced from "./ModbusAdvanced.vue";
@@ -391,6 +397,10 @@ export default defineComponent({
 		},
 		advancedParams() {
 			return this.templateParams.filter((p) => p.Advanced || p.Deprecated);
+		},
+		hasClientCertPair() {
+			const names = this.templateParams.map((p) => p.Name);
+			return names.includes("clientcert") && names.includes("clientkey");
 		},
 		visibleParams() {
 			return this.authRequired ? this.authParams : this.templateParams;
@@ -627,6 +637,15 @@ export default defineComponent({
 		},
 	},
 	methods: {
+		async useDeviceIdentity() {
+			try {
+				const res = await api.get("config/devicecert");
+				this.values["clientcert"] = res.data.cert;
+				this.values["clientkey"] = res.data.key;
+			} catch (e) {
+				handleError(e, "loading device identity failed");
+			}
+		},
 		reset() {
 			this.values = { ...this.initialValues } as DeviceValues;
 			this.test = initialTestState();

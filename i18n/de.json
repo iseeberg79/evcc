@@ -353,6 +353,7 @@
       "templateLoading": "Lade …",
       "title": "Titel",
       "typeDeprecated": "Der Typ '{type}' ist veraltet und wird in einer zukünftigen Version entfernt. Bitte Changelog prüfen und Gerät neu anlegen.",
+      "useDeviceIdentity": "evcc-Geräte-Identität verwenden",
       "validateSave": "Überprüfen & speichern"
     },
     "grid": {
