@@ -83,27 +83,13 @@ render: |
     source: sunspec
     {{- include "modbus" . | indent 2 }}
     value: 123:WMaxLimPct
-  curtailed: # the limit percentage only applies while the limit is enabled
-    source: go
-    in:
-    - name: ena
-      type: bool
-      config:
-        source: sunspec
-        {{- include "modbus" . | indent 6 }}
-        value: 123:WMaxLim_Ena
-    - name: limit
-      type: float
-      config:
-        source: sunspec
-        {{- include "modbus" . | indent 6 }}
-        value: 123:WMaxLimPct
-    script: |
-      percent := 100
-      if ena {
-        percent = int(limit)
-      }
-      percent
+  curtailed: # register 122 mirrors the effective limit 1:1, regardless of source (own WMaxLimPct write, EVU ripple-control signal or KSEM)
+    source: modbus
+    {{- include "modbus" . | indent 2 }}
+    register:
+      address: 122 # power limit from EVU (%), 100 = uncurtailed
+      type: holding
+      encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
   {{- end }}
   {{- if eq .usage "battery" }}
   type: custom
