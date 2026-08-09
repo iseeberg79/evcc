@@ -395,6 +395,14 @@ func (site *Site) batteryGridChargeActive(rate api.Rate) bool {
 	return limit != nil && !rate.IsZero() && rate.Value <= *limit
 }
 
+// vehicleDone reports whether the vehicle's soc has reached its limit, without
+// LimitSocReached's <100 exclusion (that guards against cutting a session short on soc
+// rounding noise; here a false "done" only costs a little foregone self-consumption).
+func (site *Site) vehicleDone(lp loadpoint.API) bool {
+	soc := lp.GetSoc()
+	return soc > 0 && soc >= float64(lp.EffectiveLimitSoc())
+}
+
 func (site *Site) dischargeControlActive(rate api.Rate) bool {
 	if !site.GetBatteryDischargeControl() {
 		return false
@@ -402,7 +410,7 @@ func (site *Site) dischargeControlActive(rate api.Rate) bool {
 
 	for _, lp := range site.Loadpoints() {
 		smartCostActive := site.smartCostActive(lp, rate)
-		if lp.GetStatus() == api.StatusC && (smartCostActive || lp.IsFastChargingActive()) {
+		if lp.GetStatus() == api.StatusC && !site.vehicleDone(lp) && (smartCostActive || lp.IsFastChargingActive()) {
 			return true
 		}
 	}
@@ -425,7 +433,7 @@ func (site *Site) dischargeControlSessionActive(rate api.Rate) bool {
 
 	for _, lp := range site.Loadpoints() {
 		if status := lp.GetStatus(); status == api.StatusB || status == api.StatusC {
-			if site.smartCostActive(lp, rate) || lp.IsFastChargingActive() {
+			if !site.vehicleDone(lp) && (site.smartCostActive(lp, rate) || lp.IsFastChargingActive()) {
 				return true
 			}
 		}
