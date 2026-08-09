@@ -6,7 +6,8 @@ products:
       en: Plenticore Hybrid
   - brand: Kostal
     description:
-      generic: PIKO IQ
+      de: PIKO IQ (ohne Batterie)
+      en: PIKO IQ (no battery)
 capabilities: ["battery-control", "curtail"]
 covers: ["kostal-plenticore-hw0200", "kostal-plenticore"]
 caveats:
@@ -16,11 +17,6 @@ caveats:
       en: |
         Only a single system may access the inverter! Plenticore G1 requires at least firmware UI 01.16.05025 (04.11.2020, MC >=01.44).
     link: https://github.com/evcc-io/evcc/wiki/Kostal-Plenticore
-  - description:
-      de: |
-        PIKO IQ besitzt keine Batterie. Die Nutzung "battery" ist nur für Plenticore-Modelle mit angeschlossener Batterie relevant.
-      en: |
-        PIKO IQ has no battery. The "battery" usage only applies to Plenticore models with a connected battery.
 requirements:
   description:
     de: |
