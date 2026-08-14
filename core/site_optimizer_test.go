@@ -474,3 +474,38 @@ func TestDiffSuggestions(t *testing.T) {
 	assert.Empty(t, site.diffSuggestions(map[string]pendingSuggestion{}))
 	assert.Len(t, site.diffSuggestions(pending(stop)), 1)
 }
+func TestPercentileOf(t *testing.T) {
+	// n values of v
+	fill := func(n int, v float64) []float64 {
+		s := make([]float64, n)
+		for i := range s {
+			s[i] = v
+		}
+		return s
+	}
+
+	t.Run("too few samples returns false", func(t *testing.T) {
+		_, ok := percentileOf(nil, 0.8, consumptionMarginMinSamples)
+		assert.False(t, ok)
+
+		_, ok = percentileOf(fill(consumptionMarginMinSamples-1, 1.1), 0.8, consumptionMarginMinSamples)
+		assert.False(t, ok)
+	})
+
+	t.Run("stable cluster", func(t *testing.T) {
+		v, ok := percentileOf(fill(20, 1.1), 0.8, consumptionMarginMinSamples)
+		assert.True(t, ok)
+		assert.InDelta(t, 1.1, v, 0.001)
+	})
+
+	// P80 rejects the majority of days but still catches a persistent minority of
+	// high-consumption outliers, unlike P50 which would ignore them
+	t.Run("high percentile covers a minority of high-consumption days", func(t *testing.T) {
+		ratios := append(fill(15, 1.0), fill(5, 1.5)...) // 25% of days spike to 1.5x
+
+		p50, _ := percentileOf(ratios, 0.5, consumptionMarginMinSamples)
+		p80, _ := percentileOf(ratios, 0.8, consumptionMarginMinSamples)
+		assert.InDelta(t, 1.0, p50, 0.001)
+		assert.Greater(t, p80, p50)
+	})
+}
