@@ -172,8 +172,30 @@ func (c *Collector) SetSocTemp(value float64, isTemp bool) error {
 	return c.entity.updateIsTemp(isTemp)
 }
 
-func (c *Collector) EnergyProfile(from time.Time) (*[96]float64, error) {
-	return energyProfile(c.entity, from)
+// EnergyProfile returns average 15min meter profiles in kWh, one per weekday - indexed
+// by time.Weekday (0=Sunday..6=Saturday) - see weekdayProfiles. A weekday without
+// enough dedicated history yet falls back to the pooled profile across all days
+// (energyProfile), so the optimizer still gets a usable, if less specific, estimate
+// instead of failing outright until a full calendar week of history exists.
+func (c *Collector) EnergyProfile(from time.Time) (profiles [7]*[96]float64, err error) {
+	fallback, err := energyProfile(c.entity, from)
+	if err != nil {
+		return profiles, err
+	}
+
+	weekday, err := weekdayProfiles(c.entity, from)
+	if err != nil {
+		return profiles, err
+	}
+
+	for d := range profiles {
+		profiles[d] = weekday[d]
+		if profiles[d] == nil {
+			profiles[d] = fallback
+		}
+	}
+
+	return profiles, nil
 }
 
 // LastSlotEnergy returns the energy in kWh of the most recently completed

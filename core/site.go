@@ -120,6 +120,9 @@ type Site struct {
 
 	optimizerMu      sync.Mutex // guards optimizer runs
 	optimizerUpdated time.Time  // last optimizer run, guarded by optimizerMu
+
+	homeProfileCache    [7]*[96]float64 // cached EnergyProfile result, valid for homeProfileCacheDay
+	homeProfileCacheDay time.Time       // day the cache above was computed for
 }
 
 // MetersConfig contains the site's meter configuration

@@ -246,8 +246,28 @@ func TestUpdateProfile(t *testing.T) {
 	require.NoError(t, db.Instance.Model(new(meter)).Count(&count).Error)
 	require.Equal(t, int64(24*2*4), count)
 
+	// epoch (1970-01-01) is a Thursday: day 1 (index 0..95) is Thursday, day 2 (index
+	// 96..191) is Friday.
+	beforeAllData := clock.Now().Local().AddDate(0, 0, -3).Add(12 * time.Hour)
+
 	{
-		from := clock.Now().Local().AddDate(0, 0, -2).Add(12 * time.Hour) // 12:00 of day 0
+		// pooled profile: both days average into the same 96 buckets
+		prof, err := energyProfile(entity, beforeAllData)
+		require.NoError(t, err)
+
+		var expected [96]float64
+		for i := range expected {
+			expected[i] = float64(i+96+i) / 2
+		}
+
+		require.Equal(t, expected, *prof, "pooled profile: expected %v, got %v", expected, *prof)
+	}
+
+	{
+		// pooled profile over a window starting mid-day (the normal case in production,
+		// since the window boundary is relative to "now"): thursday's morning is
+		// excluded, friday (a week - err, a day - later) fills those buckets instead
+		from := clock.Now().Local().AddDate(0, 0, -2).Add(12 * time.Hour) // 12:00 of day 0 (thursday)
 
 		prof, err := energyProfile(entity, from)
 		require.NoError(t, err)
@@ -255,27 +275,62 @@ func TestUpdateProfile(t *testing.T) {
 		var expected [96]float64
 		for i := range expected {
 			if i < 48 {
-				expected[i] = float64(48+i+144+i) / 2
+				expected[i] = float64(96 + i) // only friday's morning slots qualify
 				continue
 			}
-			expected[i] = float64(96 - 48 + i)
+			expected[i] = float64(i+96+i) / 2 // both days' afternoon slots qualify
 		}
 
-		require.Equal(t, expected, *prof, "partial profile: expected %v, got %v", expected, *prof)
+		require.Equal(t, expected, *prof, "mid-day-aligned pooled profile: expected %v, got %v", expected, *prof)
 	}
 
 	{
-		from := clock.Now().Local().AddDate(0, 0, -3).Add(12 * time.Hour) // 12:00 of day -1
-
-		prof, err := energyProfile(entity, from)
+		// with only one occurrence each, neither thursday nor friday has enough samples
+		// yet to be trusted over the pooled profile
+		profiles, err := weekdayProfiles(entity, beforeAllData)
 		require.NoError(t, err)
 
-		var expected [96]float64
-		for i := range expected {
-			expected[i] = float64(0+96+2*i) / 2
+		for _, d := range []time.Weekday{time.Sunday, time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday, time.Saturday} {
+			require.Nil(t, profiles[d], "%s: expected nil (too few samples), got %v", d, profiles[d])
+		}
+	}
+
+	// add 3 more thursdays (weeks 2, 3, 4) with flat, distinct values, so thursday
+	// reaches weekdayProfileMinSamples while friday still has only its original one
+	day1Start := clock.Now().Local().AddDate(0, 0, -2) // 00:00 of day 1 (thursday)
+	for i, v := range []float64{50, 60, 70} {
+		clock.Set(day1Start.AddDate(0, 0, 7*(i+1))) // 00:00 of thursday, week i+2
+		for range 4 * 24 {
+			persist(entity, clock.Now(), v, v, nil, false)
+			clock.Add(15 * time.Minute)
+		}
+	}
+
+	{
+		profiles, err := weekdayProfiles(entity, beforeAllData)
+		require.NoError(t, err)
+
+		var expectedThu [96]float64
+		for i := range expectedThu {
+			expectedThu[i] = float64(i+50+60+70) / 4
 		}
 
-		require.Equal(t, expected, *prof, "full profile: expected %v, got %v", expected, *prof)
+		require.Equal(t, &expectedThu, profiles[time.Thursday], "thursday profile: expected %v, got %v", expectedThu, profiles[time.Thursday])
+		require.Nil(t, profiles[time.Friday], "friday: still only one sample, expected nil, got %v", profiles[time.Friday])
+	}
+
+	{
+		// EnergyProfile falls back to the pooled profile for a weekday without its own
+		// trusted profile (friday, here, still below weekdayProfileMinSamples) instead
+		// of failing
+		profiles, err := (&Collector{entity: entity}).EnergyProfile(beforeAllData)
+		require.NoError(t, err)
+
+		pooled, err := energyProfile(entity, beforeAllData)
+		require.NoError(t, err)
+
+		require.Equal(t, pooled, profiles[time.Friday], "friday should fall back to the pooled profile")
+		require.NotEqual(t, pooled, profiles[time.Thursday], "thursday has its own trusted profile by now")
 	}
 }
 

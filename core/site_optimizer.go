@@ -996,17 +996,30 @@ func unmodelledPower(lp loadpoint.API) float64 {
 	return max(0, power)
 }
 
-// homeProfile returns the home base load in Wh
+// homeProfileWindow is the trailing history for homeProfile, in days. 8 weeks gives
+// ~8 samples per weekday bucket - thinner than a flat average would need, but per-
+// weekday averaging tolerates that far better than a percentile would.
+const homeProfileWindow = 56
+
+// homeProfile returns the home base load in Wh, picking the matching weekday's profile
+// per actual calendar day so each weekday's systematic consumption pattern (routine,
+// occupancy) doesn't get smeared into a single flat average.
 func (site *Site) homeProfile(minLen int) ([]float64, error) {
-	// kWh over last 30 days
-	profile, err := site.collectors[metrics.Home].EnergyProfile(now.BeginningOfDay().AddDate(0, 0, -30))
+	profiles, err := site.cachedHomeProfile()
 	if err != nil {
 		return nil, err
 	}
 
 	// max 4 days
 	slots := make([]float64, 0, minLen+1)
-	for len(slots) <= minLen+24*4 { // allow for prorating first day
+	for day := 0; len(slots) <= minLen+24*4; day++ { // allow for prorating first day
+		profile := profiles[now.BeginningOfDay().AddDate(0, 0, day).Weekday()]
+		if profile == nil {
+			// EnergyProfile is expected to always back-fill every weekday (falling back
+			// to the pooled profile); guard against a future regression of that
+			// invariant instead of panicking on profile[:] below
+			return nil, fmt.Errorf("home profile: missing profile for %s", now.BeginningOfDay().AddDate(0, 0, day).Weekday())
+		}
 		slots = append(slots, profile[:]...)
 	}
 
@@ -1022,6 +1035,34 @@ func (site *Site) homeProfile(minLen int) ([]float64, error) {
 	return lo.Map(res, func(v float64, i int) float64 {
 		return v * 1e3
 	}), nil
+}
+
+// cachedHomeProfile returns the per-weekday consumption profiles, cached per day since
+// they only depend on completed history and cannot change within a day. Without this,
+// the underlying metrics query would rerun on every optimizer cycle (every ~15min).
+func (site *Site) cachedHomeProfile() ([7]*[96]float64, error) {
+	bod := now.BeginningOfDay()
+
+	site.RLock()
+	profiles, hit := site.homeProfileCache, site.homeProfileCacheDay.Equal(bod)
+	site.RUnlock()
+	if hit {
+		return profiles, nil
+	}
+
+	// query outside the lock: this is a synchronous DB call and must not block
+	// concurrent Site Get*/Set* API calls
+	profiles, err := site.collectors[metrics.Home].EnergyProfile(bod.AddDate(0, 0, -homeProfileWindow))
+	if err != nil {
+		return profiles, err
+	}
+
+	site.Lock()
+	site.homeProfileCache = profiles
+	site.homeProfileCacheDay = bod
+	site.Unlock()
+
+	return profiles, nil
 }
 
 // profileSlotsFromNow strips away any slots before "now".
