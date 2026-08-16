@@ -7,6 +7,7 @@ import (
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/keys"
 	"github.com/evcc-io/evcc/core/loadpoint"
+	"github.com/evcc-io/evcc/core/types"
 	"github.com/evcc-io/evcc/hems/hems"
 	"github.com/evcc-io/evcc/util/config"
 )
@@ -29,6 +30,25 @@ func (site *Site) hasBatteryControl() bool {
 	}
 
 	return false
+}
+
+// allBatteriesHaveChargeCap reports whether every configured battery can have its charge
+// power capped (BatteryChargePowerLimiter). It gates only the self-consumption holdcharge
+// case in slotSuggestion, which needs every battery to follow a capped value: the resulting
+// mode is dispatched site-wide (applyBatteryMode has no per-battery mode concept), so if any
+// battery lacked the cap it would receive the same HoldCharge mode and, without a value push
+// of its own, fall back to an unconditional 0 W block instead of the intended partial cap.
+func (site *Site) allBatteriesHaveChargeCap() bool {
+	for _, dev := range site.batteryMeters {
+		if dev == nil {
+			continue
+		}
+		if !api.HasCap[api.BatteryChargePowerLimiter](dev.Instance()) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // setBatteryMode sets the battery mode
@@ -62,6 +82,11 @@ func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate)
 		site.log.DEBUG.Println("battery mode: HEMS dimmed")
 		batteryMode = api.BatteryHold
 	}
+
+	// refresh each battery's pushed charge values before applying the mode, so the
+	// consuming control path (batterymode charge/holdcharge case) reads a fresh value
+	// in the same cycle
+	site.updateBatteryChargeValues()
 
 	// NOTE: applyBatteryMode is always called when charge mode is active to validate max soc
 	if modeChanged := batteryMode != api.BatteryUnknown; modeChanged || site.batteryMode == api.BatteryCharge {
@@ -107,11 +132,97 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive bool, rate api.Rat
 		res = keepUnlessModified(api.BatteryCharge)
 	case site.dischargeControlActive(rate):
 		res = keepUnlessModified(api.BatteryHold)
+	case site.holdChargePlanAvailable():
+		// follow the optimizer's current-slot plan
+		if site.dischargeControlSessionActive(rate) {
+			// bridges Hold across brief status blips during the session (see
+			// dischargeControlSessionActive) instead of flickering to HoldCharge
+			res = keepUnlessModified(api.BatteryHold)
+		} else {
+			res = keepUnlessModified(site.holdChargeMode())
+		}
 	case batteryModeModified(batMode):
 		res = api.BatteryNormal
 	}
 
 	return res
+}
+
+// holdChargeStale bounds how long a stored plan is trusted, regardless of whether its
+// slots still cover "now" - the plan's inputs (SoC, PV, prices) age independently of
+// slot coverage.
+const holdChargeStale = 30 * time.Minute
+
+// holdChargePlan is an immutable per-slot snapshot of each home battery's planned action,
+// keyed by battery name. The producer (optimizerUpdate) swaps the pointer under
+// site.Lock; consumers read it under RLock.
+type holdChargePlan struct {
+	updated time.Time
+	starts  []time.Time
+	ends    []time.Time
+	slots   []map[string]types.Suggestion
+}
+
+// singleSlotHoldChargePlan wraps a one-off suggestion in the same plan shape optimizerUpdate
+// produces, for callers that only ever have a single current-slot suggestion.
+func singleSlotHoldChargePlan(now time.Time, suggestions map[string]types.Suggestion) *holdChargePlan {
+	return &holdChargePlan{
+		updated: now,
+		starts:  []time.Time{now},
+		ends:    []time.Time{now.Add(holdChargeStale)},
+		slots:   []map[string]types.Suggestion{suggestions},
+	}
+}
+
+// suggestions returns the plan's slot covering now, or nil if the plan is stale or no
+// slot covers now. The single staleness check here is what holdChargePlanAvailable,
+// holdChargeMode, and holdChargeSuggestion all resolve against - keeping "is this plan
+// still trusted" in one place instead of each caller re-deriving it.
+func (p *holdChargePlan) suggestions(now time.Time) map[string]types.Suggestion {
+	if p == nil || now.Sub(p.updated) >= holdChargeStale {
+		return nil
+	}
+	for i, start := range p.starts {
+		if !now.Before(start) && now.Before(p.ends[i]) {
+			return p.slots[i]
+		}
+	}
+	return nil
+}
+
+// holdChargePlanAvailable reports whether a recent plan exists with a slot for now
+func (site *Site) holdChargePlanAvailable() bool {
+	site.RLock()
+	defer site.RUnlock()
+	return len(site.holdChargePlan.suggestions(time.Now())) > 0
+}
+
+// holdChargeMode collapses the plan's current-slot per-battery suggestions into the
+// single global battery mode that applies to all home batteries. The optimizer already
+// classifies each battery (normal/hold/charge/holdcharge), so we map that action
+// directly instead of re-deriving it from raw charge power. On conflicting suggestions
+// the peak-shaving intent wins: holdcharge > hold > charge > normal. Order-independent
+// (holdcharge short-circuits; the rest only upgrade the priority).
+func (site *Site) holdChargeMode() api.BatteryMode {
+	site.RLock()
+	defer site.RUnlock()
+
+	mode := api.BatteryNormal
+	for _, s := range site.holdChargePlan.suggestions(time.Now()) {
+		switch s.Action {
+		case "holdcharge":
+			return api.BatteryHoldCharge
+		case "hold":
+			if mode != api.BatteryHoldCharge {
+				mode = api.BatteryHold
+			}
+		case "charge":
+			if mode == api.BatteryNormal {
+				mode = api.BatteryCharge
+			}
+		}
+	}
+	return mode
 }
 
 // batteryMaxSocReached checks is battery has exceed max soc limit
@@ -139,6 +250,14 @@ func (site *Site) batteryMaxSocReached(dev config.Device[api.Meter]) (bool, erro
 	}
 
 	return false, nil
+}
+
+// holdChargeSuggestion returns the current-slot plan for the given home battery,
+// or the zero value if none is available
+func (site *Site) holdChargeSuggestion(name string) types.Suggestion {
+	site.RLock()
+	defer site.RUnlock()
+	return site.holdChargePlan.suggestions(time.Now())[name]
 }
 
 // applyBatteryMode applies the mode to each battery
@@ -184,6 +303,43 @@ func (site *Site) applyBatteryMode(mode api.BatteryMode) error {
 	return nil
 }
 
+// updateBatteryChargeValues pushes the current-slot charge values via the typed
+// capabilities every cycle, unconditionally: the consuming batterymode control path must
+// read a fresh value the moment the mode applies.
+//
+// The setpoint falls back to the battery's reported max charge power only when there is
+// no suggestion at all (no optimizer, or plan stale) - never for a deliberate 0 W.
+//
+// TODO: guard the pushed setpoint against an active circuit/load-management limit once
+// that constraint is modelled, so forced grid-charging cannot exceed the site's headroom.
+func (site *Site) updateBatteryChargeValues() {
+	for _, dev := range site.batteryMeters {
+		instance := dev.Instance()
+		suggestion := site.holdChargeSuggestion(dev.Config().Name)
+
+		if powerLimiter, ok := api.Cap[api.BatteryChargePowerLimiter](instance); ok {
+			site.log.TRACE.Printf("battery %s max charge power: %.0fW action=%q", deviceTitleOrName(dev), suggestion.Charge, suggestion.Action)
+			if err := powerLimiter.SetMaxChargePower(suggestion.Charge); err != nil && !errors.Is(err, api.ErrNotAvailable) {
+				site.log.ERROR.Printf("battery %s max charge power: %v", deviceTitleOrName(dev), err)
+			}
+		}
+
+		if setpointCtrl, ok := api.Cap[api.BatteryPowerSetpointController](instance); ok {
+			watt := suggestion.Charge
+			fallback := suggestion.Action == ""
+			if fallback {
+				if powerLimiter, ok := api.Cap[api.BatteryPowerLimiter](instance); ok {
+					watt, _ = powerLimiter.GetPowerLimits()
+				}
+			}
+			site.log.TRACE.Printf("battery %s power setpoint: %.0fW action=%q fallback=%v", deviceTitleOrName(dev), watt, suggestion.Action, fallback)
+			if err := setpointCtrl.SetPowerSetpoint(watt); err != nil && !errors.Is(err, api.ErrNotAvailable) {
+				site.log.ERROR.Printf("battery %s power setpoint: %v", deviceTitleOrName(dev), err)
+			}
+		}
+	}
+}
+
 func (site *Site) tariffRates(usage api.TariffUsage) (api.Rates, error) {
 	tariff := site.GetTariff(usage)
 	if tariff == nil || tariff.Type() == api.TariffTypePriceStatic {
@@ -212,6 +368,26 @@ func (site *Site) dischargeControlActive(rate api.Rate) bool {
 		smartCostActive := site.smartCostActive(lp, rate)
 		if lp.GetStatus() == api.StatusC && (smartCostActive || lp.IsFastChargingActive()) {
 			return true
+		}
+	}
+
+	return false
+}
+
+// dischargeControlSessionActive is dischargeControlActive gated on a connected vehicle
+// (StatusB or StatusC) instead of active charging. StatusC drops out on brief blips (PWM
+// pause, phase switch, handshake retry) while the session continues; this keeps Hold from
+// flickering to HoldCharge, which would also block the vehicle.
+func (site *Site) dischargeControlSessionActive(rate api.Rate) bool {
+	if !site.GetBatteryDischargeControl() {
+		return false
+	}
+
+	for _, lp := range site.Loadpoints() {
+		if status := lp.GetStatus(); status == api.StatusB || status == api.StatusC {
+			if site.smartCostActive(lp, rate) || lp.IsFastChargingActive() {
+				return true
+			}
 		}
 	}
 

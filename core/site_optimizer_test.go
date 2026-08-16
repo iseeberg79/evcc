@@ -419,40 +419,100 @@ func TestBlendScale(t *testing.T) {
 	assert.Equal(t, []float64{50, 62.5}, short)
 }
 
-func TestCurrentSlotSuggestion(t *testing.T) {
+func TestSlotSuggestion(t *testing.T) {
 	// slotHours 1 makes the per-slot Wh values map 1:1 to W
 	for _, tc := range []struct {
 		name              string
 		typ               batteryType
 		charge, disch     float32
 		importing, export bool
+		canCapCharge      bool
 		want              string
 	}{
-		{"battery grid charge", batteryTypeBattery, 3000, 0, true, false, "charge"},
-		{"battery pv charge (no import)", batteryTypeBattery, 3000, 0, false, true, "normal"},
-		{"battery hold (idle while importing)", batteryTypeBattery, 0, 0, true, false, "hold"},
-		{"battery holdcharge (idle while exporting)", batteryTypeBattery, 0, 0, false, true, "holdcharge"},
-		{"battery discharge (self-consumption while importing)", batteryTypeBattery, 0, 2000, true, false, "normal"},
-		{"battery grid discharge (discharge while exporting)", batteryTypeBattery, 0, 2000, false, true, "discharge"},
-		{"battery idle balanced", batteryTypeBattery, 0, 0, false, false, "normal"},
-		{"loadpoint charge", batteryTypeLoadpoint, 11000, 0, false, false, "charge"},
-		{"loadpoint stop", batteryTypeLoadpoint, 0, 0, false, false, "stop"},
-		{"vehicle below threshold is stop", batteryTypeVehicle, 40, 0, false, false, "stop"},
+		{"battery grid charge", batteryTypeBattery, 3000, 0, true, false, true, "charge"},
+		{"battery pv charge (no import)", batteryTypeBattery, 3000, 0, false, true, true, "holdcharge"},
+		{"battery pv charge (no import, no charge-cap capability)", batteryTypeBattery, 3000, 0, false, true, false, "normal"},
+		{"battery hold (idle while importing)", batteryTypeBattery, 0, 0, true, false, true, "hold"},
+		{"battery holdcharge (idle while exporting)", batteryTypeBattery, 0, 0, false, true, true, "holdcharge"},
+		{"battery discharge (self-consumption while importing)", batteryTypeBattery, 0, 2000, true, false, true, "normal"},
+		{"battery grid discharge (discharge while exporting)", batteryTypeBattery, 0, 2000, false, true, true, "discharge"},
+		{"battery idle balanced", batteryTypeBattery, 0, 0, false, false, true, "normal"},
+		{"loadpoint charge", batteryTypeLoadpoint, 11000, 0, false, false, true, "charge"},
+		{"vehicle below threshold is stop", batteryTypeVehicle, 40, 0, false, false, true, "stop"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			res := optimizer.BatteryResult{
 				ChargingPower:    []float32{tc.charge},
 				DischargingPower: []float32{tc.disch},
 			}
-			s := currentSlotSuggestion(batteryDetail{Type: tc.typ}, res, tc.importing, tc.export, 1)
+			s := slotSuggestion(batteryDetail{Type: tc.typ}, res, 0, tc.importing, tc.export, tc.canCapCharge, 1)
 			assert.Equal(t, tc.want, s.Action)
 			assert.InDelta(t, tc.charge, s.Charge, 1e-3)
 			assert.InDelta(t, tc.disch, s.Discharge, 1e-3)
 		})
 	}
 
-	// no result yields an empty suggestion
-	assert.Empty(t, currentSlotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{}, true, false, 1))
+	// each index reads its own slot, not slot 0 (see the NOTE on slotSuggestion), for
+	// both charge and discharge
+	t.Run("index reads its own slot, not slot 0", func(t *testing.T) {
+		res := optimizer.BatteryResult{
+			ChargingPower:    []float32{0, 1592}, // slot 0 idle, slot 1 would charge
+			DischargingPower: []float32{0, 300},  // slot 0 idle, slot 1 would discharge
+		}
+		s0 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 0, false, false, true, 285.0/3600)
+		assert.Equal(t, "normal", s0.Action)
+		assert.InDelta(t, 0, s0.Charge, 1e-3)
+		assert.InDelta(t, 0, s0.Discharge, 1e-3)
+
+		s1 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 1, false, false, true, 900.0/3600)
+		assert.Equal(t, "holdcharge", s1.Action)
+		assert.InDelta(t, 1592/(900.0/3600), s1.Charge, 1e-3)   // Wh -> W at the full-slot rate
+		assert.InDelta(t, 300/(900.0/3600), s1.Discharge, 1e-3) // Wh -> W at the full-slot rate
+	})
+
+	// an out-of-range index yields an empty suggestion
+	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{}, 0, true, false, true, 1))
+	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{ChargingPower: []float32{0}, DischargingPower: []float32{0}}, 5, true, false, true, 1))
+}
+
+// TestBuildHoldChargePlanTrimsHorizon guards that the plan only retains slots within
+// holdChargeStale, not the full (potentially multi-day) optimizer horizon -
+// holdChargePlanAvailable() would never look up the rest anyway.
+func TestBuildHoldChargePlanTrimsHorizon(t *testing.T) {
+	now := time.Now()
+	const minLen = 192 // 2 days at 15-min slots, matching the optimizer's own cap
+
+	dt := timeSteps(minLen, now)
+	details := requestDetails{
+		Timestamps: asTimestamps(dt, now),
+		BatteryDetails: []batteryDetail{
+			{Type: batteryTypeBattery, Name: "b", controllable: true},
+		},
+	}
+	res := &optimizer.OptimizationResult{
+		Batteries: []optimizer.BatteryResult{{
+			ChargingPower:    make([]float32, minLen),
+			DischargingPower: make([]float32, minLen),
+		}},
+	}
+	res.Batteries[0].ChargingPower[2] = 3000 // marker: only slot 2 plans to charge
+
+	plan := buildHoldChargePlan(details, res, dt, true)
+
+	assert.Less(t, len(plan.starts), minLen, "plan should be trimmed well below the full horizon")
+	require.Greater(t, len(plan.starts), 2, "trim must not cut the marker slot used below")
+
+	// buildHoldChargePlan must pass its own loop index i to slotSuggestion, not always 0 -
+	// otherwise every slot would carry slot 0's (idle) suggestion instead of its own
+	assert.Equal(t, "normal", plan.slots[0]["b"].Action, "slot 0 has no charge plan")
+	assert.Equal(t, "holdcharge", plan.slots[2]["b"].Action, "slot 2 carries the marker (self-consumption charge, capped)")
+
+	// the last retained slot must still cover the full stale window from the plan's own
+	// "updated" timestamp (what holdChargePlanAvailable actually checks), so a lookup
+	// anywhere within its trust window succeeds
+	lastEnd := plan.ends[len(plan.ends)-1]
+	assert.False(t, lastEnd.Before(plan.updated.Add(holdChargeStale)),
+		"last slot (ends %v) must cover the stale window from %v", lastEnd, plan.updated.Add(holdChargeStale))
 }
 
 // TestSuggestionActionable ensures the actionable flag follows the current state

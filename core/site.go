@@ -80,12 +80,13 @@ type Site struct {
 	curtailPercent *int
 
 	// battery settings
-	prioritySoc             float64  // prefer battery up to this Soc
-	bufferSoc               float64  // continue charging on battery above this Soc
-	bufferStartSoc          float64  // start charging on battery above this Soc
-	batteryDischargeControl bool     // prevent battery discharge for fast and planned charging
-	batteryGridChargeLimit  *float64 // grid charging limit
-	batteryGridDischarge    bool     // allow battery discharge to grid (experimental)
+	prioritySoc             float64         // prefer battery up to this Soc
+	bufferSoc               float64         // continue charging on battery above this Soc
+	bufferStartSoc          float64         // start charging on battery above this Soc
+	batteryDischargeControl bool            // prevent battery discharge for fast and planned charging
+	holdChargePlan          *holdChargePlan // per-slot plan (optimizer) per home battery name
+	batteryGridChargeLimit  *float64        // grid charging limit
+	batteryGridDischarge    bool            // allow battery discharge to grid (experimental)
 
 	// grid settings
 	gridExportLimit float64 // static grid export power limit in W, 0 = disabled
