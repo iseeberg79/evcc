@@ -20,10 +20,30 @@ import {
 	minSlotIndex,
 	maxSlotIndex,
 } from "./echarts";
-import colors, { lighterColor } from "@/colors";
+import colors, { lighterColor, setAlpha } from "@/colors";
 import formatter from "@/mixins/formatter";
 import chartMixin from "./chartMixin";
 import type { CURRENCY, UiForecastSlot } from "@/types/evcc";
+
+// diagonal-stripe fill for the weekday-matched-history tail, matching
+// BatteryHistoryChart's forecast convention (dotted line + hatched area)
+function hatchPattern(color: string) {
+	const size = 8;
+	const dpr = window.devicePixelRatio || 1;
+	const canvas = document.createElement("canvas");
+	canvas.width = canvas.height = size * dpr;
+	const ctx = canvas.getContext("2d")!;
+	ctx.scale(dpr, dpr);
+	ctx.strokeStyle = setAlpha(color, "66") || color;
+	ctx.lineWidth = 1;
+	ctx.beginPath();
+	for (const o of [-size, 0, size]) {
+		ctx.moveTo(o, size);
+		ctx.lineTo(o + size, 0);
+	}
+	ctx.stroke();
+	return { image: canvas, repeat: "repeat" };
+}
 
 export default defineComponent({
 	name: "PriceChart",
@@ -38,6 +58,14 @@ export default defineComponent({
 	computed: {
 		slots(): UiForecastSlot[] {
 			return filterForecastSlots(this.grid, this.startDate, this.endDate);
+		},
+		solidSlots(): UiForecastSlot[] {
+			if (this.gridSyntheticFrom === undefined) return this.slots;
+			return this.slots.filter((s) => s.start < this.gridSyntheticFrom!);
+		},
+		syntheticSlots(): UiForecastSlot[] {
+			if (this.gridSyntheticFrom === undefined) return [];
+			return this.slots.filter((s) => s.start >= this.gridSyntheticFrom!);
 		},
 		feedinSlots(): UiForecastSlot[] {
 			return this.feedin
@@ -137,12 +165,10 @@ export default defineComponent({
 					},
 				}),
 				series: [
-					this.priceSeries(
-						this.slots,
-						priceColor,
-						this.markPoints,
-						this.gridSyntheticFrom
-					),
+					this.priceSeries(this.solidSlots, priceColor, this.markPoints),
+					...(this.syntheticSlots.length
+						? [this.priceSeries(this.syntheticSlots, priceColor, undefined, true)]
+						: []),
 					this.priceSeries(this.feedinSlots, exportColor),
 				],
 			};
@@ -153,7 +179,11 @@ export default defineComponent({
 			slots: UiForecastSlot[],
 			color: string,
 			points?: { coord: [number, number]; value: string }[],
-			markAreaFrom?: number
+			// PoC: renders the weekday-matched-history tail beyond the real day-ahead
+			// window (core/site_price_extend.go) with the same dotted-line + hatched-area
+			// convention BatteryHistoryChart uses for its own forecast segment, instead of
+			// shading an otherwise unbroken line - not merged/final UI
+			dashed?: boolean
 		): Record<string, unknown> {
 			const avg = slots.length ? slots.reduce((a, s) => a + s.value, 0) / slots.length : 0;
 			const gradientDown = avg >= 0;
@@ -165,20 +195,22 @@ export default defineComponent({
 				data: slots.map((s) => ({
 					value: [clampStart(s.start, this.startDate), s.value],
 				})),
-				lineStyle: { color, width: 2 },
-				areaStyle: {
-					color: new echarts.graphic.LinearGradient(
-						0,
-						gradientDown ? 0 : 1,
-						0,
-						gradientDown ? 1 : 0,
-						[
-							{ offset: 0, color: lighterColor(color) || color },
-							{ offset: 0.75, color: color + "00" },
-							{ offset: 1, color: color + "00" },
-						]
-					),
-				},
+				lineStyle: { color, width: 2, type: dashed ? "dotted" : "solid" },
+				areaStyle: dashed
+					? { color: hatchPattern(color) }
+					: {
+							color: new echarts.graphic.LinearGradient(
+								0,
+								gradientDown ? 0 : 1,
+								0,
+								gradientDown ? 1 : 0,
+								[
+									{ offset: 0, color: lighterColor(color) || color },
+									{ offset: 0.75, color: color + "00" },
+									{ offset: 1, color: color + "00" },
+								]
+							),
+						},
 				itemStyle: { color },
 				emphasis: { disabled: true },
 				...(points
@@ -189,20 +221,6 @@ export default defineComponent({
 								this.startDate,
 								this.endDate
 							),
-						}
-					: {}),
-				// PoC: shade the weekday-matched-history tail beyond the real day-ahead
-				// window (core/site_price_extend.go), not merged/final UI
-				...(markAreaFrom !== undefined
-					? {
-							markArea: {
-								silent: true,
-								itemStyle: { color: colors.muted, opacity: 0.12 },
-								label: { show: false },
-								data: [
-									[{ xAxis: markAreaFrom }, { xAxis: this.endDate.getTime() }],
-								],
-							},
 						}
 					: {}),
 			};
