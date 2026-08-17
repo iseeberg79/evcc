@@ -6,6 +6,15 @@
 			:battery-mode="state.batteryMode"
 		/>
 
+		<!-- testing only: not part of the PR, shows the reactive consumption signal (see
+		     core/site_tariffs.go consumptionSignal) while it is being evaluated live.
+		     Gated purely by data presence - the field only exists on this branch's backend. -->
+		<p v-if="consumptionSignalScale" class="text-muted small mb-2">
+			consumption signal: ×{{ consumptionSignalScale.toFixed(2) }} ({{
+				consumptionSignalPercent
+			}}) [testing]
+		</p>
+
 		<BatteryHistoryCard
 			class="mb-4 box-pull-out"
 			:batteries="chartBatteries"
@@ -126,6 +135,14 @@ export default defineComponent({
 		gridChargeTariff() {
 			const { co2, grid } = store.uiForecast.value;
 			return this.state.smartCostType === SMART_COST_TYPE.CO2 ? co2 : grid;
+		},
+		// testing only, see the template comment above BatteryHistoryCard
+		consumptionSignalScale(): number | null {
+			return store.uiForecast.value.consumption?.scale ?? null;
+		},
+		consumptionSignalPercent(): string {
+			const scale = this.consumptionSignalScale ?? 1;
+			return `${scale >= 1 ? "+" : ""}${Math.round((scale - 1) * 100)}%`;
 		},
 		smartCostLimitProps() {
 			return {

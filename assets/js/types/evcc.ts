@@ -1322,12 +1322,19 @@ export interface Forecast {
   co2?: ForecastSlot[];
   /** Solar production forecast. */
   solar?: SolarDetails;
+  /** Data-driven scale applied to the home consumption forecast (experimental, testing only). */
+  consumption?: ConsumptionDetails;
   /** Charging cost forecast used by the plan optimizer per time slot. */
   planner?: ForecastSlot[];
   /** Feed-in rate forecast. Rate per kWh in the configured currency per time slot. */
   feedin?: ForecastSlot[];
   /** Temperature forecast in °C per time slot. */
   temperature?: ForecastSlot[];
+}
+
+export interface ConsumptionDetails {
+  /** Consumption signal scale factor for the next slot, 1 if unscaled. */
+  scale: number;
 }
 
 // Ui* variants of the forecast wire types, expanded to objects with unix
@@ -1352,6 +1359,7 @@ export interface UiForecast {
   grid?: UiForecastSlot[];
   co2?: UiForecastSlot[];
   solar?: UiSolarDetails;
+  consumption?: ConsumptionDetails;
   planner?: UiForecastSlot[];
   feedin?: UiForecastSlot[];
   temperature?: UiForecastSlot[];
