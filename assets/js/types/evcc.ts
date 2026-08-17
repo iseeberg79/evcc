@@ -322,7 +322,6 @@ export interface State {
   optimizerChargingStrategy?: string;
   /** Available battery optimizer charging strategies. */
   optimizerChargingStrategies?: string[];
-  optimizerForecastAdjust?: boolean;
   /** Built-in MCP server is enabled. */
   mcp?: boolean;
   /** Instance runs in demo mode. */
@@ -1300,10 +1299,8 @@ export interface EnergyByDay {
 
 /** Solar production forecast. */
 export interface SolarDetails {
-  /** Correction factor applied to the forecast based on past production. */
+  /** Trailing percentile correction factor applied to the forecast based on past production. */
   scale?: number;
-  /** Trailing-median scale fed to the optimizer. */
-  scaleMedian?: number;
   /** Expected production today. */
   today?: EnergyByDay;
   /** Expected production tomorrow. */

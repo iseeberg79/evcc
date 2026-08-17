@@ -112,11 +112,6 @@ type API interface {
 	// SetBatteryEstimatorTargetTime sets the battery estimator's target time (HH:MM)
 	SetBatteryEstimatorTargetTime(string) error
 
-	// GetOptimizerForecastAdjust returns whether solar and consumption forecasts are scaled before optimizing
-	GetOptimizerForecastAdjust() bool
-	// SetOptimizerForecastAdjust enables scaling solar and consumption forecasts before optimizing
-	SetOptimizerForecastAdjust(bool) error
-
 	//
 	// battery control external
 	//

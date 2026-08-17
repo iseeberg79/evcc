@@ -514,31 +514,6 @@ func (site *Site) SetBatteryGridDischarge(val bool) error {
 	return nil
 }
 
-// GetOptimizerForecastAdjust returns whether the solar and consumption forecasts
-// are scaled by measured data before being sent to the optimizer
-func (site *Site) GetOptimizerForecastAdjust() bool {
-	site.RLock()
-	defer site.RUnlock()
-	return site.optimizerForecastAdjust
-}
-
-// SetOptimizerForecastAdjust enables scaling the solar and consumption forecasts
-// by measured data before optimizing
-func (site *Site) SetOptimizerForecastAdjust(val bool) error {
-	site.log.DEBUG.Println("set optimizer forecast adjust:", val)
-
-	site.Lock()
-	defer site.Unlock()
-
-	if site.optimizerForecastAdjust != val {
-		site.optimizerForecastAdjust = val
-		settings.SetBool(keys.OptimizerForecastAdjust, val)
-		site.publish(keys.OptimizerForecastAdjust, val)
-	}
-
-	return nil
-}
-
 // GetSolarAdjusted returns if the solar forecast is adjusted to real production data
 func (site *Site) GetSolarAdjusted() bool {
 	site.RLock()

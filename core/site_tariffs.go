@@ -15,8 +15,7 @@ import (
 )
 
 type solarDetails struct {
-	Scale            float64      `json:"scale"`                      // scale factor yield/forecasted today, 1 if unscaled
-	ScaleMedian      *float64     `json:"scaleMedian,omitempty"`      // trailing-median scale fed to the optimizer
+	Scale            float64      `json:"scale"`                      // trailing percentile solar scale factor, 1 if unscaled
 	Today            dailyDetails `json:"today,omitempty"`            // tomorrow
 	Tomorrow         dailyDetails `json:"tomorrow,omitempty"`         // tomorrow
 	DayAfterTomorrow dailyDetails `json:"dayAfterTomorrow,omitempty"` // day after tomorrow
@@ -213,9 +212,6 @@ func (site *Site) solarDetails(solar api.Rates) solarDetails {
 	}
 
 	res.Scale = site.solarScale()
-	if median := site.solarScaleMedian(); median != 1 {
-		res.ScaleMedian = &median
-	}
 
 	return res
 }
@@ -229,61 +225,41 @@ func (site *Site) effectiveSolarScale() float64 {
 	return site.solarScale()
 }
 
-// solarScale returns the ratio of produced solar energy to forecasted solar
-// energy for the current day, queried from the metrics database. Used to
-// adjust forecasts when PV is consistently under-/over-producing relative
-// to the forecast. Returns 1.0 when not enough data is available to make
-// the ratio meaningful.
+const (
+	solarScaleWindow     = 30  // trailing window of days to consider
+	solarScaleMinSamples = 14  // minimum daily ratios before applying a scale
+	solarScalePercentile = 0.5 // percentile of the daily ratio distribution to use
+	solarScaleMinEnergy  = 0.5 // kWh, skip days where either side is too small for a meaningful ratio
+)
+
+// solarScale computes a scale factor for the solar forecast by sorting the daily
+// produced/forecasted solar ratio over a trailing window of completed days and
+// picking the value at a configured percentile (window: solarScaleWindow,
+// percentile: solarScalePercentile). This captures the installation's systematic
+// bias (soiling, shading, model error) instead of a single day's weather noise.
+// The current (partial) day is excluded; returns 1 when there is not enough history.
+//
+// The result only depends on completed days, so it cannot change within a day. It is
+// cached accordingly instead of being recomputed on every optimizer run.
 func (site *Site) solarScale() float64 {
-	series, err := metrics.QueryEnergy(now.BeginningOfDay(), time.Now(), "day", true)
+	scale, err := site.solarScaleCached()
 	if err != nil {
-		site.log.ERROR.Printf("solar forecast scale: %v", err)
 		return 1
 	}
-
-	var pv, fcst float64
-	for _, s := range series {
-		if len(s.Data) == 0 {
-			continue
-		}
-		switch s.Group {
-		case metrics.PV:
-			pv = s.Data[0].Energy
-		case metrics.Forecast:
-			fcst = s.Data[0].Energy
-		}
-	}
-
-	const minEnergy = 0.5 // kWh
-	if fcst <= 0 || pv <= minEnergy {
-		return 1
-	}
-
-	scale := pv / fcst
-	site.log.DEBUG.Printf("solar forecast: produced %.3fkWh, forecasted %.3fkWh, scale %.3f", pv, fcst, scale)
 	return scale
 }
 
-const (
-	solarScaleMedianDays       = 28  // trailing window for the robust solar scale
-	solarScaleMedianMinSamples = 7   // minimum daily ratios before applying a scale
-	solarScaleMinEnergy        = 0.5 // kWh, skip dark days where the ratio is noise
-)
-
-// solarScaleMedian returns the median of the daily produced/forecasted solar ratio
-// over the last solarScaleMedianDays. Unlike solarScale (today's ratio, used only for
-// display) this trailing median is robust against single-day forecast outliers and is
-// what feeds the optimizer. Returns 1 when there is not enough history.
-func (site *Site) solarScaleMedian() float64 {
-	from := now.BeginningOfDay().AddDate(0, 0, -solarScaleMedianDays)
+// querySolarScale does the actual metrics query and percentile calculation
+// for solarScale, given the current beginning-of-day boundary.
+func (site *Site) querySolarScale(bod time.Time) (float64, error) {
+	from := bod.AddDate(0, 0, -solarScaleWindow)
 	series, err := metrics.QueryEnergy(from, time.Now(), "day", true)
 	if err != nil {
-		site.log.ERROR.Printf("solar scale median: %v", err)
-		return 1
+		return 0, err
 	}
 
-	pv := map[string]float64{}
-	fcst := map[string]float64{}
+	pv := make(map[string]float64, solarScaleWindow)
+	fcst := make(map[string]float64, solarScaleWindow)
 	for _, s := range series {
 		var m map[string]float64
 		switch s.Group {
@@ -299,36 +275,35 @@ func (site *Site) solarScaleMedian() float64 {
 		}
 	}
 
-	today := now.BeginningOfDay().Format("2006-01-02")
+	today := bod.Format("2006-01-02")
 	ratios := make([]float64, 0, len(fcst))
 	for day, f := range fcst {
-		if day == today || f <= solarScaleMinEnergy {
-			continue
+		// skip today (partial) and dark days where the ratio is noise. The threshold
+		// applies to production as well: a near-zero yield against a healthy forecast
+		// is a fault (snow, soiling, inverter or metering outage), not a bias that
+		// should be projected onto the next solarScaleWindow days.
+		if p := pv[day]; day != today && f > solarScaleMinEnergy && p > solarScaleMinEnergy {
+			ratios = append(ratios, p/f)
 		}
-		ratios = append(ratios, pv[day]/f)
 	}
 
-	median, ok := medianOf(ratios, solarScaleMedianMinSamples)
+	scale, ok := percentileOf(ratios, solarScalePercentile, solarScaleMinSamples)
 	if !ok {
-		return 1
+		return 1, nil
 	}
-	site.log.DEBUG.Printf("solar scale median over %d days = %.3f", len(ratios), median)
-	return median
+	site.log.DEBUG.Printf("solar scale P%.0f over %d days = %.3f", solarScalePercentile*100, len(ratios), scale)
+	return scale, nil
 }
 
-// medianOf returns the median of values and true when at least minSamples are
-// present, otherwise (1, false).
-func medianOf(values []float64, minSamples int) (float64, bool) {
+// percentileOf returns the p-th percentile (0..1) of values by nearest-rank on the
+// sorted series, or false when fewer than minSamples are present.
+func percentileOf(values []float64, p float64, minSamples int) (float64, bool) {
 	if len(values) < minSamples {
-		return 1, false
+		return 0, false
 	}
 	s := slices.Clone(values)
 	slices.Sort(s)
-	if n := len(s); n%2 == 1 {
-		return s[n/2], true
-	} else {
-		return (s[n/2-1] + s[n/2]) / 2, true
-	}
+	return s[int(p*float64(len(s)-1))], true
 }
 
 func (site *Site) isDynamicTariff(usage api.TariffUsage) bool {

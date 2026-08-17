@@ -35,6 +35,7 @@ import (
 	"github.com/evcc-io/evcc/util/config"
 	"github.com/evcc-io/evcc/util/modbus"
 	"github.com/evcc-io/evcc/util/telemetry"
+	"github.com/jinzhu/now"
 	"github.com/samber/lo"
 	"github.com/smallnest/chanx"
 	"golang.org/x/sync/errgroup"
@@ -99,7 +100,6 @@ type Site struct {
 
 	// optimizer settings
 	optimizerChargingStrategy string // optimizer grid charging strategy
-	optimizerForecastAdjust   bool   // scale solar and consumption forecasts by measured data before optimizing
 
 	loadpoints  []*Loadpoint             // Loadpoints
 	tariffs     *tariff.Tariffs          // Tariffs
@@ -125,6 +125,8 @@ type Site struct {
 
 	optimizerMu      sync.Mutex // guards optimizer runs
 	optimizerUpdated time.Time  // last optimizer run, guarded by optimizerMu
+
+	solarScaleCached func() (float64, error) // util.Cached wrapper around querySolarScale
 }
 
 // MetersConfig contains the site's meter configuration
@@ -338,6 +340,15 @@ func NewSite() *Site {
 		batteryEstimatorTargetTime: "18:00",
 	}
 
+	// the result only depends on completed days, so it cannot change within a day
+	site.solarScaleCached = util.Cached(func() (float64, error) {
+		scale, err := site.querySolarScale(now.BeginningOfDay())
+		if err != nil {
+			site.log.ERROR.Printf("solar scale percentile: %v, falling back to unadjusted forecast", err)
+		}
+		return scale, err
+	}, 24*time.Hour)
+
 	return site
 }
 
@@ -439,11 +450,6 @@ func (site *Site) restoreSettings() error {
 	}
 	site.publish(keys.OptimizerChargingStrategy, site.GetOptimizerChargingStrategy())
 	site.publish(keys.OptimizerChargingStrategies, optimizerChargingStrategies)
-	if v, err := settings.Bool(keys.OptimizerForecastAdjust); err == nil {
-		if err := site.SetOptimizerForecastAdjust(v); err != nil {
-			return err
-		}
-	}
 
 	// drop legacy accumulator-based forecast settings (now stored via metrics collector)
 	settings.Delete("solarAccForecast")
@@ -1270,7 +1276,6 @@ func (site *Site) prepare() {
 	site.publish(keys.BatteryEstimator, site.batteryEstimator)
 	site.publish(keys.BatteryEstimatorFactor, site.batteryEstimatorFactor)
 	site.publish(keys.BatteryEstimatorTargetTime, site.batteryEstimatorTargetTime)
-	site.publish(keys.OptimizerForecastAdjust, site.optimizerForecastAdjust)
 	site.publish(keys.BatteryGridDischarge, site.batteryGridDischarge)
 	site.publish(keys.SolarAdjusted, site.solarAdjusted)
 	site.publish(keys.ResidualPower, site.GetResidualPower())

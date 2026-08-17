@@ -10,29 +10,49 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMedianOf(t *testing.T) {
-	t.Run("too few samples", func(t *testing.T) {
-		v, ok := medianOf([]float64{1, 2, 3}, 5)
+func TestPercentileOf(t *testing.T) {
+	// n values of v
+	fill := func(n int, v float64) []float64 {
+		s := make([]float64, n)
+		for i := range s {
+			s[i] = v
+		}
+		return s
+	}
+
+	t.Run("too few samples returns false", func(t *testing.T) {
+		_, ok := percentileOf(nil, 0.5, solarScaleMinSamples)
 		assert.False(t, ok)
-		assert.Equal(t, 1.0, v)
+
+		_, ok = percentileOf(fill(solarScaleMinSamples-1, 0.9), 0.5, solarScaleMinSamples)
+		assert.False(t, ok)
 	})
 
-	t.Run("odd count", func(t *testing.T) {
-		v, ok := medianOf([]float64{3, 1, 2, 5, 4}, 3)
+	t.Run("stable cluster", func(t *testing.T) {
+		v, ok := percentileOf(fill(20, 0.9), 0.5, solarScaleMinSamples)
 		assert.True(t, ok)
-		assert.Equal(t, 3.0, v)
+		assert.InDelta(t, 0.9, v, 0.001)
 	})
 
-	t.Run("even count averages the middle two", func(t *testing.T) {
-		v, ok := medianOf([]float64{4, 1, 3, 2}, 3)
+	// P50 rejects outlier days for free: a broken forecast feed (recent ratio
+	// ~2.3) and a metering outage (ratio ~0.16) do not move the result as
+	// long as they stay a minority of the window.
+	t.Run("outlier days do not move P50", func(t *testing.T) {
+		ratios := fill(20, 0.9)                   // healthy installation bias
+		ratios = append(ratios, fill(4, 2.3)...)  // broken forecast feed
+		ratios = append(ratios, fill(8, 0.16)...) // metering outage
+
+		v, ok := percentileOf(ratios, 0.5, solarScaleMinSamples)
 		assert.True(t, ok)
-		assert.Equal(t, 2.5, v)
+		assert.InDelta(t, 0.9, v, 0.001)
 	})
 
-	t.Run("robust against a single outlier", func(t *testing.T) {
-		// one huge day does not move the median the way a mean would
-		v, _ := medianOf([]float64{1, 1, 1, 1, 1, 1, 20}, 3)
-		assert.Equal(t, 1.0, v)
+	t.Run("higher percentile shifts toward the upper tail", func(t *testing.T) {
+		ratios := append(fill(15, 0.8), fill(15, 1.2)...)
+
+		p50, _ := percentileOf(ratios, 0.5, solarScaleMinSamples)
+		p90, _ := percentileOf(ratios, 0.9, solarScaleMinSamples)
+		assert.Less(t, p50, p90)
 	})
 }
 

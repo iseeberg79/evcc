@@ -182,7 +182,6 @@ func (s *HTTPd) RegisterSiteHandlers(site site.API) {
 		"batteryestimatorfactor":     {"POST", "/batteryestimatorfactor/{value:[0-9.]+}", floatHandler(site.SetBatteryEstimatorFactor, site.GetBatteryEstimatorFactor)},
 		"batteryestimatortargettime": {"POST", "/batteryestimatortargettime/{value:[0-9:]+}", stringHandler(site.SetBatteryEstimatorTargetTime, site.GetBatteryEstimatorTargetTime)},
 		"batterygriddischarge":       {"POST", "/batterygriddischarge/{value:[01truefalse]+}", boolHandler(site.SetBatteryGridDischarge, site.GetBatteryGridDischarge)},
-		"optimizerforecastadjust":    {"POST", "/optimizerforecastadjust/{value:[01truefalse]+}", boolHandler(site.SetOptimizerForecastAdjust, site.GetOptimizerForecastAdjust)},
 		"batterygridcharge":          {"POST", "/batterygridchargelimit/{value:-?[0-9.]+}", floatPtrHandler(site.SetBatteryGridChargeLimit, site.GetBatteryGridChargeLimit)},
 		"batterygridchargedelete":    {"DELETE", "/batterygridchargelimit", floatPtrHandler(site.SetBatteryGridChargeLimit, site.GetBatteryGridChargeLimit)},
 		"gridexportlimit":            {"POST", "/gridexportlimit/{value:[0-9.]+}", floatHandler(site.SetGridExportLimit, site.GetGridExportLimit)},

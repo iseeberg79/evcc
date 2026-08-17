@@ -504,12 +504,9 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 			return req, details, err
 		}
 
-		// scale the forecast by the robust trailing median of the measured
-		// production ratio when enabled (solarScale's daily ratio stays display-only)
-		scale := 1.0
-		if site.GetOptimizerForecastAdjust() {
-			scale = site.solarScaleMedian()
-		}
+		// scale the forecast by the trailing percentile of the measured production
+		// ratio when enabled
+		scale := site.effectiveSolarScale()
 		ftSlots := scaleAndPrune(solarEnergy, scale, minLen)
 
 		// decay the scale derived from measured vs forecasted energy of the last completed slot
