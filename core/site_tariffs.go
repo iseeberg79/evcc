@@ -163,7 +163,7 @@ func (site *Site) publishTariffs(greenShareHome float64, greenShareLoadpoints fl
 		if len(grid) > 0 {
 			rawEnd = grid[len(grid)-1].End
 		}
-		extended := site.extendGridRates(grid, solar[len(solar)-1].End)
+		extended := site.extendGridRates(grid, site.gridExtensionHorizon(solar))
 		if len(extended) > len(grid) {
 			unix := rawEnd.Unix()
 			fc.GridSyntheticFrom = &unix

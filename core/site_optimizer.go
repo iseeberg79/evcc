@@ -407,10 +407,11 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 	feedIn := currentRates(site.GetTariff(api.TariffUsageFeedIn))
 
 	// extend the grid price horizon with weekday-matched history up to the solar
-	// forecast's own horizon, so a short day-ahead window does not truncate the whole
-	// plan below what the solar/consumption forecasts could otherwise support
+	// forecast's own horizon (capped to what the optimizer actually consumes), so a
+	// short day-ahead window does not truncate the whole plan below what the
+	// solar/consumption forecasts could otherwise support
 	if site.GetPriceHorizonExtended() && len(solar) > 0 {
-		grid = site.extendGridRates(grid, solar[len(solar)-1].End)
+		grid = site.extendGridRates(grid, site.gridExtensionHorizon(solar))
 	}
 
 	minLen := lo.Min([]int{len(grid), len(feedIn)})
@@ -1131,6 +1132,20 @@ func currentRates(tariff api.Tariff) api.Rates {
 	return lo.Filter(rates, func(slot api.Rate, _ int) bool {
 		return slot.End.After(now)
 	})
+}
+
+// gridExtensionHorizon returns how far extendGridRates should reach: as far as the
+// solar/consumption forecast allows, but capped to optimizerHorizon() when the hosted
+// optimizer is used, so neither the solver request nor the published forecast carry
+// synthetic slots beyond what the plan can actually consume.
+func (site *Site) gridExtensionHorizon(solar api.Rates) time.Time {
+	horizon := solar[len(solar)-1].End
+	if optimizerURI() == OPTIMIZER_URI {
+		if h := optimizerHorizon(time.Now()); h.Before(horizon) {
+			horizon = h
+		}
+	}
+	return horizon
 }
 
 // optimizerHorizon is the timeframe the hosted optimizer is limited to for sake
