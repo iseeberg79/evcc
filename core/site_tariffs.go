@@ -138,7 +138,7 @@ func (site *Site) publishTariffs(greenShareHome float64, greenShareLoadpoints fl
 		Co2               forecastSeries `json:"co2,omitempty"`
 		FeedIn            forecastSeries `json:"feedin,omitempty"`
 		Grid              forecastSeries `json:"grid,omitempty"`
-		GridSyntheticFrom *int64         `json:"gridSyntheticFrom,omitempty"` // unix seconds; slots from here on are weekday-matched history, not real day-ahead prices
+		GridSyntheticFrom *int64         `json:"gridSyntheticFrom,omitempty"` // unix seconds; slots from here on are trailing-history estimates, not real day-ahead prices
 		Planner           forecastSeries `json:"planner,omitempty"`
 		Solar             *solarDetails  `json:"solar,omitempty"`
 		Temperature       forecastSeries `json:"temperature,omitempty"`

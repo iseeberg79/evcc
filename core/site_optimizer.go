@@ -406,7 +406,7 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 	grid := currentRates(site.GetTariff(api.TariffUsageGrid))
 	feedIn := currentRates(site.GetTariff(api.TariffUsageFeedIn))
 
-	// extend the grid price horizon with weekday-matched history up to the solar
+	// extend the grid price horizon with trailing-history estimates up to the solar
 	// forecast's own horizon (capped to what the optimizer actually consumes), so a
 	// short day-ahead window does not truncate the whole plan below what the
 	// solar/consumption forecasts could otherwise support
