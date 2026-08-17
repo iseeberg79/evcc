@@ -57,6 +57,35 @@ func TestPercentileOf(t *testing.T) {
 	})
 }
 
+func TestConsumptionSignalDecay(t *testing.T) {
+	t.Run("no deviation gives the unscaled forecast", func(t *testing.T) {
+		assert.InDelta(t, 1, consumptionSignalDecay(1, 0), 1e-9)
+		assert.InDelta(t, 1, consumptionSignalDecay(1, 191), 1e-9)
+	})
+
+	t.Run("deviation is strongest in the first slot", func(t *testing.T) {
+		assert.InDelta(t, 1.2, consumptionSignalDecay(1.2, 0), 1e-9)
+	})
+
+	t.Run("deviation decays monotonically over the horizon", func(t *testing.T) {
+		prev := consumptionSignalDecay(1.3, 0)
+		for i := 1; i <= 192; i++ { // 48h at 15min slots
+			cur := consumptionSignalDecay(1.3, i)
+			assert.LessOrEqual(t, cur, prev)
+			prev = cur
+		}
+	})
+
+	t.Run("decay approaches 1 far into the horizon", func(t *testing.T) {
+		// geometric decay, never fully zero: 0.41^5 ~= 0.0116 of the original deviation left after 5 days
+		assert.InDelta(t, 1, consumptionSignalDecay(1.5, 480), 0.01)
+	})
+
+	t.Run("below-baseline signal is floored at 1", func(t *testing.T) {
+		assert.InDelta(t, 1, consumptionSignalDecay(0.7, 0), 1e-9)
+	})
+}
+
 func TestForecastSlotEnergy(t *testing.T) {
 	slot := time.Unix(1735689600, 0).Truncate(tariff.SlotDuration)
 	rate := func(i int, power float64) api.Rate {

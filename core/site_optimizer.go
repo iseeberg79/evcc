@@ -1168,9 +1168,13 @@ func (site *Site) homeProfile(minLen int) ([]float64, error) {
 		res = res[:minLen]
 	}
 
-	// convert to Wh
+	// convert to Wh, applying the data-driven consumption signal, decaying per slot
+	// towards 1 over the horizon (see consumptionSignalScale)
+	if scale := site.effectiveConsumptionSignalScale(0); scale > 1 {
+		site.log.DEBUG.Printf("optimizer: home consumption signal scale %.3f for the next slot, decaying towards 1 over the horizon", scale)
+	}
 	return lo.Map(res, func(v float64, i int) float64 {
-		return v * 1e3
+		return v * 1e3 * site.effectiveConsumptionSignalScale(i)
 	}), nil
 }
 

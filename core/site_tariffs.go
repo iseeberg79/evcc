@@ -45,6 +45,14 @@ type dailyDetails struct {
 	Complete bool    `json:"complete"`
 }
 
+// consumptionDetails reports the data-driven scale applied to the home
+// consumption forecast, for display in the forecast view. Scale is the multiplier
+// for the immediate next slot; it decays towards 1 over the rest of the horizon,
+// see consumptionSignalScale.
+type consumptionDetails struct {
+	Scale float64 `json:"scale"` // consumption signal scale factor for the next slot, 1 if unscaled
+}
+
 // forecastRates publishes rates as [start, end, value] with the timestamps in
 // unix seconds. The forecast is the largest payload evcc sends and RFC3339
 // timestamps are two thirds of it.
@@ -135,12 +143,13 @@ func (site *Site) publishTariffs(greenShareHome float64, greenShareLoadpoints fl
 	}
 
 	fc := struct {
-		Co2         forecastSeries `json:"co2,omitempty"`
-		FeedIn      forecastSeries `json:"feedin,omitempty"`
-		Grid        forecastSeries `json:"grid,omitempty"`
-		Planner     forecastSeries `json:"planner,omitempty"`
-		Solar       *solarDetails  `json:"solar,omitempty"`
-		Temperature forecastSeries `json:"temperature,omitempty"`
+		Co2         forecastSeries      `json:"co2,omitempty"`
+		Consumption *consumptionDetails `json:"consumption,omitempty"`
+		FeedIn      forecastSeries      `json:"feedin,omitempty"`
+		Grid        forecastSeries      `json:"grid,omitempty"`
+		Planner     forecastSeries      `json:"planner,omitempty"`
+		Solar       *solarDetails       `json:"solar,omitempty"`
+		Temperature forecastSeries      `json:"temperature,omitempty"`
 	}{
 		Co2:         forecastRates(tariff.Rates(site.GetTariff(api.TariffUsageCo2))),
 		FeedIn:      forecastRates(tariff.Rates(site.GetTariff(api.TariffUsageFeedIn))),
@@ -152,6 +161,11 @@ func (site *Site) publishTariffs(greenShareHome float64, greenShareLoadpoints fl
 	// calculate adjusted solar rates
 	if solar := tariff.Rates(site.GetTariff(api.TariffUsageSolar)); len(solar) > 0 {
 		fc.Solar = new(site.solarDetails(solar))
+	}
+
+	// data-driven consumption scale (only when it adds reserve)
+	if scale := site.effectiveConsumptionSignalScale(0); scale > 1 {
+		fc.Consumption = &consumptionDetails{Scale: scale}
 	}
 
 	site.publish(keys.Forecast, util.NewSharder(keys.Forecast, fc))
@@ -249,6 +263,17 @@ func (site *Site) effectiveSolarScale() float64 {
 	return site.solarScale()
 }
 
+// effectiveConsumptionSignalScale returns consumptionSignalScale(i) if forecast
+// adjustment is enabled, 1 otherwise - gated on the same GetSolarAdjusted switch as
+// effectiveSolarScale, since both are measured-data adjustments to the optimizer's
+// forecast the user opts into together.
+func (site *Site) effectiveConsumptionSignalScale(i int) float64 {
+	if !site.GetSolarAdjusted() {
+		return 1
+	}
+	return site.consumptionSignalScale(i)
+}
+
 const (
 	solarScaleWindow     = 30  // trailing window of days to consider
 	solarScaleMinSamples = 14  // minimum daily ratios before applying a scale
@@ -317,6 +342,97 @@ func (site *Site) querySolarScale(bod time.Time) (float64, error) {
 	}
 	site.log.DEBUG.Printf("solar scale P%.0f over %d days = %.3f", solarScalePercentile*100, len(ratios), scale)
 	return scale, nil
+}
+
+const (
+	consumptionSignalBaseline = 30             // days averaged for the per-slot time-of-day baseline (matches homeProfile window)
+	consumptionSignalLookback = 72 * time.Hour // trailing window the current deviation is measured over
+
+	// day-over-day persistence of a deviation (lag-1 autocorrelation of the daily
+	// ratio, measured on real data). Deliberately faster than the signal's own 2+ day
+	// regression slope: that slope is mostly noise (R² < 0.04) and backtests worse
+	// when trusted.
+	consumptionSignalPhiDay = 0.41
+	consumptionSignalMinKWh = 1.0 // kWh, skip when the lookback baseline is too small for a meaningful ratio
+
+	// backstop against corrupted/degenerate inputs (metering glitch, a tiny baseline
+	// blowing up the ratio), not a fit to this installation's data - sized like PR
+	// #28232's [0.5, 2.0] clamp for a similar correction factor.
+	consumptionSignalMax = 2.0
+)
+
+// consumptionSignal is the current short-term deviation of home consumption from its own
+// trailing consumptionSignalBaseline-day time-of-day profile (the same profile homeProfile
+// forecasts from), measured over the trailing consumptionSignalLookback. >1 means the
+// household is running hotter than usual right now, 1 means on baseline. false when there
+// is not enough history to say anything.
+//
+// A household's consumption reverts to its own baseline within days once a deviation
+// ends, so a long historical percentile is the wrong shape here: it would keep a
+// single past outlier day influencing the forecast for as long as it stays in its
+// window. Recomputed roughly every optimizer cycle instead of cached per day, since
+// it is meant to track what's happening right now.
+func (site *Site) consumptionSignal() (float64, bool) {
+	sig, err := site.consumptionSignalCached()
+	if err != nil || sig == 1 {
+		return 1, false
+	}
+	return sig, true
+}
+
+// queryConsumptionSignal computes the actual/baseline energy ratio over the trailing
+// consumptionSignalLookback window, ending now.
+func (site *Site) queryConsumptionSignal() (float64, error) {
+	profile, err := site.collectors[metrics.Home].EnergyProfile(now.BeginningOfDay().AddDate(0, 0, -consumptionSignalBaseline))
+	if err != nil {
+		return 1, err
+	}
+
+	to := time.Now()
+	series, err := metrics.QueryEnergy(to.Add(-consumptionSignalLookback), to, "15m", true, metrics.EnergyFilter{Group: metrics.Home})
+	if err != nil {
+		return 1, err
+	}
+
+	var actual, baseline float64
+	for _, s := range series {
+		if s.Group != metrics.Home {
+			continue
+		}
+		for _, slot := range s.Data {
+			tod := slot.Start.Hour()*4 + slot.Start.Minute()/15
+			actual += slot.Energy
+			baseline += profile[tod]
+		}
+	}
+
+	if baseline < consumptionSignalMinKWh {
+		return 1, nil
+	}
+
+	sig := math.Min(actual/baseline, consumptionSignalMax)
+	site.log.DEBUG.Printf("consumption signal over trailing %s = %.3f", consumptionSignalLookback, sig)
+	return sig, nil
+}
+
+// consumptionSignalScale returns the per-slot multiplier (>= 1) for slot i (0-based,
+// starting now) of the home consumption forecast: the current consumptionSignal decayed
+// geometrically towards 1 over the horizon (phi^i, phi derived from consumptionSignalPhiDay).
+// 1 when there is not enough history to compute a signal.
+func (site *Site) consumptionSignalScale(i int) float64 {
+	sig, ok := site.consumptionSignal()
+	if !ok {
+		return 1
+	}
+	return consumptionSignalDecay(sig, i)
+}
+
+// consumptionSignalDecay is the pure math behind consumptionSignalScale, split out so it
+// can be tested without a Site/database fixture.
+func consumptionSignalDecay(sig float64, i int) float64 {
+	phiSlot := math.Pow(consumptionSignalPhiDay, 1.0/(24*4))
+	decay := math.Pow(phiSlot, float64(i))
+	return math.Max(1, 1+decay*(sig-1))
 }
 
 // percentileOf returns the p-th percentile (0..1) of values by nearest-rank on the

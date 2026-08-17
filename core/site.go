@@ -81,16 +81,16 @@ type Site struct {
 	curtailPercent *int
 
 	// battery settings
-	prioritySoc                float64                     // prefer battery up to this Soc
-	bufferSoc                  float64                     // continue charging on battery above this Soc
-	bufferStartSoc             float64                     // start charging on battery above this Soc
-	batteryDischargeControl    bool                        // prevent battery discharge for fast and planned charging
-	batteryEstimator           bool                        // spread PV charging power over time to reach maxSoc by a target time, independent of the optimizer
-	batteryEstimatorFactor     float64                     // battery estimator: PV forecast > consumption * factor to auto-activate (default 1.5)
-	batteryEstimatorTargetTime string                      // battery estimator: target time (HH:MM) by which the battery should be full (default 18:00)
-	holdChargePlan             *holdChargePlan             // per-slot plan (optimizer or battery estimator) per home battery name
-	batteryGridChargeLimit     *float64                    // grid charging limit
-	batteryGridDischarge       bool                        // allow battery discharge to grid (experimental)
+	prioritySoc                float64         // prefer battery up to this Soc
+	bufferSoc                  float64         // continue charging on battery above this Soc
+	bufferStartSoc             float64         // start charging on battery above this Soc
+	batteryDischargeControl    bool            // prevent battery discharge for fast and planned charging
+	batteryEstimator           bool            // spread PV charging power over time to reach maxSoc by a target time, independent of the optimizer
+	batteryEstimatorFactor     float64         // battery estimator: PV forecast > consumption * factor to auto-activate (default 1.5)
+	batteryEstimatorTargetTime string          // battery estimator: target time (HH:MM) by which the battery should be full (default 18:00)
+	holdChargePlan             *holdChargePlan // per-slot plan (optimizer or battery estimator) per home battery name
+	batteryGridChargeLimit     *float64        // grid charging limit
+	batteryGridDischarge       bool            // allow battery discharge to grid (experimental)
 
 	// grid settings
 	gridExportLimit float64 // static grid export power limit in W, 0 = disabled
@@ -126,7 +126,8 @@ type Site struct {
 	optimizerMu      sync.Mutex // guards optimizer runs
 	optimizerUpdated time.Time  // last optimizer run, guarded by optimizerMu
 
-	solarScaleCached func() (float64, error) // util.Cached wrapper around querySolarScale
+	solarScaleCached        func() (float64, error) // util.Cached wrapper around querySolarScale
+	consumptionSignalCached func() (float64, error) // util.Cached wrapper around queryConsumptionSignal
 }
 
 // MetersConfig contains the site's meter configuration
@@ -372,6 +373,17 @@ func NewSite() *Site {
 		}
 		return scale, err
 	}, 24*time.Hour)
+
+	// unlike solarScaleCached, this tracks a rolling short-term signal rather than a
+	// once-a-day percentile, so it is refreshed roughly every optimizer cycle instead of
+	// once a day.
+	site.consumptionSignalCached = util.Cached(func() (float64, error) {
+		sig, err := site.queryConsumptionSignal()
+		if err != nil {
+			site.log.ERROR.Printf("consumption signal: %v, falling back to unadjusted forecast", err)
+		}
+		return sig, err
+	}, tariff.SlotDuration)
 
 	return site
 }
