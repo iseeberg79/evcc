@@ -88,3 +88,26 @@ func PersistTariffs(ts time.Time, grid, feedin, co2, temperature *float64) error
 		Temperature: temperature,
 	}).Error
 }
+
+// PriceSample is a single persisted grid price at a 15min boundary
+type PriceSample struct {
+	Timestamp time.Time
+	Grid      float64
+}
+
+// QueryGridPrices returns the persisted grid prices in [from,to), ordered by time.
+func QueryGridPrices(from, to time.Time) ([]PriceSample, error) {
+	var rows []tariffValue
+	if err := db.Instance.
+		Where("ts >= ? AND ts < ? AND grid IS NOT NULL", from.Unix(), to.Unix()).
+		Order("ts").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	res := make([]PriceSample, 0, len(rows))
+	for _, r := range rows {
+		res = append(res, PriceSample{Timestamp: time.Unix(r.Timestamp, 0), Grid: *r.Grid})
+	}
+	return res, nil
+}

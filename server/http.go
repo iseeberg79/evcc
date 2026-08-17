@@ -187,6 +187,7 @@ func (s *HTTPd) RegisterSiteHandlers(site site.API) {
 		"residualpower":           {"POST", "/residualpower/{value:-?[0-9.]+}", floatHandler(site.SetResidualPower, site.GetResidualPower)},
 		"gridexportlimit":         {"POST", "/gridexportlimit/{value:[0-9.]+}", floatHandler(site.SetGridExportLimit, site.GetGridExportLimit)},
 		"solaradjusted":           {"POST", "/solaradjusted/{value:[01truefalse]+}", boolHandler(pass(site.SetSolarAdjusted), site.GetSolarAdjusted)},
+		"pricehorizonextended":    {"POST", "/pricehorizonextended/{value:[01truefalse]+}", boolHandler(pass(site.SetPriceHorizonExtended), site.GetPriceHorizonExtended)},
 		"smartcost":               {"POST", "/smartcostlimit/{value:-?[0-9.]+}", updateSmartCostLimit(site, smartCostLimit)},
 		"smartcostdelete":         {"DELETE", "/smartcostlimit", updateSmartCostLimit(site, smartCostLimit)},
 		"smartfeedin":             {"POST", "/smartfeedinprioritylimit/{value:-?[0-9.]+}", updateSmartCostLimit(site, smartFeedInPriorityLimit)},

@@ -30,6 +30,7 @@ export default defineComponent({
 	mixins: [formatter, chartMixin],
 	props: {
 		grid: { type: Array as PropType<UiForecastSlot[]>, required: true },
+		gridSyntheticFrom: { type: Number },
 		feedin: { type: Array as PropType<UiForecastSlot[]> },
 		currency: { type: String as PropType<CURRENCY> },
 		zoom: { type: Boolean, default: false },
@@ -136,7 +137,12 @@ export default defineComponent({
 					},
 				}),
 				series: [
-					this.priceSeries(this.slots, priceColor, this.markPoints),
+					this.priceSeries(
+						this.slots,
+						priceColor,
+						this.markPoints,
+						this.gridSyntheticFrom
+					),
 					this.priceSeries(this.feedinSlots, exportColor),
 				],
 			};
@@ -146,7 +152,8 @@ export default defineComponent({
 		priceSeries(
 			slots: UiForecastSlot[],
 			color: string,
-			points?: { coord: [number, number]; value: string }[]
+			points?: { coord: [number, number]; value: string }[],
+			markAreaFrom?: number
 		): Record<string, unknown> {
 			const avg = slots.length ? slots.reduce((a, s) => a + s.value, 0) / slots.length : 0;
 			const gradientDown = avg >= 0;
@@ -182,6 +189,20 @@ export default defineComponent({
 								this.startDate,
 								this.endDate
 							),
+						}
+					: {}),
+				// PoC: shade the weekday-matched-history tail beyond the real day-ahead
+				// window (core/site_price_extend.go), not merged/final UI
+				...(markAreaFrom !== undefined
+					? {
+							markArea: {
+								silent: true,
+								itemStyle: { color: colors.muted, opacity: 0.12 },
+								label: { show: false },
+								data: [
+									[{ xAxis: markAreaFrom }, { xAxis: this.endDate.getTime() }],
+								],
+							},
 						}
 					: {}),
 			};

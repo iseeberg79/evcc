@@ -53,7 +53,8 @@ const (
 	GridExportLimit = "gridExportLimit"
 
 	// forecast settings
-	SolarAdjusted = "solarAdjusted"
+	SolarAdjusted        = "solarAdjusted"
+	PriceHorizonExtended = "priceHorizonExtended"
 
 	// optimizer
 	OptimizerChargingStrategy   = "optimizerChargingStrategy"

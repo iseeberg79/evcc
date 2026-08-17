@@ -1314,6 +1314,8 @@ export interface SolarDetails {
 export interface Forecast {
   /** Grid price forecast. Price per kWh in the configured currency per time slot. */
   grid?: ForecastSlot[];
+  /** Unix seconds. If set, grid slots from this point on are weekday-matched history, not real day-ahead prices. */
+  gridSyntheticFrom?: number;
   /** CO₂ emission forecast in g/kWh per time slot. */
   co2?: ForecastSlot[];
   /** Solar production forecast. */
@@ -1346,6 +1348,7 @@ export interface UiSolarDetails extends Omit<SolarDetails, "timeseries"> {
 
 export interface UiForecast {
   grid?: UiForecastSlot[];
+  gridSyntheticFrom?: number;
   co2?: UiForecastSlot[];
   solar?: UiSolarDetails;
   planner?: UiForecastSlot[];

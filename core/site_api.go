@@ -477,6 +477,29 @@ func (site *Site) SetSolarAdjusted(val bool) {
 	}
 }
 
+// GetPriceHorizonExtended returns if the grid price horizon is extended with
+// weekday-matched history beyond the day-ahead window
+func (site *Site) GetPriceHorizonExtended() bool {
+	site.RLock()
+	defer site.RUnlock()
+	return site.priceHorizonExtended
+}
+
+// SetPriceHorizonExtended sets if the grid price horizon is extended with
+// weekday-matched history beyond the day-ahead window
+func (site *Site) SetPriceHorizonExtended(val bool) {
+	site.log.DEBUG.Println("set price horizon extended:", val)
+
+	site.Lock()
+	defer site.Unlock()
+
+	if site.priceHorizonExtended != val {
+		site.priceHorizonExtended = val
+		settings.SetBool(keys.PriceHorizonExtended, val)
+		site.publish(keys.PriceHorizonExtended, val)
+	}
+}
+
 func (site *Site) GetBatteryGridChargeLimit() *float64 {
 	site.RLock()
 	defer site.RUnlock()

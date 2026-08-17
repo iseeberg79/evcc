@@ -86,6 +86,7 @@
 					<div class="chart-edge">
 						<PriceChart
 							:grid="forecast.grid"
+							:grid-synthetic-from="forecast.gridSyntheticFrom"
 							:feedin="showFeedin ? forecast.feedin : undefined"
 							:currency="currency"
 							:zoom="priceZoom"

@@ -135,24 +135,42 @@ func (site *Site) publishTariffs(greenShareHome float64, greenShareLoadpoints fl
 	}
 
 	fc := struct {
-		Co2         forecastSeries `json:"co2,omitempty"`
-		FeedIn      forecastSeries `json:"feedin,omitempty"`
-		Grid        forecastSeries `json:"grid,omitempty"`
-		Planner     forecastSeries `json:"planner,omitempty"`
-		Solar       *solarDetails  `json:"solar,omitempty"`
-		Temperature forecastSeries `json:"temperature,omitempty"`
+		Co2               forecastSeries `json:"co2,omitempty"`
+		FeedIn            forecastSeries `json:"feedin,omitempty"`
+		Grid              forecastSeries `json:"grid,omitempty"`
+		GridSyntheticFrom *int64         `json:"gridSyntheticFrom,omitempty"` // unix seconds; slots from here on are weekday-matched history, not real day-ahead prices
+		Planner           forecastSeries `json:"planner,omitempty"`
+		Solar             *solarDetails  `json:"solar,omitempty"`
+		Temperature       forecastSeries `json:"temperature,omitempty"`
 	}{
 		Co2:         forecastRates(tariff.Rates(site.GetTariff(api.TariffUsageCo2))),
 		FeedIn:      forecastRates(tariff.Rates(site.GetTariff(api.TariffUsageFeedIn))),
 		Planner:     forecastRates(tariff.Rates(site.GetTariff(api.TariffUsagePlanner))),
-		Grid:        forecastRates(tariff.Rates(site.GetTariff(api.TariffUsageGrid))),
 		Temperature: forecastRates(tariff.Rates(site.GetTariff(api.TariffUsageTemperature))),
 	}
 
 	// calculate adjusted solar rates
-	if solar := tariff.Rates(site.GetTariff(api.TariffUsageSolar)); len(solar) > 0 {
+	solar := tariff.Rates(site.GetTariff(api.TariffUsageSolar))
+	if len(solar) > 0 {
 		fc.Solar = new(site.solarDetails(solar))
 	}
+
+	// extend the published grid rates the same way optimizerRequest does, and mark
+	// where the real day-ahead data ends so the UI can tell synthetic slots apart
+	grid := tariff.Rates(site.GetTariff(api.TariffUsageGrid))
+	if site.GetPriceHorizonExtended() && len(solar) > 0 {
+		rawEnd := time.Time{}
+		if len(grid) > 0 {
+			rawEnd = grid[len(grid)-1].End
+		}
+		extended := site.extendGridRates(grid, solar[len(solar)-1].End)
+		if len(extended) > len(grid) {
+			unix := rawEnd.Unix()
+			fc.GridSyntheticFrom = &unix
+		}
+		grid = extended
+	}
+	fc.Grid = forecastRates(grid)
 
 	site.publish(keys.Forecast, util.NewSharder(keys.Forecast, fc))
 

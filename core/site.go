@@ -92,7 +92,8 @@ type Site struct {
 	gridExportLimit float64 // static grid export power limit in W, 0 = disabled
 
 	// forecast settings
-	solarAdjusted bool // adjust solar forecast to real production data
+	solarAdjusted        bool // adjust solar forecast to real production data
+	priceHorizonExtended bool // extend the grid price horizon with weekday-matched history beyond the day-ahead window
 
 	// optimizer settings
 	optimizerChargingStrategy string // optimizer grid charging strategy
@@ -444,6 +445,9 @@ func (site *Site) restoreSettings() error {
 	}
 	if v, err := settings.Bool(keys.SolarAdjusted); err == nil {
 		site.SetSolarAdjusted(v)
+	}
+	if v, err := settings.Bool(keys.PriceHorizonExtended); err == nil {
+		site.SetPriceHorizonExtended(v)
 	}
 	if v, err := settings.String(keys.OptimizerChargingStrategy); err == nil && v != "" {
 		if err := site.SetOptimizerChargingStrategy(v); err != nil {
@@ -1297,6 +1301,7 @@ func (site *Site) prepare() {
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
 	site.publish(keys.BatteryGridDischarge, site.batteryGridDischarge)
 	site.publish(keys.SolarAdjusted, site.solarAdjusted)
+	site.publish(keys.PriceHorizonExtended, site.priceHorizonExtended)
 	site.publish(keys.ResidualPower, site.GetResidualPower())
 	site.publish(keys.GridExportLimit, site.GetGridExportLimit())
 	site.publish(keys.SmartCostAvailable, site.isDynamicTariff(api.TariffUsagePlanner))

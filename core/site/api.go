@@ -90,6 +90,12 @@ type API interface {
 	GetSolarAdjusted() bool
 	// SetSolarAdjusted sets if the solar forecast is adjusted to real production data
 	SetSolarAdjusted(bool)
+	// GetPriceHorizonExtended returns if the grid price horizon is extended with
+	// weekday-matched history beyond the day-ahead window
+	GetPriceHorizonExtended() bool
+	// SetPriceHorizonExtended sets if the grid price horizon is extended with
+	// weekday-matched history beyond the day-ahead window
+	SetPriceHorizonExtended(bool)
 
 	//
 	// battery control

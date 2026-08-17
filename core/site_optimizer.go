@@ -406,6 +406,13 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 	grid := currentRates(site.GetTariff(api.TariffUsageGrid))
 	feedIn := currentRates(site.GetTariff(api.TariffUsageFeedIn))
 
+	// extend the grid price horizon with weekday-matched history up to the solar
+	// forecast's own horizon, so a short day-ahead window does not truncate the whole
+	// plan below what the solar/consumption forecasts could otherwise support
+	if site.GetPriceHorizonExtended() && len(solar) > 0 {
+		grid = site.extendGridRates(grid, solar[len(solar)-1].End)
+	}
+
 	minLen := lo.Min([]int{len(grid), len(feedIn)})
 	// exclude empty solar forecast from minLen
 	if solarTariff != nil && len(solar) > 0 {
