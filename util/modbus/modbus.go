@@ -93,6 +93,7 @@ func (s Settings) Connection(ctx context.Context, proto ...Protocol) (*Connectio
 		slaveID:    s.ID,
 		Connection: physical.Clone(s.ID),
 		logger:     physical.logger,
+		physical:   physical,
 	}
 
 	conn.Timeout(s.Timeout)
@@ -124,7 +125,50 @@ type meterConnection struct {
 	meters.Connection
 	proto Protocol
 	refs  int // count of references; first connection has ref count 0
+
+	mu           sync.Mutex
+	delay        time.Duration
+	connectDelay time.Duration
+	timeout      time.Duration
+
 	*logger
+}
+
+// setDelay applies the delay if larger than the current value
+func (c *meterConnection) setDelay(delay time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.delay = max(c.delay, delay)
+}
+
+func (c *meterConnection) getDelay() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.delay
+}
+
+// setConnectDelay applies the connect delay if larger than the current value
+func (c *meterConnection) setConnectDelay(delay time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if delay > c.connectDelay {
+		c.connectDelay = delay
+		c.Connection.ConnectDelay(delay)
+	}
+}
+
+// setTimeout applies the timeout if larger than the current value
+func (c *meterConnection) setTimeout(timeout time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if timeout > c.timeout {
+		c.timeout = timeout
+		_ = c.Connection.Timeout(timeout)
+	}
 }
 
 var (
@@ -197,6 +241,7 @@ func NewConnection(ctx context.Context, uri, device, comset string, baudrate int
 		slaveID:    slaveID,
 		Connection: conn.Clone(slaveID),
 		logger:     conn.logger,
+		physical:   conn,
 	}
 
 	return res, nil

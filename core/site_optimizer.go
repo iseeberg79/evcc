@@ -301,6 +301,10 @@ func (site *Site) suggestion(key, currentAction string) *types.Suggestion {
 // publishSuggestions publishes the loadpoints' suggestions
 func (site *Site) publishSuggestions() {
 	for id, lp := range site.loadpoints {
+		if lp == nil {
+			continue
+		}
+
 		var val any
 		if s := site.suggestion(loadpointKey(id), loadpointCurrentAction(lp)); s != nil {
 			val = *s
@@ -573,13 +577,19 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 
 	var batteries []optimizerBattery
 
-	for id, lp := range site.Loadpoints() {
+	// uncontrollable power of loadpoints that cannot be modelled as storage
+	var unmodelled float64
+
+	for id, lp := range site.ActiveLoadpoints() {
 		// ignore disconnected loadpoints, including StatusNone
 		if s := lp.GetStatus(); s != api.StatusB && s != api.StatusC {
 			continue
 		}
 
-		if v := lp.GetVehicle(); v == nil || v.Capacity() == 0 {
+		// no vehicle capacity and no session energy limit to model against:
+		// account for the consumption as uncontrollable load
+		if v := lp.GetVehicle(); v == nil || (v.Capacity() == 0 && lp.GetLimitEnergy() == 0) {
+			unmodelled += unmodelledPower(lp)
 			continue
 		}
 
@@ -587,6 +597,21 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 		if cfg, detail := site.loadpointRequest(lp, minLen, firstSlotDuration, grid); cfg.CMax > 0 {
 			detail.loadpoint = &id
 			batteries = append(batteries, optimizerBattery{cfg, detail})
+		}
+	}
+
+	// home profile subtracts all loadpoint power, so unmodelled loadpoints would
+	// leave the optimizer planning against surplus that is already consumed. Their
+	// forecast is zero, so the measured power only decays into the near slots -
+	// without a capacity there is no fill point to assert it any further.
+	if unmodelled > 0 {
+		load := make([]float64, minLen)
+		blendMeasured(load, unmodelled/slotsPerHour, optimizerDecaySlots)
+
+		site.log.DEBUG.Printf("optimizer: home slots updated with unmodelled %.0fW loadpoint load: %.0f", unmodelled, load[:min(optimizerDecaySlots, len(load))])
+
+		for i, v := range prorate(load, firstSlotDuration) {
+			req.TimeSeries.Gt[i] += v
 		}
 	}
 
@@ -893,24 +918,29 @@ func (site *Site) loadpointRequest(lp loadpoint.API, minLen int, firstSlotDurati
 	// vehicle
 	v := lp.GetVehicle()
 
-	maxSoc := v.Capacity() * 1e3 // Wh
-	if v := lp.EffectiveLimitSoc(); v > 0 {
-		maxSoc *= float64(v) / 100
-	} else if v := lp.GetLimitEnergy(); v > 0 {
-		maxSoc = v * 1e3
+	capacity := v.Capacity() // kWh
+	soc := lp.GetSoc()       // percent
+
+	// without capacity or soc there is no battery state to model, but a session energy
+	// limit still bounds the charge- use charged energy as state (see remainingLimitEnergy)
+	if limit := lp.GetLimitEnergy(); limit > 0 && (capacity == 0 || soc == 0) {
+		bat.SInitial = float32(lp.GetChargedEnergy())    // Wh
+		bat.SMax = max(bat.SInitial, float32(limit*1e3)) // prevent infeasible if limit already exceeded
+	} else {
+		maxSoc := capacity * float64(lp.EffectiveLimitSoc()) * 10 // Wh
+		bat.SInitial = float32(capacity * soc * 10)               // Wh
+		bat.SMax = max(bat.SInitial, float32(maxSoc))             // prevent infeasible if current soc above maximum
 	}
 
-	bat.SInitial = float32(v.Capacity() * lp.GetSoc() * 10) // Wh
-	bat.SMax = max(bat.SInitial, float32(maxSoc))           // prevent infeasible if current soc above maximum
-
 	detail.Type = batteryTypeVehicle
-	detail.Capacity = v.Capacity()
+	detail.Capacity = capacity
 
 	if vt := v.GetTitle(); vt != "" {
 		if detail.Title != "" {
-			detail.Title += " – "
+			detail.Title += " (" + vt + ")"
+		} else {
+			detail.Title = vt
 		}
-		detail.Title += vt
 	}
 
 	// find vehicle name/id
@@ -934,13 +964,15 @@ func (site *Site) loadpointRequest(lp loadpoint.API, minLen int, firstSlotDurati
 	case api.ModeMinPV:
 		// forced min charging
 		demand = continuousDemand(lp, minLen)
-		// add smartcost limit and plan goal, if configured
+		// add smartcost limit, precondition and plan goal, if configured
 		demand = applySmartCostLimit(lp, demand, grid, minLen)
+		demand = applyPrecondition(lp, demand, minLen)
 		site.applyPlanGoal(lp, &bat, minLen)
 
 	case api.ModePV:
-		// add smartcost limit and plan goal, if configured
+		// add smartcost limit, precondition and plan goal, if configured
 		demand = applySmartCostLimit(lp, nil, grid, minLen)
+		demand = applyPrecondition(lp, demand, minLen)
 		site.applyPlanGoal(lp, &bat, minLen)
 	}
 
@@ -1099,6 +1131,20 @@ func loadpointProfile(lp loadpoint.API, minLen int) []float64 {
 	}
 
 	return res
+}
+
+// unmodelledPower returns the uncontrollable power of a connected loadpoint that
+// cannot be modelled as storage because the vehicle capacity is unknown
+func unmodelledPower(lp loadpoint.API) float64 {
+	power := lp.GetChargePower()
+
+	// minpv keeps drawing at least min power while the vehicle is connected,
+	// even before the charge meter has caught up
+	if lp.GetMode() == api.ModeMinPV && lp.GetStatus() == api.StatusC {
+		power = max(power, lp.EffectiveMinPower())
+	}
+
+	return max(0, power)
 }
 
 // homeProfile returns the home base load in Wh
@@ -1322,6 +1368,50 @@ func applySmartCostLimit(lp loadpoint.API, demand []float32, grid api.Rates, min
 			demand[i] = float32(maxPower / slotsPerHour)
 		}
 		// else: keep existing demand (either 0 or minPower from ModeMinPV)
+	}
+
+	return demand
+}
+
+// applyPrecondition forces max charging power during the planner's precondition window
+// ("late charging"), i.e. the last precondition duration before the plan time
+func applyPrecondition(lp loadpoint.API, demand []float32, minLen int) []float32 {
+	precondition := lp.EffectivePlanStrategy().Precondition
+	if precondition <= 0 {
+		return demand
+	}
+
+	ts := lp.EffectivePlanTime()
+	if ts.IsZero() {
+		return demand
+	}
+
+	// TODO precise slot placement
+	end := time.Until(ts)
+	start := end - precondition
+	if end <= 0 {
+		return demand
+	}
+
+	first := max(int(start/tariff.SlotDuration), 0)
+	if first >= minLen {
+		return demand
+	}
+
+	if demand == nil {
+		demand = make([]float32, minLen)
+	}
+
+	energy := float32(lp.EffectiveMaxPower() / slotsPerHour)
+
+	for i := first; i < minLen; i++ {
+		slotStart := time.Duration(i) * tariff.SlotDuration
+		overlap := min(end, slotStart+tariff.SlotDuration) - max(start, slotStart)
+		if overlap <= 0 {
+			break
+		}
+
+		demand[i] = max(demand[i], energy*float32(overlap)/float32(tariff.SlotDuration))
 	}
 
 	return demand
