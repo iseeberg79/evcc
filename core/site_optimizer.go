@@ -1126,14 +1126,9 @@ func (site *Site) homeProfile(minLen int) ([]float64, error) {
 		res = res[:minLen]
 	}
 
-	// convert to Wh, applying the data-driven consumption reserve margin - gated by
-	// the same switch as the solar adjustment so the user opts into both together
-	margin := 1.0
-	if site.GetOptimizerForecastAdjust() {
-		margin = site.consumptionMargin()
-	}
+	// convert to Wh
 	return lo.Map(res, func(v float64, i int) float64 {
-		return v * 1e3 * margin
+		return v * 1e3
 	}), nil
 }
 

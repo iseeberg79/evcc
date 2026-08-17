@@ -31,9 +31,6 @@
 				<span v-if="solarScaleMedian" class="text-muted small">
 					Solar median ×{{ solarScaleMedian.toFixed(2) }}
 				</span>
-				<span v-if="consumptionMargin" class="text-muted small">
-					Consumption reserve {{ fmtPercentage(consumptionMargin * 100 - 100, 0, true) }}
-				</span>
 			</div>
 		</Card>
 		<div class="row">
@@ -182,9 +179,6 @@ export default defineComponent({
 		},
 		solarScaleMedian(): number | undefined {
 			return store.state.forecast?.solar?.scaleMedian;
-		},
-		consumptionMargin(): number | undefined {
-			return store.state.forecast?.consumption?.margin;
 		},
 		netCost(): number {
 			return (this.evopt?.res?.objective_value || 0) * -1;

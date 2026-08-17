@@ -1322,18 +1322,12 @@ export interface Forecast {
   co2?: ForecastSlot[];
   /** Solar production forecast. */
   solar?: SolarDetails;
-  consumption?: ConsumptionDetails;
   /** Charging cost forecast used by the plan optimizer per time slot. */
   planner?: ForecastSlot[];
   /** Feed-in rate forecast. Rate per kWh in the configured currency per time slot. */
   feedin?: ForecastSlot[];
   /** Temperature forecast in °C per time slot. */
   temperature?: ForecastSlot[];
-}
-
-export interface ConsumptionDetails {
-  margin: number; // reserve multiplier applied to the consumption forecast (>= 1)
-  coverage: number; // share of days the margin is sized to cover (0..1)
 }
 
 // Ui* variants of the forecast wire types, expanded to objects with unix
