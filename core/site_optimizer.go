@@ -39,11 +39,14 @@ const (
 	// optimizerDebounce limits how often on-demand optimizer runs execute
 	optimizerDebounce = 2 * time.Minute
 
-	// socDepletionCostHigh is a conservative starting price (€/h) that nudges the optimizer
-	// away from parking a home battery above 80% SOC (calendar aging) without blocking genuine
-	// storage needs. 0.005 is a chemistry-agnostic middle: top of the plausible LFP range,
-	// still a meaningful (~half) share of a rough NMC estimate. Small vs. arbitrage value; tune.
-	socDepletionCostHigh = float32(0.005)
+	// socDepletionCostHigh was a small €/h price meant to nudge the optimizer away from parking
+	// a home battery above 80% SOC (calendar aging). Set to 0: priced per hour rather than as a
+	// one-off, it rewarded finishing a charge late (minimizing time above 80%) over finishing
+	// early with margin - traced on a real request to pushing full charge from 16:45 to 18:15,
+	// into a load spike and the next morning's PV shortfall, for ~1ct avoided aging cost against
+	// a resulting shortfall worth 10-20ct. The hourly pricing shape was the actual lever, not the
+	// price level - any value from 0.0005 up reproduced it, up to 10x the real 0.005.
+	socDepletionCostHigh = float32(0.0)
 
 	// socDepletionCostLow is a small reserve-comfort price (€/h) that keeps the home battery off
 	// the low floor: it ramps from zero at 20% SOC to full at s_min. Not battery aging (low SOC is
