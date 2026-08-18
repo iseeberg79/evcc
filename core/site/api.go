@@ -105,21 +105,6 @@ type API interface {
 	GetSocDepletionCostLowEnabled() bool
 	SetSocDepletionCostLowEnabled(bool) error
 
-	// GetBatteryEstimator returns whether the battery estimator (spread charging) is enabled
-	GetBatteryEstimator() bool
-	// SetBatteryEstimator enables the battery estimator
-	SetBatteryEstimator(bool) error
-
-	// GetBatteryEstimatorFactor returns the battery estimator's PV/consumption factor
-	GetBatteryEstimatorFactor() float64
-	// SetBatteryEstimatorFactor sets the battery estimator's PV/consumption factor
-	SetBatteryEstimatorFactor(float64) error
-
-	// GetBatteryEstimatorTargetTime returns the battery estimator's target time (HH:MM)
-	GetBatteryEstimatorTargetTime() string
-	// SetBatteryEstimatorTargetTime sets the battery estimator's target time (HH:MM)
-	SetBatteryEstimatorTargetTime(string) error
-
 	//
 	// battery control external
 	//

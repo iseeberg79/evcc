@@ -86,50 +86,6 @@
 					{{ $t("battery.config.discharge") }}
 				</label>
 			</div>
-			<div class="form-check form-switch mt-3">
-				<input
-					id="batteryExpEstimator"
-					:checked="batteryEstimator"
-					class="form-check-input"
-					type="checkbox"
-					role="switch"
-					@change="changeEstimator"
-				/>
-				<label class="form-check-label" for="batteryExpEstimator">
-					{{ $t("batterySettings.estimator") }} 🧪
-				</label>
-			</div>
-			<div v-if="batteryEstimator" class="d-flex gap-3 mt-3 ms-4">
-				<label
-					class="form-check-label"
-					for="batteryExpEstimatorFactor"
-					:title="$t('batterySettings.estimatorFactorHint')"
-				>
-					{{ $t("batterySettings.estimatorFactor") }}
-					<input
-						id="batteryExpEstimatorFactor"
-						v-model.number="selectedEstimatorFactor"
-						type="number"
-						step="0.1"
-						min="1"
-						max="5"
-						class="form-control form-control-sm d-inline-block"
-						style="width: 80px"
-						@change="changeEstimatorFactor"
-					/>
-				</label>
-				<label class="form-check-label" for="batteryExpEstimatorTargetTime">
-					{{ $t("batterySettings.estimatorTargetTime") }}
-					<input
-						id="batteryExpEstimatorTargetTime"
-						v-model="selectedEstimatorTargetTime"
-						type="time"
-						class="form-control form-control-sm d-inline-block"
-						style="width: 110px"
-						@change="changeEstimatorTargetTime"
-					/>
-				</label>
-			</div>
 			<div v-if="experimental" class="form-check form-switch mt-2">
 				<input
 					id="batteryExpGridDischarge"
@@ -185,9 +141,6 @@ export default defineComponent({
 		prioritySoc: { type: Number, default: 0 },
 		bufferStartSoc: { type: Number, default: 0 },
 		batteryDischargeControl: Boolean,
-		batteryEstimator: Boolean,
-		batteryEstimatorFactor: { type: Number, default: 1.5 },
-		batteryEstimatorTargetTime: { type: String, default: "18:00" },
 		batteryGridDischarge: Boolean,
 		socDepletionCostLowEnabled: Boolean,
 		battery: { type: Object as PropType<Battery> },
@@ -198,8 +151,6 @@ export default defineComponent({
 			selectedBufferSoc: 100,
 			selectedPrioritySoc: 0,
 			selectedBufferStartSoc: 0,
-			selectedEstimatorFactor: 1.5,
-			selectedEstimatorTargetTime: "18:00",
 		};
 	},
 	computed: {
@@ -264,18 +215,6 @@ export default defineComponent({
 			},
 			immediate: true,
 		},
-		batteryEstimatorFactor: {
-			handler(factor) {
-				this.selectedEstimatorFactor = factor;
-			},
-			immediate: true,
-		},
-		batteryEstimatorTargetTime: {
-			handler(val) {
-				this.selectedEstimatorTargetTime = val || "18:00";
-			},
-			immediate: true,
-		},
 	},
 	methods: {
 		changePrioritySoc($event: Event) {
@@ -332,31 +271,6 @@ export default defineComponent({
 			try {
 				await api.post(
 					`batterydischargecontrol/${(e.target as HTMLInputElement).checked ? "true" : "false"}`
-				);
-			} catch (err) {
-				console.error(err);
-			}
-		},
-		async changeEstimator(e: Event) {
-			try {
-				await api.post(
-					`batteryestimator/${(e.target as HTMLInputElement).checked ? "true" : "false"}`
-				);
-			} catch (err) {
-				console.error(err);
-			}
-		},
-		async changeEstimatorFactor() {
-			try {
-				await api.post(`batteryestimatorfactor/${this.selectedEstimatorFactor}`);
-			} catch (err) {
-				console.error(err);
-			}
-		},
-		async changeEstimatorTargetTime() {
-			try {
-				await api.post(
-					`batteryestimatortargettime/${encodeURIComponent(this.selectedEstimatorTargetTime)}`
 				);
 			} catch (err) {
 				console.error(err);

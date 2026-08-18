@@ -29,9 +29,6 @@
 			:priority-soc="state.prioritySoc"
 			:buffer-start-soc="state.bufferStartSoc"
 			:battery-discharge-control="state.batteryDischargeControl"
-			:battery-estimator="state.batteryEstimator"
-			:battery-estimator-factor="state.batteryEstimatorFactor"
-			:battery-estimator-target-time="state.batteryEstimatorTargetTime"
 			:battery-grid-discharge="state.batteryGridDischarge"
 			:soc-depletion-cost-low-enabled="state.socDepletionCostLowEnabled"
 			:battery="state.battery"
@@ -99,11 +96,7 @@ export default defineComponent({
 			return this.devices.length > 0;
 		},
 		evopt() {
-			// the SoC forecast must reflect whichever mechanism actually drives hold charge -
-			// the optimizer plan is irrelevant while the battery estimator is active
-			return this.state.batteryEstimator
-				? this.state.batteryEstimatorForecast
-				: this.state.evopt;
+			return this.state.evopt;
 		},
 		kWhAvailable(): boolean {
 			return this.batteryAvailable && this.devices.every((d) => d.capacity > 0);

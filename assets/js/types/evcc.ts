@@ -174,7 +174,6 @@ export interface State {
   authProviders?: AuthProviders;
   /** @internal */
   evopt?: EvOpt;
-  batteryEstimatorForecast?: EvOpt;
   /** Running evcc version. */
   version?: string;
   /** Latest available evcc version. */
@@ -275,9 +274,6 @@ export interface State {
   bufferStartSoc?: number;
   /** Home battery discharge is prevented during fast charging and planned charging. */
   batteryDischargeControl?: boolean;
-  batteryEstimator?: boolean;
-  batteryEstimatorFactor?: number;
-  batteryEstimatorTargetTime?: string;
   /** Home battery is allowed to discharge to the grid (experimental). */
   batteryGridDischarge?: boolean;
   /** Solar forecast is adjusted to real production data (experimental). */

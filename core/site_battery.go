@@ -76,23 +76,6 @@ func (site *Site) SetBatteryMode(batMode api.BatteryMode) {
 func (site *Site) updateBatteryMode(batteryGridChargeActive bool, rate api.Rate) {
 	batteryMode := site.requiredBatteryMode(batteryGridChargeActive, rate)
 
-	// battery estimator: auto-enable HoldCharge to spread PV charging power over time,
-	// independent of the optimizer (only from Unknown or Normal - it must not override an
-	// externally or grid-charge/discharge-controlled mode)
-	if (batteryMode == api.BatteryUnknown || batteryMode == api.BatteryNormal) && site.shouldUseBatteryEstimator() {
-		batteryMode = api.BatteryHoldCharge
-	}
-	// release the estimator's HoldCharge once the battery is full and cutoff is close, so it
-	// can discharge freely instead of sitting needlessly capped
-	if site.batteryEstimator && batteryMode == api.BatteryHoldCharge && site.isEstimatorBufferTimeActiveAndBatteryFull() {
-		batteryMode = api.BatteryNormal
-	}
-	// keep the estimator's per-battery hold charge power (Reg 1038 etc.) current whenever
-	// it may be applied
-	if site.batteryEstimator && (batteryMode == api.BatteryHoldCharge || site.batteryMode == api.BatteryHoldCharge) {
-		site.updateBatteryEstimatorSuggestions()
-	}
-
 	// put battery into hold mode when charging is active and HEMS dimmed
 	fromToCharge := batteryMode == api.BatteryCharge || batteryMode == api.BatteryUnknown && site.batteryMode == api.BatteryCharge
 	if dimmed := hems.Dimmed(site.hems); fromToCharge && dimmed != nil && *dimmed {
@@ -149,9 +132,8 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive bool, rate api.Rat
 		res = keepUnlessModified(api.BatteryCharge)
 	case site.dischargeControlActive(rate):
 		res = keepUnlessModified(api.BatteryHold)
-	case !site.batteryEstimator && site.holdChargePlanAvailable():
-		// follow the optimizer's current-slot plan; disabled while the battery estimator is
-		// active since the two hold charge sources must not fight over the same battery mode.
+	case site.holdChargePlanAvailable():
+		// follow the optimizer's current-slot plan
 		if site.dischargeControlSessionActive(rate) {
 			// Hold wins over HoldCharge for the whole smart-cost/fast charge session: the
 			// case above already yields Hold via dischargeControlActive while the vehicle
@@ -176,14 +158,13 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive bool, rate api.Rat
 const holdChargeStale = 30 * time.Minute
 
 // holdChargePlan is an immutable per-slot snapshot of each home battery's planned
-// action (from the optimizer or the battery estimator), keyed by battery name.
-// slotSuggestion only depends on plan data, never on live measurements, so the full
-// horizon is computed once per run instead of being
+// action, keyed by battery name. slotSuggestion only depends on plan data, never on
+// live measurements, so the full horizon is computed once per run instead of being
 // re-derived from a single frozen "slot 0" on every site cycle - which drifted behind
 // the wall clock the longer the cached plan was reused (see FORK_CHANGES_evcc.md).
-// The producer (optimizerUpdate/updateBatteryEstimatorSuggestions) swaps the pointer
-// under site.Lock; consumers read it once under RLock, so a run landing mid-cycle can
-// never mix mode and charge value from two different plans.
+// The producer (optimizerUpdate) swaps the pointer under site.Lock; consumers read it
+// once under RLock, so a run landing mid-cycle can never mix mode and charge value
+// from two different plans.
 type holdChargePlan struct {
 	updated time.Time
 	starts  []time.Time
@@ -192,8 +173,8 @@ type holdChargePlan struct {
 }
 
 // singleSlotHoldChargePlan wraps a one-off suggestion in the same plan shape the
-// optimizer produces, for the battery estimator, which recomputes live every cycle
-// instead of solving a multi-slot horizon.
+// optimizer produces - useful for tests and any other single-cycle plan producer that
+// doesn't solve a multi-slot horizon.
 func singleSlotHoldChargePlan(now time.Time, suggestions map[string]types.Suggestion) *holdChargePlan {
 	return &holdChargePlan{
 		updated: now,

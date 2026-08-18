@@ -81,16 +81,13 @@ type Site struct {
 	curtailPercent *int
 
 	// battery settings
-	prioritySoc                float64         // prefer battery up to this Soc
-	bufferSoc                  float64         // continue charging on battery above this Soc
-	bufferStartSoc             float64         // start charging on battery above this Soc
-	batteryDischargeControl    bool            // prevent battery discharge for fast and planned charging
-	batteryEstimator           bool            // spread PV charging power over time to reach maxSoc by a target time, independent of the optimizer
-	batteryEstimatorFactor     float64         // battery estimator: PV forecast > consumption * factor to auto-activate (default 1.5)
-	batteryEstimatorTargetTime string          // battery estimator: target time (HH:MM) by which the battery should be full (default 18:00)
-	holdChargePlan             *holdChargePlan // per-slot plan (optimizer or battery estimator) per home battery name
-	batteryGridChargeLimit     *float64        // grid charging limit
-	batteryGridDischarge       bool            // allow battery discharge to grid (experimental)
+	prioritySoc             float64         // prefer battery up to this Soc
+	bufferSoc               float64         // continue charging on battery above this Soc
+	bufferStartSoc          float64         // start charging on battery above this Soc
+	batteryDischargeControl bool            // prevent battery discharge for fast and planned charging
+	holdChargePlan          *holdChargePlan // per-slot plan (optimizer) per home battery name
+	batteryGridChargeLimit  *float64        // grid charging limit
+	batteryGridDischarge    bool            // allow battery discharge to grid (experimental)
 
 	// testing only: not part of the PR, lets the low-SOC reserve-comfort price (see
 	// socDepletionCostLowDefault) be toggled live while it's under evaluation. Not persisted -
@@ -365,9 +362,6 @@ func NewSite() *Site {
 		log:        util.NewLogger("site"),
 		Voltage:    230, // V
 		collectors: make(map[string]*metrics.Collector),
-
-		batteryEstimatorFactor:     1.5,
-		batteryEstimatorTargetTime: "18:00",
 	}
 
 	// the result only depends on completed days, so it cannot change within a day
@@ -443,21 +437,6 @@ func (site *Site) restoreSettings() error {
 	}
 	if v, err := settings.Bool(keys.BatteryDischargeControl); err == nil {
 		if err := site.SetBatteryDischargeControl(v); err != nil && !errors.Is(err, ErrBatteryControlNotAvailable) {
-			return err
-		}
-	}
-	if v, err := settings.Bool(keys.BatteryEstimator); err == nil {
-		if err := site.SetBatteryEstimator(v); err != nil {
-			return err
-		}
-	}
-	if v, err := settings.Float(keys.BatteryEstimatorFactor); err == nil {
-		if err := site.SetBatteryEstimatorFactor(v); err != nil {
-			return err
-		}
-	}
-	if v, err := settings.String(keys.BatteryEstimatorTargetTime); err == nil && v != "" {
-		if err := site.SetBatteryEstimatorTargetTime(v); err != nil {
 			return err
 		}
 	}
@@ -1334,9 +1313,6 @@ func (site *Site) prepare() {
 	site.publish(keys.BufferStartSoc, site.bufferStartSoc)
 	site.publish(keys.BatteryMode, site.batteryMode)
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
-	site.publish(keys.BatteryEstimator, site.batteryEstimator)
-	site.publish(keys.BatteryEstimatorFactor, site.batteryEstimatorFactor)
-	site.publish(keys.BatteryEstimatorTargetTime, site.batteryEstimatorTargetTime)
 	site.publish(keys.BatteryGridDischarge, site.batteryGridDischarge)
 	site.publish(keys.SolarAdjusted, site.solarAdjusted)
 	site.publish(keys.ResidualPower, site.GetResidualPower())
