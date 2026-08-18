@@ -538,6 +538,19 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 		chargingStrategy = string(optimizer.OptimizerStrategyChargingStrategyNone)
 	}
 
+	// attenuate_feedin_peaks/attenuate_grid_peaks level the export profile by withholding
+	// battery charge for a later, bigger peak (the holdcharge suggestion in site_battery.go).
+	// That's only a good trade on a day with enough PV left to actually fill the reservation -
+	// on a poor one it just risks skipping today's safe, unconstrained charge for a peak that
+	// never comes. Downgrade to none instead of gambling on it; see holdChargeYieldSufficient.
+	switch optimizer.OptimizerStrategyChargingStrategy(chargingStrategy) {
+	case optimizer.OptimizerStrategyChargingStrategyAttenuateFeedinPeaks, optimizer.OptimizerStrategyChargingStrategyAttenuateGridPeaks:
+		if !site.holdChargeYieldSufficient() {
+			site.log.DEBUG.Printf("optimizer: charging strategy %s downgraded to none, insufficient PV yield expected today", chargingStrategy)
+			chargingStrategy = string(optimizer.OptimizerStrategyChargingStrategyNone)
+		}
+	}
+
 	req = optimizer.OptimizationInput{
 		Strategy: optimizer.OptimizerStrategy{
 			ChargingStrategy:    optimizer.OptimizerStrategyChargingStrategy(chargingStrategy),

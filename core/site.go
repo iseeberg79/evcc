@@ -88,6 +88,8 @@ type Site struct {
 	holdChargePlan          *holdChargePlan // per-slot plan (optimizer) per home battery name
 	batteryGridChargeLimit  *float64        // grid charging limit
 	batteryGridDischarge    bool            // allow battery discharge to grid (experimental)
+	holdChargeYieldDay      time.Time       // calendar day holdChargeYieldOK was computed for
+	holdChargeYieldOK       bool            // today's forecast justifies withholding charge for a peak, frozen once per day - see holdChargeYieldSufficient
 
 	// testing only: not part of the PR, lets the low-SOC reserve-comfort price (see
 	// socDepletionCostLowDefault) be toggled live while it's under evaluation. Not persisted -
