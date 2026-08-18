@@ -373,13 +373,13 @@ func NewSite() *Site {
 		return scale, err
 	}, 24*time.Hour)
 
-	// unlike solarScaleCached, this tracks a rolling short-term signal rather than a
-	// once-a-day percentile, so it is refreshed roughly every optimizer cycle instead of
-	// once a day.
+	// tracks a rolling short-term signal, refreshed at tariff.SlotDuration.
 	site.consumptionSignalCached = util.Cached(func() (float64, error) {
 		sig, err := site.queryConsumptionSignal()
 		if err != nil {
-			site.log.ERROR.Printf("consumption signal: %v, falling back to unadjusted forecast", err)
+			// DEBUG: a persistent failure logs every few minutes, and the fallback
+			// (unadjusted forecast) is not a critical failure
+			site.log.DEBUG.Printf("consumption signal: %v, falling back to unadjusted forecast", err)
 		}
 		return sig, err
 	}, tariff.SlotDuration)

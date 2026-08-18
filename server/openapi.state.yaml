@@ -480,6 +480,14 @@ components:
           type: number
       required:
         - power
+    ConsumptionDetails:
+      type: object
+      properties:
+        scale:
+          description: Consumption signal scale factor for the next slot, 1 if unscaled.
+          type: number
+      required:
+        - scale
     Currency:
       description: Currency in ISO 4217 format.
       type: string
@@ -617,6 +625,9 @@ components:
         solar:
           $ref: "#/components/schemas/SolarDetails"
           description: Solar production forecast.
+        consumption:
+          $ref: "#/components/schemas/ConsumptionDetails"
+          description: Data-driven scale applied to the home consumption forecast (experimental, testing only).
         planner:
           description: Charging cost forecast used by the plan optimizer per time slot.
           type: array
@@ -1641,7 +1652,7 @@ components:
       type: object
       properties:
         scale:
-          description: Correction factor applied to the forecast based on past production.
+          description: Trailing percentile correction factor applied to the forecast based on past production.
           type: number
         today:
           $ref: "#/components/schemas/EnergyByDay"
