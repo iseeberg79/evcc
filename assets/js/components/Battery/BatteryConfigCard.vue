@@ -143,6 +143,22 @@
 					{{ $t("battery.config.gridDischarge") }} 🧪
 				</label>
 			</div>
+			<!-- testing only: not part of the PR, live switch for the optimizer's low-SOC
+			     reserve-comfort price (see core/site_optimizer.go socDepletionCostLowDefault).
+			     Off by default, not persisted - forgotten on restart. -->
+			<div v-if="experimental" class="form-check form-switch mt-2">
+				<input
+					id="socDepletionCostLowEnabled"
+					:checked="socDepletionCostLowEnabled"
+					class="form-check-input"
+					type="checkbox"
+					role="switch"
+					@change="changeSocDepletionCostLow"
+				/>
+				<label class="form-check-label text-muted" for="socDepletionCostLowEnabled">
+					optimizer: prc_dpl_soc_low 🧪 [testing]
+				</label>
+			</div>
 		</template>
 	</Card>
 </template>
@@ -173,6 +189,7 @@ export default defineComponent({
 		batteryEstimatorFactor: { type: Number, default: 1.5 },
 		batteryEstimatorTargetTime: { type: String, default: "18:00" },
 		batteryGridDischarge: Boolean,
+		socDepletionCostLowEnabled: Boolean,
 		battery: { type: Object as PropType<Battery> },
 		experimental: Boolean,
 	},
@@ -351,6 +368,15 @@ export default defineComponent({
 				await api.post(`batterygriddischarge/${target.checked}`);
 			} catch (err) {
 				target.checked = this.batteryGridDischarge; // revert to stay in sync with state
+				console.error(err);
+			}
+		},
+		async changeSocDepletionCostLow(e: Event) {
+			const target = e.target as HTMLInputElement;
+			try {
+				await api.post(`socdepletioncostlow/${target.checked}`);
+			} catch (err) {
+				target.checked = this.socDepletionCostLowEnabled; // revert to stay in sync with state
 				console.error(err);
 			}
 		},

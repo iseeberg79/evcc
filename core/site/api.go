@@ -100,6 +100,11 @@ type API interface {
 	GetBatteryGridDischarge() bool
 	SetBatteryGridDischarge(bool) error
 
+	// GetSocDepletionCostLowEnabled and SetSocDepletionCostLowEnabled toggle the optimizer's
+	// low-SOC reserve-comfort price (testing only, not part of the PR, not persisted)
+	GetSocDepletionCostLowEnabled() bool
+	SetSocDepletionCostLowEnabled(bool) error
+
 	// GetBatteryEstimator returns whether the battery estimator (spread charging) is enabled
 	GetBatteryEstimator() bool
 	// SetBatteryEstimator enables the battery estimator

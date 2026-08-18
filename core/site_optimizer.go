@@ -48,11 +48,16 @@ const (
 	// price level - any value from 0.0005 up reproduced it, up to 10x the real 0.005.
 	socDepletionCostHigh = float32(0.0)
 
-	// socDepletionCostLow is a small reserve-comfort price (€/h) that keeps the home battery off
-	// the low floor: it ramps from zero at 20% SOC to full at s_min. Not battery aging (low SOC is
-	// gentle) but a soft buffer for spontaneous loads / forecast deviation. Deliberately below the
-	// import price so it never triggers grid charging to hold the band and yields to real arbitrage.
-	socDepletionCostLow = float32(0.002)
+	// socDepletionCostLowDefault was the €/h reserve-comfort price that keeps the home battery
+	// off the low floor: ramps from zero at 20% SOC to full at s_min. Not battery aging (low SOC
+	// is gentle) but a soft buffer for spontaneous loads / forecast deviation. Deliberately below
+	// the import price so it never triggers grid charging to hold the band and yields to real
+	// arbitrage. Unlike socDepletionCostHigh, no real-world case has shown it does harm - real
+	// tests this far only found it inert (every checked low-SOC event either sat at s_min already
+	// or drained through in a single slot), never actively wrong, so it isn't disabled outright.
+	// site.socDepletionCostLow (testing only, see site.go) now carries the live value instead of
+	// this constant, defaulting to 0 - set it back to 0.002 at runtime to compare.
+	socDepletionCostLowDefault = float32(0.002)
 )
 
 // optimizerChargeBeforeExport is kept as a selectable config value even though optimizer PR
@@ -1060,8 +1065,12 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 	bat.PrcDplSocHigh = socDepletionCostHigh
 
 	// nudge the optimizer to keep a reserve buffer off the low floor (comfort, not aging) so a
-	// spontaneous load or forecast deviation is covered from the battery, not a grid purchase
-	bat.PrcDplSocLow = socDepletionCostLow
+	// spontaneous load or forecast deviation is covered from the battery, not a grid purchase.
+	// testing only: defaults off (0), site.GetSocDepletionCostLowEnabled() switches the old
+	// price back on live, see site.go.
+	if site.GetSocDepletionCostLowEnabled() {
+		bat.PrcDplSocLow = socDepletionCostLowDefault
+	}
 
 	// battery_first (optimizer PR 126) moved from a per-battery field to a single
 	// strategy-level flag shared by the whole request - home batteries and any

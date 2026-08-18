@@ -182,6 +182,8 @@ func (s *HTTPd) RegisterSiteHandlers(site site.API) {
 		"batteryestimatorfactor":     {"POST", "/batteryestimatorfactor/{value:[0-9.]+}", floatHandler(site.SetBatteryEstimatorFactor, site.GetBatteryEstimatorFactor)},
 		"batteryestimatortargettime": {"POST", "/batteryestimatortargettime/{value:[0-9:]+}", stringHandler(site.SetBatteryEstimatorTargetTime, site.GetBatteryEstimatorTargetTime)},
 		"batterygriddischarge":       {"POST", "/batterygriddischarge/{value:[01truefalse]+}", boolHandler(site.SetBatteryGridDischarge, site.GetBatteryGridDischarge)},
+		// testing only: not part of the PR, see site.SetSocDepletionCostLowEnabled
+		"socdepletioncostlow":        {"POST", "/socdepletioncostlow/{value:[01truefalse]+}", boolHandler(site.SetSocDepletionCostLowEnabled, site.GetSocDepletionCostLowEnabled)},
 		"batterygridcharge":          {"POST", "/batterygridchargelimit/{value:-?[0-9.]+}", floatPtrHandler(site.SetBatteryGridChargeLimit, site.GetBatteryGridChargeLimit)},
 		"batterygridchargedelete":    {"DELETE", "/batterygridchargelimit", floatPtrHandler(site.SetBatteryGridChargeLimit, site.GetBatteryGridChargeLimit)},
 		"gridexportlimit":            {"POST", "/gridexportlimit/{value:[0-9.]+}", floatHandler(site.SetGridExportLimit, site.GetGridExportLimit)},

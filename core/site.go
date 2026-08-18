@@ -92,6 +92,11 @@ type Site struct {
 	batteryGridChargeLimit     *float64        // grid charging limit
 	batteryGridDischarge       bool            // allow battery discharge to grid (experimental)
 
+	// testing only: not part of the PR, lets the low-SOC reserve-comfort price (see
+	// socDepletionCostLowDefault) be toggled live while it's under evaluation. Not persisted -
+	// forgotten on restart, defaults to off (0.0).
+	socDepletionCostLowEnabled bool
+
 	// grid settings
 	gridExportLimit float64 // static grid export power limit in W, 0 = disabled
 

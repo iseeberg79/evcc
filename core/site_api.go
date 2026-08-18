@@ -534,6 +534,30 @@ func (site *Site) SetBatteryGridDischarge(val bool) error {
 	return nil
 }
 
+// GetSocDepletionCostLowEnabled returns whether the low-SOC reserve-comfort price is active
+// (testing only, see site.go)
+func (site *Site) GetSocDepletionCostLowEnabled() bool {
+	site.RLock()
+	defer site.RUnlock()
+	return site.socDepletionCostLowEnabled
+}
+
+// SetSocDepletionCostLowEnabled toggles the low-SOC reserve-comfort price (testing only, see
+// site.go). Not persisted, deliberately - forgotten on restart.
+func (site *Site) SetSocDepletionCostLowEnabled(val bool) error {
+	site.log.DEBUG.Println("set soc depletion cost low enabled:", val)
+
+	site.Lock()
+	defer site.Unlock()
+
+	if site.socDepletionCostLowEnabled != val {
+		site.socDepletionCostLowEnabled = val
+		site.publish("socDepletionCostLowEnabled", val)
+	}
+
+	return nil
+}
+
 // GetSolarAdjusted returns if the solar forecast is adjusted to real production data
 func (site *Site) GetSolarAdjusted() bool {
 	site.RLock()

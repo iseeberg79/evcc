@@ -33,6 +33,7 @@
 			:battery-estimator-factor="state.batteryEstimatorFactor"
 			:battery-estimator-target-time="state.batteryEstimatorTargetTime"
 			:battery-grid-discharge="state.batteryGridDischarge"
+			:soc-depletion-cost-low-enabled="state.socDepletionCostLowEnabled"
 			:battery="state.battery"
 			:experimental="state.experimental"
 		/>
