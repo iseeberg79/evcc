@@ -5,7 +5,10 @@ import (
 
 	"github.com/evcc-io/evcc/server/db"
 	"github.com/evcc-io/evcc/tariff"
+	"github.com/evcc-io/evcc/util"
 )
+
+var log = util.NewLogger("metrics")
 
 const (
 	// groups
@@ -236,10 +239,19 @@ func (c *Collector) AddEnergy(energyTotal, returnEnergyTotal *float64, power flo
 		}
 
 		if energyTotal != nil {
-			c.accu.SetEnergyMeterTotal(*energyTotal)
+			prev := c.accu.energyMeter
+			// diagnostic only, see SetEnergyMeterTotal - behavior is unchanged,
+			// this just surfaces the previously-silent baseline reset so we can
+			// see whether it correlates with the alternating slot pattern
+			if !c.accu.SetEnergyMeterTotal(*energyTotal) {
+				log.WARN.Printf("%s %s energy decreased: %.3f -> %.3f kWh, dropping delta and resetting baseline (torn/implausible read?)", c.entity.Group, c.entity.Title, *prev, *energyTotal)
+			}
 		}
 		if returnEnergyTotal != nil {
-			c.accu.SetReturnEnergyMeterTotal(*returnEnergyTotal)
+			prev := c.accu.returnEnergyMeter
+			if !c.accu.SetReturnEnergyMeterTotal(*returnEnergyTotal) {
+				log.WARN.Printf("%s %s return energy decreased: %.3f -> %.3f kWh, dropping delta and resetting baseline (torn/implausible read?)", c.entity.Group, c.entity.Title, *prev, *returnEnergyTotal)
+			}
 		}
 	})
 }

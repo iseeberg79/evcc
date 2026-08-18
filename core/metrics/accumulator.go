@@ -80,36 +80,49 @@ func (m *Accumulator) String() string {
 	return b.String()
 }
 
-// SetEnergyMeterTotal adds the difference to the last total meter value in kWh
-func (m *Accumulator) SetEnergyMeterTotal(v float64) {
+// SetEnergyMeterTotal adds the difference to the last total meter value in
+// kWh. Returns false when v is a decrease relative to the last known total -
+// the delta is dropped as before (unchanged behavior), this only reports it
+// so the caller can log it for diagnosis. Returns true otherwise, including
+// for the very first reading, which has no baseline to compare against.
+func (m *Accumulator) SetEnergyMeterTotal(v float64) bool {
+	plausible := m.energyMeter == nil || v >= *m.energyMeter
+
 	defer func() {
 		m.updated = m.clock.Now()
 		m.energyMeter = new(v)
 	}()
 
 	if m.energyMeter == nil {
-		return
+		return true
 	}
 
 	if v >= *m.energyMeter {
 		m.Energy += v - *m.energyMeter
 	}
+
+	return plausible
 }
 
-// SetReturnEnergyMeterTotal adds the difference to the last total meter value in kWh
-func (m *Accumulator) SetReturnEnergyMeterTotal(v float64) {
+// SetReturnEnergyMeterTotal adds the difference to the last total meter value
+// in kWh (see SetEnergyMeterTotal for the return value).
+func (m *Accumulator) SetReturnEnergyMeterTotal(v float64) bool {
+	plausible := m.returnEnergyMeter == nil || v >= *m.returnEnergyMeter
+
 	defer func() {
 		m.updated = m.clock.Now()
 		m.returnEnergyMeter = new(v)
 	}()
 
 	if m.returnEnergyMeter == nil {
-		return
+		return true
 	}
 
 	if v >= *m.returnEnergyMeter {
 		m.ReturnEnergy += v - *m.returnEnergyMeter
 	}
+
+	return plausible
 }
 
 // AddEnergy adds the given energy in kWh to the energy total
