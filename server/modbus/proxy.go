@@ -22,11 +22,7 @@ func StartProxy(port int, config modbus.Settings, readOnly ReadOnlyMode) error {
 		return api.ErrSponsorRequired
 	}
 
-	h := &handler{
-		log:      util.NewLogger(fmt.Sprintf("proxy-%d", port)),
-		readOnly: readOnly,
-		conn:     conn,
-	}
+	h := newHandler(util.NewLogger(fmt.Sprintf("proxy-%d", port)), readOnly, conn)
 
 	l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {

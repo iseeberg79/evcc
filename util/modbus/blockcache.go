@@ -17,7 +17,7 @@ type Cache struct {
 }
 
 type cacheEntry struct {
-	payload   []byte
+	payload   []byte // shared with callers, see Fetch - never mutate
 	expiresAt time.Time
 }
 
@@ -28,17 +28,22 @@ func NewCache(ttl time.Duration) *Cache {
 
 // Fetch returns the cached payload for key if it is fresh. On a miss, load is
 // invoked exactly once across all concurrent callers sharing the same key.
+// The bool return is true whenever the caller was spared its own physical
+// load - not singleflight's own "shared" value, which is also true for the
+// leader once a follower joins and would wrongly mark it as spared too.
 func (c *Cache) Fetch(key string, load func() ([]byte, error)) ([]byte, bool, error) {
 	if payload, ok := c.get(key); ok {
 		return payload, true, nil
 	}
 
+	var loaded bool
 	payload, err, _ := c.flight.Do(key, func() (any, error) {
 		// re-check under the flight: a prior flight may have populated the
 		// cache between our miss above and acquiring the call.
 		if payload, ok := c.get(key); ok {
 			return payload, nil
 		}
+		loaded = true
 		payload, err := load()
 		if err != nil {
 			return nil, err
@@ -49,7 +54,7 @@ func (c *Cache) Fetch(key string, load func() ([]byte, error)) ([]byte, bool, er
 	if err != nil {
 		return nil, false, err
 	}
-	return payload.([]byte), false, nil
+	return payload.([]byte), !loaded, nil
 }
 
 // get returns the cached payload if it exists and is fresh. Expired entries are
@@ -69,8 +74,12 @@ func (c *Cache) get(key string) ([]byte, bool) {
 	return e.payload, true
 }
 
-// Clear drops all cached entries. Callers use this after a write to force the
-// next read to fetch fresh values instead of serving a stale cached payload.
+// Clear drops all cached entries, forcing the next read to fetch fresh
+// values instead of serving a stale one - modulo a narrow race: a load
+// already past its own cache lookup can still land a stale payload in put
+// right after Clear runs, kept until the next TTL expiry. A caller whose own
+// write-then-read goes through one serialized connection is unaffected; a
+// hard barrier across all callers would need a generation counter instead.
 func (c *Cache) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()

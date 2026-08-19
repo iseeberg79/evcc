@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -77,10 +78,7 @@ func TestReadCoils(t *testing.T) {
 	downstreamConn, err := modbus.NewConnection(t.Context(), l.Addr().String(), "", "", 0, modbus.Tcp, 1)
 	require.NoError(t, err)
 
-	proxy, _ := mbserver.New(&handler{
-		log:  util.NewLogger("foo"),
-		conn: downstreamConn,
-	})
+	proxy, _ := mbserver.New(newHandler(util.NewLogger("foo"), ReadOnlyFalse, downstreamConn))
 	require.NoError(t, proxy.Start(pl))
 	defer func() { _ = proxy.Stop() }()
 
@@ -112,6 +110,120 @@ func TestReadCoils(t *testing.T) {
 			assert.Equal(t, []byte{0x00, 0x09}, b)
 		}
 	}
+}
+
+// TestProxyCacheCoalescesConcurrentReads verifies that two clients reading
+// the same register range genuinely concurrently are coalesced into a
+// single downstream request, not just served from an already-warm cache.
+func TestProxyCacheCoalescesConcurrentReads(t *testing.T) {
+	downstream := &countingHandler{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	pl, _ := startTestProxy(t, downstream)
+
+	client1, err := modbus.NewConnection(t.Context(), pl, "", "", 0, modbus.Tcp, 1)
+	require.NoError(t, err)
+	client2, err := modbus.NewConnection(t.Context(), pl, "", "", 0, modbus.Tcp, 1)
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		_, err := client1.ReadHoldingRegisters(10, 2)
+		assert.NoError(t, err) // require.FailNow is only valid on the test goroutine
+	})
+
+	<-downstream.entered // first read is in flight, holding the downstream response
+
+	wg.Go(func() {
+		_, err := client2.ReadHoldingRegisters(10, 2)
+		assert.NoError(t, err)
+	})
+
+	// give the second read time to join the first read's flight before
+	// releasing it - arriving late instead would still pass the assertion
+	// below via a plain TTL hit, silently proving the wrong thing. No
+	// synchronization signal exists to rule that out deterministically, so
+	// this is a heuristic margin, not a guarantee.
+	time.Sleep(100 * time.Millisecond)
+	close(downstream.release)
+	wg.Wait()
+
+	assert.Equal(t, int32(1), downstream.holdingReads.Load(), "two concurrent reads for the same range must share one downstream request")
+}
+
+// TestProxyCacheInvalidatesOnWrite verifies a read right after a write is
+// not served the pre-write cached value.
+func TestProxyCacheInvalidatesOnWrite(t *testing.T) {
+	downstream := &countingHandler{}
+	pl, _ := startTestProxy(t, downstream)
+
+	client, err := modbus.NewConnection(t.Context(), pl, "", "", 0, modbus.Tcp, 1)
+	require.NoError(t, err)
+
+	_, err = client.ReadHoldingRegisters(10, 2)
+	require.NoError(t, err)
+	_, err = client.ReadHoldingRegisters(10, 2)
+	require.NoError(t, err)
+	require.Equal(t, int32(1), downstream.holdingReads.Load(), "second read within TTL must be served from cache")
+
+	_, err = client.WriteSingleRegister(10, 42)
+	require.NoError(t, err)
+
+	_, err = client.ReadHoldingRegisters(10, 2)
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), downstream.holdingReads.Load(), "a read right after a write must not be served the pre-write cached value")
+}
+
+// startTestProxy wires downstream up behind a proxy handler and returns the
+// proxy's listen address and the connection the proxy itself uses downstream.
+func startTestProxy(t *testing.T, downstream mbserver.RequestHandler) (addr string, downstreamConn *modbus.Connection) {
+	t.Helper()
+
+	l, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { l.Close() })
+
+	srv, _ := mbserver.New(downstream)
+	require.NoError(t, srv.Start(l))
+	t.Cleanup(func() { _ = srv.Stop() })
+
+	pl, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { pl.Close() })
+
+	downstreamConn, err = modbus.NewConnection(t.Context(), l.Addr().String(), "", "", 0, modbus.Tcp, 1)
+	require.NoError(t, err)
+
+	proxy, _ := mbserver.New(newHandler(util.NewLogger("foo"), ReadOnlyFalse, downstreamConn))
+	require.NoError(t, proxy.Start(pl))
+	t.Cleanup(func() { _ = proxy.Stop() })
+
+	return pl.Addr().String(), downstreamConn
+}
+
+// countingHandler counts downstream HandleHoldingRegisters calls, to verify
+// the proxy's cache actually avoids the physical read it claims to. If
+// release is set, the first read blocks until it's closed, signaling entry
+// via entered - lets a test hold a read in flight while a second one joins.
+type countingHandler struct {
+	mbserver.DummyHandler
+	holdingReads atomic.Int32
+	entered      chan struct{}
+	release      chan struct{}
+	entryOnce    sync.Once
+}
+
+func (h *countingHandler) HandleHoldingRegisters(req *mbserver.HoldingRegistersRequest) ([]uint16, error) {
+	if req.IsWrite {
+		return req.Args, nil
+	}
+	h.holdingReads.Add(1)
+	if h.release != nil {
+		h.entryOnce.Do(func() { close(h.entered) })
+		<-h.release
+	}
+	return make([]uint16, req.Quantity), nil
 }
 
 type echoHandler struct {

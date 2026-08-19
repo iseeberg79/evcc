@@ -35,6 +35,44 @@ func TestCacheGetMiss(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestCacheExpires verifies a stale entry is not served once its TTL has
+// passed.
+func TestCacheExpires(t *testing.T) {
+	c := NewCache(10 * time.Millisecond)
+	c.put("k", []byte{1, 2, 3})
+
+	got, ok := c.get("k")
+	require.True(t, ok, "entry must be fresh immediately after put")
+	assert.Equal(t, []byte{1, 2, 3}, got)
+
+	time.Sleep(20 * time.Millisecond)
+
+	_, ok = c.get("k")
+	assert.False(t, ok, "expired entry must not be served")
+}
+
+// TestCacheClear verifies Clear forces the next Fetch to load, so a write
+// invalidating the cache actually results in a fresh read afterwards.
+func TestCacheClear(t *testing.T) {
+	c := NewCache(testTTL)
+	c.put("k", []byte{1, 2, 3})
+
+	c.Clear()
+
+	_, ok := c.get("k")
+	assert.False(t, ok, "Clear must drop the entry")
+
+	var calls atomic.Int32
+	got, hit, err := c.Fetch("k", func() ([]byte, error) {
+		calls.Add(1)
+		return []byte{4, 5, 6}, nil
+	})
+	require.NoError(t, err)
+	assert.False(t, hit, "must not be served the value dropped by Clear")
+	assert.Equal(t, []byte{4, 5, 6}, got)
+	assert.Equal(t, int32(1), calls.Load())
+}
+
 func TestCachePutGet(t *testing.T) {
 	c := NewCache(testTTL)
 	c.put("k", []byte{1, 2, 3})
