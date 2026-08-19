@@ -240,17 +240,16 @@ func (c *Collector) AddEnergy(energyTotal, returnEnergyTotal *float64, power flo
 
 		if energyTotal != nil {
 			prev := c.accu.energyMeter
-			// diagnostic only, see SetEnergyMeterTotal - behavior is unchanged,
-			// this just surfaces the previously-silent baseline reset so we can
-			// see whether it correlates with the alternating slot pattern
+			// see SetEnergyMeterTotal: the baseline is kept, not reset, so the
+			// next valid reading recovers cleanly instead of booking a spike
 			if !c.accu.SetEnergyMeterTotal(*energyTotal) {
-				log.WARN.Printf("%s %s energy decreased: %.3f -> %.3f kWh, dropping delta and resetting baseline (torn/implausible read?)", c.entity.Group, c.entity.Title, *prev, *energyTotal)
+				log.WARN.Printf("%s %s energy decreased: %.3f -> %.3f kWh, ignoring reading (torn/implausible read?)", c.entity.Group, c.entity.Title, *prev, *energyTotal)
 			}
 		}
 		if returnEnergyTotal != nil {
 			prev := c.accu.returnEnergyMeter
 			if !c.accu.SetReturnEnergyMeterTotal(*returnEnergyTotal) {
-				log.WARN.Printf("%s %s return energy decreased: %.3f -> %.3f kWh, dropping delta and resetting baseline (torn/implausible read?)", c.entity.Group, c.entity.Title, *prev, *returnEnergyTotal)
+				log.WARN.Printf("%s %s return energy decreased: %.3f -> %.3f kWh, ignoring reading (torn/implausible read?)", c.entity.Group, c.entity.Title, *prev, *returnEnergyTotal)
 			}
 		}
 	})

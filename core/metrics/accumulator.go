@@ -81,48 +81,49 @@ func (m *Accumulator) String() string {
 }
 
 // SetEnergyMeterTotal adds the difference to the last total meter value in
-// kWh. Returns false when v is a decrease relative to the last known total -
-// the delta is dropped as before (unchanged behavior), this only reports it
-// so the caller can log it for diagnosis. Returns true otherwise, including
-// for the very first reading, which has no baseline to compare against.
+// kWh. A cumulative counter cannot run backwards, so a decrease relative to
+// the last known total is treated as a torn or implausible read and ignored
+// without moving the baseline - the next valid reading is then still measured
+// against the last known-good total instead of booking the recovery as one
+// spike. Returns false in that case so the caller can log it for diagnosis,
+// true otherwise, including for the very first reading, which has no
+// baseline to compare against.
 func (m *Accumulator) SetEnergyMeterTotal(v float64) bool {
-	plausible := m.energyMeter == nil || v >= *m.energyMeter
-
-	defer func() {
-		m.updated = m.clock.Now()
-		m.energyMeter = new(v)
-	}()
+	defer func() { m.updated = m.clock.Now() }()
 
 	if m.energyMeter == nil {
+		m.energyMeter = new(v)
 		return true
 	}
 
-	if v >= *m.energyMeter {
-		m.Energy += v - *m.energyMeter
+	if v < *m.energyMeter {
+		return false
 	}
 
-	return plausible
+	m.Energy += v - *m.energyMeter
+	m.energyMeter = new(v)
+
+	return true
 }
 
 // SetReturnEnergyMeterTotal adds the difference to the last total meter value
 // in kWh (see SetEnergyMeterTotal for the return value).
 func (m *Accumulator) SetReturnEnergyMeterTotal(v float64) bool {
-	plausible := m.returnEnergyMeter == nil || v >= *m.returnEnergyMeter
-
-	defer func() {
-		m.updated = m.clock.Now()
-		m.returnEnergyMeter = new(v)
-	}()
+	defer func() { m.updated = m.clock.Now() }()
 
 	if m.returnEnergyMeter == nil {
+		m.returnEnergyMeter = new(v)
 		return true
 	}
 
-	if v >= *m.returnEnergyMeter {
-		m.ReturnEnergy += v - *m.returnEnergyMeter
+	if v < *m.returnEnergyMeter {
+		return false
 	}
 
-	return plausible
+	m.ReturnEnergy += v - *m.returnEnergyMeter
+	m.returnEnergyMeter = new(v)
+
+	return true
 }
 
 // AddEnergy adds the given energy in kWh to the energy total
