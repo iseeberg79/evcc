@@ -28,23 +28,25 @@ import (
 const cacheTTL = time.Second
 
 type handler struct {
-	log      *util.Logger
-	readOnly ReadOnlyMode
-	conn     *modbus.Connection
-	cache    *modbus.Cache
-	reads    atomic.Int64 // every read request, hit or miss
-	hits     atomic.Int64 // subset of reads served from cache
+	log       *util.Logger
+	readOnly  ReadOnlyMode
+	conn      *modbus.Connection
+	cache     *modbus.Cache         // coils/discrete inputs - low traffic, exact-match is enough
+	registers *modbus.RegisterCache // holding/input registers - the actual read volume
+	reads     atomic.Int64          // every read request, hit or miss
+	hits      atomic.Int64          // subset of reads served from cache
 }
 
-// newHandler returns a handler with its cache always initialized - a struct
-// literal built without going through this can leave cache nil, panicking
-// on the first read.
+// newHandler returns a handler with its caches always initialized - a
+// struct literal built without going through this can leave them nil,
+// panicking on the first read.
 func newHandler(log *util.Logger, readOnly ReadOnlyMode, conn *modbus.Connection) *handler {
 	return &handler{
-		log:      log,
-		readOnly: readOnly,
-		conn:     conn,
-		cache:    modbus.NewCache(cacheTTL),
+		log:       log,
+		readOnly:  readOnly,
+		conn:      conn,
+		cache:     modbus.NewCache(cacheTTL),
+		registers: modbus.NewRegisterCache(cacheTTL),
 	}
 }
 
@@ -196,6 +198,7 @@ func (h *handler) HandleCoils(req *mbserver.CoilsRequest) ([]bool, error) {
 
 			b, err := h.conn.Clone(req.UnitId).WriteSingleCoil(req.Addr, u)
 			h.cache.Clear()
+			h.registers.Clear() // a coil can gate what a register reports too
 			return h.bytesToBoolResult("write coil", req.Quantity, b, err)
 		}
 
@@ -203,6 +206,7 @@ func (h *handler) HandleCoils(req *mbserver.CoilsRequest) ([]bool, error) {
 		args := coilsToBytes(req.Args)
 		b, err := h.conn.Clone(req.UnitId).WriteMultipleCoils(req.Addr, req.Quantity, args)
 		h.cache.Clear()
+		h.registers.Clear()
 		return h.bytesToBoolResult("write coils", req.Quantity, b, err)
 	}
 
@@ -218,7 +222,7 @@ func (h *handler) HandleCoils(req *mbserver.CoilsRequest) ([]bool, error) {
 func (h *handler) HandleInputRegisters(req *mbserver.InputRegistersRequest) ([]uint16, error) {
 	h.log.TRACE.Printf("read input: id %d addr %d qty %d", req.UnitId, req.Addr, req.Quantity)
 	key := fmt.Sprintf("%d/ir/%d/%d", req.UnitId, req.Addr, req.Quantity)
-	b, hit, err := h.cache.Fetch(key, func() ([]byte, error) {
+	b, hit, err := h.registers.Fetch(req.UnitId, gridx.FuncCodeReadInputRegisters, req.Addr, req.Quantity, func() ([]byte, error) {
 		return h.conn.Clone(req.UnitId).ReadInputRegisters(req.Addr, req.Quantity)
 	})
 	h.recordRead(key, hit)
@@ -239,19 +243,21 @@ func (h *handler) HandleHoldingRegisters(req *mbserver.HoldingRegistersRequest) 
 		if req.WriteFuncCode == gridx.FuncCodeWriteSingleRegister {
 			h.log.TRACE.Printf("write holding: id %d addr %d val %04x", req.UnitId, req.Addr, req.Args[0])
 			b, err := h.conn.Clone(req.UnitId).WriteSingleRegister(req.Addr, req.Args[0])
-			h.cache.Clear()
+			h.registers.Invalidate(req.UnitId, gridx.FuncCodeReadHoldingRegisters, req.Addr, 1)
+			h.cache.Clear() // a register write can gate what a coil reports too
 			return h.exceptionToUint16AndError("write holding", b, err)
 		}
 
 		h.log.TRACE.Printf("write holdings: id %d addr %d qty %d val %0x", req.UnitId, req.Addr, req.Quantity, asBytes(req.Args))
 		b, err := h.conn.Clone(req.UnitId).WriteMultipleRegisters(req.Addr, req.Quantity, asBytes(req.Args))
+		h.registers.Invalidate(req.UnitId, gridx.FuncCodeReadHoldingRegisters, req.Addr, req.Quantity)
 		h.cache.Clear()
 		return h.exceptionToUint16AndError("write multiple holding", b, err)
 	}
 
 	h.log.TRACE.Printf("read holdings: id %d addr %d qty %d", req.UnitId, req.Addr, req.Quantity)
 	key := fmt.Sprintf("%d/hr/%d/%d", req.UnitId, req.Addr, req.Quantity)
-	b, hit, err := h.cache.Fetch(key, func() ([]byte, error) {
+	b, hit, err := h.registers.Fetch(req.UnitId, gridx.FuncCodeReadHoldingRegisters, req.Addr, req.Quantity, func() ([]byte, error) {
 		return h.conn.Clone(req.UnitId).ReadHoldingRegisters(req.Addr, req.Quantity)
 	})
 	h.recordRead(key, hit)

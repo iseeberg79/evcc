@@ -176,6 +176,26 @@ func TestProxyCacheInvalidatesOnWrite(t *testing.T) {
 	assert.Equal(t, int32(2), downstream.holdingReads.Load(), "a read right after a write must not be served the pre-write cached value")
 }
 
+// TestProxyCacheServesSubsetOfLargerRead verifies a request that only
+// overlaps a previously read range - not repeating it exactly - is still
+// served from cache, end to end through the proxy.
+func TestProxyCacheServesSubsetOfLargerRead(t *testing.T) {
+	downstream := &countingHandler{}
+	pl, _ := startTestProxy(t, downstream)
+
+	client, err := modbus.NewConnection(t.Context(), pl, "", "", 0, modbus.Tcp, 1)
+	require.NoError(t, err)
+
+	_, err = client.ReadHoldingRegisters(10, 4)
+	require.NoError(t, err)
+
+	// different start address and quantity, but fully covered by the read above
+	_, err = client.ReadHoldingRegisters(11, 2)
+	require.NoError(t, err)
+
+	assert.Equal(t, int32(1), downstream.holdingReads.Load(), "a range covered by an earlier, differently-shaped read must not trigger its own downstream request")
+}
+
 // TestHandlerRecordRead verifies recordRead counts every read and, of those,
 // exactly the ones served from cache.
 func TestHandlerRecordRead(t *testing.T) {
