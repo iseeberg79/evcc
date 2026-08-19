@@ -27,8 +27,9 @@ type Collector struct {
 	entity     entity
 	accu       *Accumulator
 	started    time.Time
-	restored   bool      // meter readings seeded from db
-	lastSlot   time.Time // last persisted slot at restore, for contiguity check
+	restored   bool          // meter readings seeded from db
+	lastSlot   time.Time     // last persisted slot at restore, for contiguity check
+	maxGap     time.Duration // largest single read gap seen in the current slot
 	statsCache EnergyStats
 }
 
@@ -104,6 +105,16 @@ func (c *Collector) UpdateTitle(title string) error {
 func (c *Collector) process(fun func()) error {
 	now := c.accu.clock.Now()
 
+	// track the largest single read gap in the current slot - a read that
+	// arrives long after the previous one attributes its whole delta to
+	// whichever slot is current at persist time (see persist), which is the
+	// mechanism behind the "energy jumped to the wrong slot" symptom
+	if prev := c.accu.updated; !prev.IsZero() {
+		if gap := now.Sub(prev); gap > c.maxGap {
+			c.maxGap = gap
+		}
+	}
+
 	fun()
 
 	return c.advanceSlot(now)
@@ -136,6 +147,13 @@ func (c *Collector) advanceSlot(now time.Time) error {
 			if err := c.persist(recovered); err != nil {
 				return err
 			}
+		} else if c.started.Equal(c.started.Truncate(tariff.SlotDuration)) {
+			// a genuine data gap (not just the unaligned mid-slot first start,
+			// which is never slot-aligned): the buffered energy can't be
+			// attributed to any single slot and is discarded below instead of
+			// persisted
+			log.WARN.Printf("%s %s data gap: %v missed since %v, discarding %.3f kWh",
+				c.entity.Group, c.entity.Title, slotStart.Sub(c.started)-tariff.SlotDuration, c.started, c.accu.Energy)
 		}
 
 		c.restored = false // only the first slot inherits recovery energy
@@ -148,10 +166,22 @@ func (c *Collector) advanceSlot(now time.Time) error {
 	c.accu.Energy = 0
 	c.accu.ReturnEnergy = 0
 	c.accu.SocTemp = nil
+	c.maxGap = 0
 	return nil
 }
 
+// persistGapWarnRatio: a single read gap covering more than this fraction of
+// the slot duration is a strong signal that the delta it produced spans the
+// slot boundary and got attributed entirely to one side - the mechanism
+// behind the "energy jumped to the wrong slot" symptom.
+const persistGapWarnRatio = 0.5
+
 func (c *Collector) persist(recovered bool) error {
+	if c.maxGap > time.Duration(float64(tariff.SlotDuration)*persistGapWarnRatio) {
+		log.WARN.Printf("%s %s slot %v built from a %v read gap, energy may be misattributed across the slot boundary",
+			c.entity.Group, c.entity.Title, c.started, c.maxGap)
+	}
+
 	if err := persist(c.entity, c.started, c.accu.Energy, c.accu.ReturnEnergy, c.accu.SocTemp, recovered); err != nil {
 		return err
 	}

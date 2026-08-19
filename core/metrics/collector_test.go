@@ -229,6 +229,40 @@ func TestCollectorRecoversAfterFailedEnergyRead(t *testing.T) {
 	require.InDelta(t, 0.15, col.accu.Energy, 1e-9)
 }
 
+// TestCollectorTracksMaxReadGap verifies that maxGap tracks the largest
+// single read gap within a slot, is not shrunk by a smaller subsequent gap,
+// and resets once the slot rolls over. This is the signal persist() uses to
+// warn that a slot's energy was likely built from a read spanning the slot
+// boundary (see the "energy jumped to the wrong slot" symptom).
+func TestCollectorTracksMaxReadGap(t *testing.T) {
+	clock := clock.NewMock()
+
+	require.NoError(t, db.NewInstance("sqlite", ":memory:"))
+	require.NoError(t, SetupSchema())
+
+	col, err := NewCollector("gap", "gap", "", WithClock(clock))
+	require.NoError(t, err)
+
+	clock.Add(time.Minute)
+	require.NoError(t, col.AddEnergy(new(10.0), nil, 1e3))
+	require.Zero(t, col.maxGap)
+
+	// a large gap within the same slot is tracked
+	clock.Add(10 * time.Minute)
+	require.NoError(t, col.AddEnergy(new(10.5), nil, 1e3))
+	require.Equal(t, 10*time.Minute, col.maxGap)
+
+	// a smaller subsequent gap does not shrink the tracked max
+	clock.Add(time.Minute)
+	require.NoError(t, col.AddEnergy(new(10.6), nil, 1e3))
+	require.Equal(t, 10*time.Minute, col.maxGap)
+
+	// crossing into the next slot resets it
+	clock.Add(15 * time.Minute)
+	require.NoError(t, col.AddEnergy(new(11.0), nil, 1e3))
+	require.Zero(t, col.maxGap)
+}
+
 // TestCollectorSkipsPartialFirstSlot verifies that the first slot, joined
 // mid-way after (re)start, is not persisted as a full 15min slot.
 func TestCollectorSkipsPartialFirstSlot(t *testing.T) {
