@@ -1,6 +1,7 @@
 package modbus
 
 import (
+	"context"
 	"encoding/binary"
 	"math/rand"
 	"net"
@@ -173,6 +174,42 @@ func TestProxyCacheInvalidatesOnWrite(t *testing.T) {
 	_, err = client.ReadHoldingRegisters(10, 2)
 	require.NoError(t, err)
 	assert.Equal(t, int32(2), downstream.holdingReads.Load(), "a read right after a write must not be served the pre-write cached value")
+}
+
+// TestHandlerRecordRead verifies recordRead counts every read and, of those,
+// exactly the ones served from cache.
+func TestHandlerRecordRead(t *testing.T) {
+	h := newHandler(util.NewLogger("foo"), ReadOnlyFalse, nil)
+
+	h.recordRead("k", false)
+	h.recordRead("k", true)
+	h.recordRead("k", true)
+
+	assert.Equal(t, int64(3), h.reads.Load())
+	assert.Equal(t, int64(2), h.hits.Load())
+}
+
+// TestHandlerReportStats verifies reportStats keeps ticking until its
+// context is cancelled, and returns promptly afterwards.
+func TestHandlerReportStats(t *testing.T) {
+	h := newHandler(util.NewLogger("foo"), ReadOnlyFalse, nil)
+	h.recordRead("k", false)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		h.reportStats(ctx, 10*time.Millisecond)
+		close(done)
+	}()
+
+	time.Sleep(30 * time.Millisecond) // let at least one tick fire
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("reportStats did not return after context cancellation")
+	}
 }
 
 // startTestProxy wires downstream up behind a proxy handler and returns the

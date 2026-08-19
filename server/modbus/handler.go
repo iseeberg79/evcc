@@ -1,10 +1,12 @@
 package modbus
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/bits"
+	"sync/atomic"
 	"time"
 
 	"github.com/andig/mbserver"
@@ -30,6 +32,8 @@ type handler struct {
 	readOnly ReadOnlyMode
 	conn     *modbus.Connection
 	cache    *modbus.Cache
+	reads    atomic.Int64 // every read request, hit or miss
+	hits     atomic.Int64 // subset of reads served from cache
 }
 
 // newHandler returns a handler with its cache always initialized - a struct
@@ -41,6 +45,36 @@ func newHandler(log *util.Logger, readOnly ReadOnlyMode, conn *modbus.Connection
 		readOnly: readOnly,
 		conn:     conn,
 		cache:    modbus.NewCache(cacheTTL),
+	}
+}
+
+// statsInterval is how often reportStats logs a summary.
+const statsInterval = time.Minute
+
+// reportStats logs a periodic summary of read volume and cache hit rate,
+// until ctx is done. Started separately from newHandler so building a
+// handler for tests doesn't leak a goroutine per instance.
+func (h *handler) reportStats(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	var lastReads, lastHits int64
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reads, hits := h.reads.Load(), h.hits.Load()
+			dReads, dHits := reads-lastReads, hits-lastHits
+			lastReads, lastHits = reads, hits
+
+			rate := float64(dReads) / interval.Seconds()
+			var hitRate float64
+			if dReads > 0 {
+				hitRate = float64(dHits) / float64(dReads) * 100
+			}
+			h.log.DEBUG.Printf("proxy stats: %.1f req/s, %d/%d cache hits (%.0f%%)", rate, dHits, dReads, hitRate)
+		}
 	}
 }
 
@@ -68,10 +102,13 @@ func (h *handler) logResult(op string, b []byte, err error) {
 	}
 }
 
-// logCacheHit notes a read spared its own physical device access - grep-
-// countable against the plain read count to see the cache's actual hit rate.
-func (h *handler) logCacheHit(key string, hit bool) {
+// recordRead counts a read for reportStats and, if it was spared its own
+// physical device access, logs it - grep-countable against the plain read
+// count to see the cache's actual hit rate.
+func (h *handler) recordRead(key string, hit bool) {
+	h.reads.Add(1)
 	if hit {
+		h.hits.Add(1)
 		h.log.TRACE.Printf("cache hit: %s", key)
 	}
 }
@@ -135,7 +172,7 @@ func (h *handler) HandleDiscreteInputs(req *mbserver.DiscreteInputsRequest) ([]b
 	b, hit, err := h.cache.Fetch(key, func() ([]byte, error) {
 		return h.conn.Clone(req.UnitId).ReadDiscreteInputs(req.Addr, req.Quantity)
 	})
-	h.logCacheHit(key, hit)
+	h.recordRead(key, hit)
 	return h.bytesToBoolResult("read discrete", req.Quantity, b, err)
 }
 
@@ -174,7 +211,7 @@ func (h *handler) HandleCoils(req *mbserver.CoilsRequest) ([]bool, error) {
 	b, hit, err := h.cache.Fetch(key, func() ([]byte, error) {
 		return h.conn.Clone(req.UnitId).ReadCoils(req.Addr, req.Quantity)
 	})
-	h.logCacheHit(key, hit)
+	h.recordRead(key, hit)
 	return h.bytesToBoolResult("read coils", req.Quantity, b, err)
 }
 
@@ -184,7 +221,7 @@ func (h *handler) HandleInputRegisters(req *mbserver.InputRegistersRequest) ([]u
 	b, hit, err := h.cache.Fetch(key, func() ([]byte, error) {
 		return h.conn.Clone(req.UnitId).ReadInputRegisters(req.Addr, req.Quantity)
 	})
-	h.logCacheHit(key, hit)
+	h.recordRead(key, hit)
 	return h.exceptionToUint16AndError("read input", b, err)
 }
 
@@ -217,6 +254,6 @@ func (h *handler) HandleHoldingRegisters(req *mbserver.HoldingRegistersRequest) 
 	b, hit, err := h.cache.Fetch(key, func() ([]byte, error) {
 		return h.conn.Clone(req.UnitId).ReadHoldingRegisters(req.Addr, req.Quantity)
 	})
-	h.logCacheHit(key, hit)
+	h.recordRead(key, hit)
 	return h.exceptionToUint16AndError("read holding", b, err)
 }
