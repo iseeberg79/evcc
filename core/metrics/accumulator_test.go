@@ -43,6 +43,27 @@ func TestMeterEnergyMeterTotalIgnoresBackwardRead(t *testing.T) {
 	assert.Equal(t, 0.5, me.Energy)
 }
 
+// a dip within meterTotalNoiseFloor (register/timing jitter, not a real decrease)
+// must not be flagged - unlike a genuine torn read, it's expected noise, not
+// something worth logging for diagnosis
+func TestMeterEnergyMeterTotalIgnoresNoiseFloorDip(t *testing.T) {
+	clock := clock.NewMock()
+	clock.Set(now.BeginningOfDay())
+
+	me := &Accumulator{clock: clock}
+
+	me.SetEnergyMeterTotal(10)
+	assert.Equal(t, 0.0, me.Energy)
+
+	ok := me.SetEnergyMeterTotal(10 - meterTotalNoiseFloor/2)
+	assert.True(t, ok, "a dip within the noise floor must not be flagged")
+	assert.Equal(t, 0.0, me.Energy, "must not book negative energy for the dip")
+
+	// a dip beyond the noise floor is still a torn/implausible read
+	ok = me.SetEnergyMeterTotal(10 - 2*meterTotalNoiseFloor)
+	assert.False(t, ok)
+}
+
 func TestMeterEnergyAddPower(t *testing.T) {
 	clock := clock.NewMock()
 	clock.Set(now.BeginningOfDay())
