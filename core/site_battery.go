@@ -221,13 +221,13 @@ func (site *Site) holdChargeMode() api.BatteryMode {
 	mode := api.BatteryNormal
 	for _, s := range site.holdChargePlan.suggestions(time.Now()) {
 		switch s.Action {
-		case "holdcharge":
+		case api.BatteryHoldCharge.String():
 			return api.BatteryHoldCharge
-		case "hold":
+		case api.BatteryHold.String():
 			if mode != api.BatteryHoldCharge {
 				mode = api.BatteryHold
 			}
-		case "charge":
+		case api.BatteryCharge.String():
 			if mode == api.BatteryNormal {
 				mode = api.BatteryCharge
 			}

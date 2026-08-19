@@ -760,6 +760,13 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 	suggestions := make(map[string]types.Suggestion, len(req.Batteries))
 
 	for i, batReq := range req.Batteries {
+		// guard against a malformed/short optimizer response - request and result are
+		// expected to line up index-for-index, but nothing enforces that across the wire
+		if i >= len(res.Batteries) || i >= len(details.BatteryDetails) {
+			site.log.WARN.Printf("optimizer: result has fewer batteries (%d) than requested (%d), skipping remainder", len(res.Batteries), len(req.Batteries))
+			break
+		}
+
 		batRes := res.Batteries[i]
 		detail := details.BatteryDetails[i]
 
