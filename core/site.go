@@ -88,8 +88,6 @@ type Site struct {
 	holdChargePlan          *holdChargePlan // per-slot plan (optimizer) per home battery name
 	batteryGridChargeLimit  *float64        // grid charging limit
 	batteryGridDischarge    bool            // allow battery discharge to grid (experimental)
-	holdChargeYieldDay      time.Time       // calendar day holdChargeYieldOK was computed for
-	holdChargeYieldOK       bool            // today's forecast justifies withholding charge for a peak, frozen once per day - see holdChargeYieldSufficient
 
 	// testing only: not part of the PR, lets the low-SOC reserve-comfort price (see
 	// socDepletionCostLowDefault) be toggled live while it's under evaluation. Not persisted -
@@ -140,6 +138,7 @@ type Site struct {
 
 	solarScaleCached        func() (float64, error) // util.Cached wrapper around querySolarScale
 	consumptionSignalCached func() (float64, error) // util.Cached wrapper around queryConsumptionSignal
+	holdChargeYieldCached   func() (bool, error)     // util.Cached wrapper around queryHoldChargeYieldSufficient
 }
 
 // MetersConfig contains the site's meter configuration
@@ -393,6 +392,11 @@ func NewSite() *Site {
 			site.log.DEBUG.Printf("consumption signal: %v, falling back to unadjusted forecast", err)
 		}
 		return sig, err
+	}, tariff.SlotDuration)
+
+	// re-evaluated at tariff.SlotDuration instead of once a day - see holdChargeYieldSufficient
+	site.holdChargeYieldCached = util.Cached(func() (bool, error) {
+		return site.queryHoldChargeYieldSufficient(now.BeginningOfDay())
 	}, tariff.SlotDuration)
 
 	return site

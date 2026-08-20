@@ -456,47 +456,50 @@ func percentileOf(values []float64, p float64, minSamples int) (float64, bool) {
 const holdChargeMinYieldFactor = 1.5
 
 // holdChargeYieldSufficient reports whether today is forecast to produce enough PV to
-// justify withholding battery charge for a later peak. The check runs once per calendar
-// day - the first time it's called after midnight - and is then held fixed for the rest of
-// the day: the solar tariff drops its elapsed portion as the day goes on, so re-querying
-// later would silently shrink to "yield from now on" and creep back into the same reactive,
-// too-late correction this exists to avoid (a bad-PV-day withhold decision only unwinding
-// once the morning's charging window is already gone).
+// justify withholding battery charge for a later peak. Re-evaluated on holdChargeYieldCached's
+// TTL (roughly every optimizer cycle), not once a day, so a forecast revision - up or down -
+// is reflected within the day instead of only unwinding once tomorrow's midnight reset comes
+// around. See queryHoldChargeYieldSufficient for how that avoids the naive-recheck trap this
+// used to sidestep by freezing for the whole day.
 func (site *Site) holdChargeYieldSufficient() bool {
-	bod := now.BeginningOfDay()
-
-	site.RLock()
-	cached := site.holdChargeYieldDay.Equal(bod)
-	ok := site.holdChargeYieldOK
-	site.RUnlock()
-
-	if cached {
-		return ok
-	}
-
-	// queryHoldChargeYieldSufficient calls GetTariff, which itself takes RLock - it must
-	// run with no lock held here. site.RWMutex isn't reentrant, so calling it while this
-	// goroutine already held Lock (or RLock) would deadlock against itself.
-	ok, err := site.queryHoldChargeYieldSufficient(bod)
+	ok, err := site.holdChargeYieldCached()
 	if err != nil {
 		site.log.DEBUG.Printf("holdcharge yield check: %v, allowing hold charge", err)
-		ok = true
+		return true
 	}
-
-	site.Lock()
-	site.holdChargeYieldDay = bod
-	site.holdChargeYieldOK = ok
-	site.Unlock()
-
 	return ok
 }
 
-// queryHoldChargeYieldSufficient reads the current solar forecast and 30-day home
-// consumption profile and delegates the comparison to holdChargeYieldRatio.
+// queryHoldChargeYieldSufficient reads today's forecast solar yield and 30-day home
+// consumption profile and delegates the comparison to holdChargeYieldSufficientFrom.
+//
+// The live solar tariff (tariff.SlotWrapper.Rates) drops slots once they end, so a plain
+// solarEnergy(solar, bod, eod) call would silently shrink to "yield from now on" as the day
+// goes on - the reactive, too-late correction this whole mechanism exists to avoid (a
+// bad-PV-day withhold decision only unwinding once the morning's charging window is already
+// gone). Today's already-elapsed portion is read back from the forecast metrics collector
+// instead: it logs the live forecast for the current slot every cycle (see
+// solarDetails/forecastSlotEnergy), so the history it leaves behind for a past slot is
+// whatever the forecast actually said while that slot was still live - it doesn't shrink
+// away once the slot ends, the way the tariff's own in-memory rates do.
 func (site *Site) queryHoldChargeYieldSufficient(bod time.Time) (bool, error) {
 	solar := tariff.Rates(site.GetTariff(api.TariffUsageSolar))
 	if len(solar) == 0 {
 		return false, errors.New("no solar forecast")
+	}
+
+	at := time.Now()
+
+	series, err := metrics.QueryEnergy(bod, at, "day", true, metrics.EnergyFilter{Group: metrics.Forecast})
+	if err != nil {
+		return false, err
+	}
+
+	var elapsedKWh float64
+	for _, s := range series {
+		for _, d := range s.Data {
+			elapsedKWh += d.Energy
+		}
 	}
 
 	profile, err := site.collectors[metrics.Home].EnergyProfile(bod.AddDate(0, 0, -30))
@@ -504,16 +507,16 @@ func (site *Site) queryHoldChargeYieldSufficient(bod time.Time) (bool, error) {
 		return false, err
 	}
 
-	return holdChargeYieldSufficientFrom(solar, *profile, bod), nil
+	return holdChargeYieldSufficientFrom(solar, elapsedKWh*1e3, *profile, bod, at), nil
 }
 
-// holdChargeYieldSufficientFrom compares today's forecast solar yield (from bod to the
-// following midnight) to holdChargeMinYieldFactor times today's forecast consumption - the
-// same 30-day time-of-day baseline the optimizer request uses for the home profile (see
-// homeProfile). Both static for the day: the solar forecast is read as of bod, not decayed
-// or blended against measured production the way the optimizer's own input is.
-func holdChargeYieldSufficientFrom(solar api.Rates, profile [96]float64, bod time.Time) bool {
-	pv := solarEnergy(solar, bod, bod.AddDate(0, 0, 1))
+// holdChargeYieldSufficientFrom compares today's total forecast solar yield - elapsedWh (the
+// already-past portion, see queryHoldChargeYieldSufficient) plus the live forecast from at to
+// the following midnight - to holdChargeMinYieldFactor times today's forecast consumption,
+// the same 30-day time-of-day baseline the optimizer request uses for the home profile (see
+// homeProfile).
+func holdChargeYieldSufficientFrom(solar api.Rates, elapsedWh float64, profile [96]float64, bod, at time.Time) bool {
+	pv := elapsedWh + solarEnergy(solar, at, bod.AddDate(0, 0, 1))
 
 	var consumption float64
 	for _, v := range profile {
