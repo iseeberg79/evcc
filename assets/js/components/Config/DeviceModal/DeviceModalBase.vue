@@ -167,7 +167,10 @@
 											:service-values="serviceValues[param.Name]"
 											:currency="currency"
 										/>
-										<p v-if="param.Name === 'clientcert' && hasClientCertPair" class="mt-n2 mb-3">
+										<p
+											v-if="param.Name === 'clientcert' && hasClientCertPair"
+											class="mt-n2 mb-3"
+										>
 											<a href="#" @click.prevent="useDeviceIdentity">
 												{{ $t("config.general.useDeviceIdentity") }}
 											</a>
@@ -410,6 +413,9 @@ export default defineComponent({
 		hasClientCertPair() {
 			const names = this.templateParams.map((p) => p.Name);
 			return names.includes("clientcert") && names.includes("clientkey");
+		},
+		hasInsecureParam() {
+			return this.templateParams.some((p) => p.Name === "insecure");
 		},
 		visibleParams() {
 			return this.authRequired ? this.authParams : this.templateParams;
@@ -657,6 +663,11 @@ export default defineComponent({
 				const res = await api.get("config/devicecert");
 				this.values["clientcert"] = res.data.cert;
 				this.values["clientkey"] = res.data.key;
+				// the device's own certificate is typically self-signed (no CA to
+				// verify it against), independent of which client identity is used
+				if (this.hasInsecureParam && !this.values["cacert"]) {
+					this.values["insecure"] = true;
+				}
 			} catch (e) {
 				handleError(e, "loading device identity failed");
 			}

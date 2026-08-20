@@ -33,6 +33,11 @@
 				Mask
 				v-model="localConnection.settings.clientkey"
 			/>
+			<p class="mt-n2 mb-3">
+				<a href="#" @click.prevent="useDeviceIdentity">
+					{{ $t("config.general.useDeviceIdentity") }}
+				</a>
+			</p>
 			<PropertyEntry
 				:id="formId('cacert')"
 				Name="cacert"
@@ -57,6 +62,8 @@ import { defineComponent } from "vue";
 import Modbus from "./DeviceModal/Modbus.vue";
 import PropertyCollapsible from "./PropertyCollapsible.vue";
 import PropertyEntry from "./PropertyEntry.vue";
+import api from "@/api";
+import { handleError } from "./DeviceModal/index";
 import {
 	MODBUS_BAUDRATE,
 	MODBUS_COMSET,
@@ -113,6 +120,20 @@ export default defineComponent({
 	methods: {
 		formId(name: string) {
 			return `modbusproxy-connection-${this.index}-${name}`;
+		},
+		async useDeviceIdentity() {
+			try {
+				const res = await api.get("config/devicecert");
+				this.localConnection.settings.clientcert = res.data.cert;
+				this.localConnection.settings.clientkey = res.data.key;
+				// the device's own certificate is typically self-signed (no CA to
+				// verify it against), independent of which client identity is used
+				if (!this.localConnection.settings.cacert) {
+					this.localConnection.settings.insecure = true;
+				}
+			} catch (e) {
+				handleError(e, "loading device identity failed");
+			}
 		},
 		getHost(uri?: string) {
 			return uri?.split(":")[0] || "";
