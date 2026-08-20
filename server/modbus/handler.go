@@ -121,11 +121,12 @@ func (h *handler) recordRead(key string, hit bool) {
 // method; it records how long the request took (queueing behind other
 // requests on the shared downstream connection included) against maxDur,
 // the longest seen since the last reportStats tick, and TRACE-logs the same
-// duration against desc - reportStats's periodic max only ever names a
-// number, not which request it was; this is what actually answers that once
-// a spike shows up live (see PR discussion, a burst of unrelated requests
-// queuing behind each other on the shared connection, not one slow
-// register).
+// duration against desc. reportStats's periodic max only ever names a
+// number, not which request it was; reconstructing that from request/
+// response pairs in a live trace once (a multi-second longest request
+// turned out to be an ordinary burst of ~20 unrelated addresses queuing
+// behind each other on the one serialized connection, not any single slow
+// register) is what this exists to make direct next time.
 func (h *handler) trackDuration(desc string) func() {
 	start := time.Now()
 	return func() {
