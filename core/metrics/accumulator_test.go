@@ -64,6 +64,21 @@ func TestMeterEnergyMeterTotalIgnoresNoiseFloorDip(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// a dip that is decimally exactly at meterTotalNoiseFloor must not be flagged
+// either way, regardless of which side of it float64 rounding happens to land
+// on (166.570-166.569 is 0.00100000000000477485, not exactly 0.001 - see
+// floatEpsilon)
+func TestMeterEnergyMeterTotalIgnoresNoiseFloorDipAtFloatBoundary(t *testing.T) {
+	clock := clock.NewMock()
+	clock.Set(now.BeginningOfDay())
+
+	me := &Accumulator{clock: clock}
+
+	me.SetEnergyMeterTotal(166.570)
+	ok := me.SetEnergyMeterTotal(166.569)
+	assert.True(t, ok, "a dip decimally exactly at the noise floor must not be flagged due to float rounding")
+}
+
 func TestMeterEnergyAddPower(t *testing.T) {
 	clock := clock.NewMock()
 	clock.Set(now.BeginningOfDay())

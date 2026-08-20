@@ -90,6 +90,12 @@ func (m *Accumulator) String() string {
 // baseline reset or garbled register), so this stays well clear of masking them.
 const meterTotalNoiseFloor = 1e-3 // kWh
 
+// floatEpsilon absorbs float64 representation error in the noise-floor
+// comparison itself - e.g. 166.570-166.569 is 0.00100000000000477485, not
+// exactly meterTotalNoiseFloor, so a dip that is decimally exactly at the
+// floor would otherwise randomly land on either side of it.
+const floatEpsilon = 1e-9 // kWh
+
 // SetEnergyMeterTotal adds the difference to the last total meter value in
 // kWh. A cumulative counter cannot run backwards, so a decrease relative to
 // the last known total (beyond meterTotalNoiseFloor) is treated as a torn or
@@ -108,7 +114,7 @@ func (m *Accumulator) SetEnergyMeterTotal(v float64) bool {
 	}
 
 	if v < *m.energyMeter {
-		return *m.energyMeter-v <= meterTotalNoiseFloor
+		return *m.energyMeter-v <= meterTotalNoiseFloor+floatEpsilon
 	}
 
 	m.Energy += v - *m.energyMeter
@@ -128,7 +134,7 @@ func (m *Accumulator) SetReturnEnergyMeterTotal(v float64) bool {
 	}
 
 	if v < *m.returnEnergyMeter {
-		return *m.returnEnergyMeter-v <= meterTotalNoiseFloor
+		return *m.returnEnergyMeter-v <= meterTotalNoiseFloor+floatEpsilon
 	}
 
 	m.ReturnEnergy += v - *m.returnEnergyMeter
