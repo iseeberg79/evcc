@@ -304,3 +304,67 @@ func TestRegisterCacheFetchSingleFlight(t *testing.T) {
 		assert.Equal(t, []byte{1, 2, 3, 4}, payloads[i])
 	}
 }
+
+// TestRegisterCacheAdaptiveTTLGrowsOnRepeatedValue verifies a register whose
+// value keeps coming back unchanged earns a longer ttl each time, capped at
+// registerMaxTTL - see putRange.
+func TestRegisterCacheAdaptiveTTLGrowsOnRepeatedValue(t *testing.T) {
+	c := NewRegisterCache(testRegisterTTL)
+	key := registerKey{1, 3, 10}
+	value := []byte{9, 9}
+
+	start := time.Now()
+	c.putRange(1, 3, 10, value, 0, start)
+	assert.Equal(t, testRegisterTTL, c.data[key].ttl, "first load: base ttl")
+
+	start = start.Add(time.Millisecond)
+	c.putRange(1, 3, 10, value, 0, start)
+	want := time.Duration(float64(testRegisterTTL) * registerGrowthFactor)
+	assert.Equal(t, want, c.data[key].ttl, "unchanged value: ttl grows by the factor")
+
+	// many more confirmations must never exceed the cap
+	for range 20 {
+		start = start.Add(time.Millisecond)
+		c.putRange(1, 3, 10, value, 0, start)
+	}
+	assert.Equal(t, registerMaxTTL, c.data[key].ttl, "capped at registerMaxTTL")
+}
+
+// TestRegisterCacheAdaptiveTTLResetsOnChangedValue verifies a grown ttl falls
+// back to the base ttl as soon as the register's value actually changes.
+func TestRegisterCacheAdaptiveTTLResetsOnChangedValue(t *testing.T) {
+	c := NewRegisterCache(testRegisterTTL)
+	key := registerKey{1, 3, 10}
+
+	start := time.Now()
+	c.putRange(1, 3, 10, []byte{9, 9}, 0, start)
+	start = start.Add(time.Millisecond)
+	c.putRange(1, 3, 10, []byte{9, 9}, 0, start)
+	require.Greater(t, c.data[key].ttl, testRegisterTTL, "sanity: grown past the base ttl")
+
+	start = start.Add(time.Millisecond)
+	c.putRange(1, 3, 10, []byte{7, 7}, 0, start) // value actually changes
+	assert.Equal(t, testRegisterTTL, c.data[key].ttl, "changed value resets to the base ttl")
+}
+
+// TestRegisterCacheAdaptiveTTLResetsAfterInvalidate verifies a write - which
+// deletes the entry outright, see Invalidate - drops the grown ttl along
+// with it: the next load starts back at the base ttl, not wherever the
+// deleted entry's growth had reached.
+func TestRegisterCacheAdaptiveTTLResetsAfterInvalidate(t *testing.T) {
+	c := NewRegisterCache(testRegisterTTL)
+	key := registerKey{1, 3, 10}
+	value := []byte{9, 9}
+
+	start := time.Now()
+	c.putRange(1, 3, 10, value, 0, start)
+	start = start.Add(time.Millisecond)
+	c.putRange(1, 3, 10, value, 0, start)
+	require.Greater(t, c.data[key].ttl, testRegisterTTL, "sanity: grown past the base ttl")
+
+	c.Invalidate(1, 3, 10, 1)
+
+	start = start.Add(time.Millisecond)
+	c.putRange(1, 3, 10, value, 1, start) // gen bumped to 1 by Invalidate
+	assert.Equal(t, testRegisterTTL, c.data[key].ttl, "same value again, but after invalidation: back to the base ttl")
+}

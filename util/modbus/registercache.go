@@ -42,7 +42,26 @@ type registerKey struct {
 type registerEntry struct {
 	value     [2]byte
 	expiresAt time.Time
+	ttl       time.Duration // this entry's own, possibly grown ttl - see putRange
+	loadedAt  time.Time     // when the load that produced value started - see putRange
 }
+
+// registerGrowthFactor and registerMaxTTL adapt a register's effective TTL to
+// how stable it actually is, instead of trusting every register for the same
+// fixed duration regardless of content - see putRange. A device identity
+// field (name, serial number) never changes and ends up cached for
+// registerMaxTTL; a live measurement never repeats two loads running and
+// never grows past the base ttl. 1.5x keeps the ramp gradual (about ten
+// confirmed-unchanged reads to reach the cap) rather than jumping there
+// after a single repeat; the cap keeps a value that does eventually change -
+// a fault flag or operating state, say - from going unnoticed too long: the
+// mechanism has no notion of which registers are safe to trust for a long
+// time, so registerMaxTTL is the bound on how wrong any single one of them
+// can be caught being.
+const (
+	registerGrowthFactor = 1.5
+	registerMaxTTL       = 30 * time.Second
+)
 
 // NewRegisterCache returns a RegisterCache that holds entries for ttl.
 func NewRegisterCache(ttl time.Duration) *RegisterCache {
@@ -86,7 +105,7 @@ func (c *RegisterCache) Fetch(unitId uint8, code byte, addr, qty uint16, load fu
 		if err != nil {
 			return nil, err
 		}
-		c.putRange(unitId, code, addr, payload, gen, start.Add(c.ttl))
+		c.putRange(unitId, code, addr, payload, gen, start)
 		return payload, nil
 	})
 	if err != nil {
@@ -127,14 +146,21 @@ func (c *RegisterCache) getRange(unitId uint8, code byte, addr, qty uint16) ([]b
 // to their specific request, just not cached, so it can't resurrect a value
 // a concurrent write just invalidated.
 //
-// expiresAt is derived from when the load that produced payload started,
-// not from now - two overlapping-but-different loads race the device, not
-// necessarily in start order, and whichever's result is actually older must
-// not evict a register a faster, later-started load already wrote a fresher
-// value for. Given a constant ttl, "starts later" and "expires later" are
-// the same comparison, so an entry only gets replaced by one with a strictly
-// later expiresAt.
-func (c *RegisterCache) putRange(unitId uint8, code byte, addr uint16, payload []byte, gen int64, expiresAt time.Time) {
+// Each register's ttl grows by registerGrowthFactor, capped at
+// registerMaxTTL, when this load's value for it matches what was already
+// cached there - see the type's doc comment. A register whose value differs
+// (or that had no prior entry at all) resets to the base ttl.
+//
+// A register's expiry is derived from when the load that produced payload
+// started, not from now - two overlapping-but-different loads race the
+// device, not necessarily in start order, and whichever's result is
+// actually older must not evict a register a faster, later-started load
+// already wrote a fresher value for. That ordering is decided by start time
+// (loadedAt), not by expiresAt: with ttl no longer constant across entries,
+// a later-started load whose value happens to reset the ttl back down to
+// the base can easily produce an earlier expiresAt than the stale entry
+// it must still be allowed to replace.
+func (c *RegisterCache) putRange(unitId uint8, code byte, addr uint16, payload []byte, gen int64, start time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -144,10 +170,19 @@ func (c *RegisterCache) putRange(unitId uint8, code byte, addr uint16, payload [
 
 	for i := 0; 2*i+1 < len(payload); i++ {
 		key := registerKey{unitId, code, addr + uint16(i)}
-		if e, ok := c.data[key]; ok && e.expiresAt.After(expiresAt) {
+		value := [2]byte{payload[2*i], payload[2*i+1]}
+
+		prev, ok := c.data[key]
+
+		ttl := c.ttl
+		if ok && prev.value == value {
+			ttl = min(time.Duration(float64(prev.ttl)*registerGrowthFactor), registerMaxTTL)
+		}
+
+		if ok && prev.loadedAt.After(start) {
 			continue
 		}
-		c.data[key] = registerEntry{value: [2]byte{payload[2*i], payload[2*i+1]}, expiresAt: expiresAt}
+		c.data[key] = registerEntry{value: value, expiresAt: start.Add(ttl), ttl: ttl, loadedAt: start}
 	}
 }
 

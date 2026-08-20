@@ -25,7 +25,7 @@ import (
 // A coalesced caller shares the leader's error, not just its payload -
 // intentional, since a failing device rarely recovers within the same
 // window a second attempt would land in.
-const cacheTTL = time.Second
+const cacheTTL = 500 * time.Millisecond
 
 type handler struct {
 	log       *util.Logger
