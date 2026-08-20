@@ -35,6 +35,7 @@ type handler struct {
 	registers *modbus.RegisterCache // holding/input registers - the actual read volume
 	reads     atomic.Int64          // every read request, hit or miss
 	hits      atomic.Int64          // subset of reads served from cache
+	maxDur    atomic.Int64          // longest request since the last reportStats tick, in ns
 }
 
 // newHandler returns a handler with its caches always initialized - a
@@ -69,13 +70,14 @@ func (h *handler) reportStats(ctx context.Context, interval time.Duration) {
 			reads, hits := h.reads.Load(), h.hits.Load()
 			dReads, dHits := reads-lastReads, hits-lastHits
 			lastReads, lastHits = reads, hits
+			maxDur := time.Duration(h.maxDur.Swap(0))
 
 			rate := float64(dReads) / interval.Seconds()
 			var hitRate float64
 			if dReads > 0 {
 				hitRate = float64(dHits) / float64(dReads) * 100
 			}
-			h.log.DEBUG.Printf("proxy stats: %.1f req/s, %d/%d cache hits (%.0f%%)", rate, dHits, dReads, hitRate)
+			h.log.DEBUG.Printf("proxy stats: %.1f req/s, %d/%d cache hits (%.0f%%), longest request %v", rate, dHits, dReads, hitRate, maxDur)
 		}
 	}
 }
@@ -112,6 +114,23 @@ func (h *handler) recordRead(key string, hit bool) {
 	if hit {
 		h.hits.Add(1)
 		h.log.TRACE.Printf("cache hit: %s", key)
+	}
+}
+
+// trackDuration returns a func to be deferred at the top of each Handle*
+// method; it records how long the request took (queueing behind other
+// requests on the shared downstream connection included) against maxDur,
+// the longest seen since the last reportStats tick.
+func (h *handler) trackDuration() func() {
+	start := time.Now()
+	return func() {
+		d := time.Since(start).Nanoseconds()
+		for {
+			cur := h.maxDur.Load()
+			if d <= cur || h.maxDur.CompareAndSwap(cur, d) {
+				return
+			}
+		}
 	}
 }
 
@@ -169,6 +188,7 @@ LOOP:
 }
 
 func (h *handler) HandleDiscreteInputs(req *mbserver.DiscreteInputsRequest) ([]bool, error) {
+	defer h.trackDuration()()
 	h.log.TRACE.Printf("read discrete: id %d addr %d qty %d", req.UnitId, req.Addr, req.Quantity)
 	key := fmt.Sprintf("%d/di/%d/%d", req.UnitId, req.Addr, req.Quantity)
 	b, hit, err := h.cache.Fetch(key, func() ([]byte, error) {
@@ -179,6 +199,7 @@ func (h *handler) HandleDiscreteInputs(req *mbserver.DiscreteInputsRequest) ([]b
 }
 
 func (h *handler) HandleCoils(req *mbserver.CoilsRequest) ([]bool, error) {
+	defer h.trackDuration()()
 	if req.IsWrite {
 		switch h.readOnly {
 		case ReadOnlyDeny:
@@ -220,6 +241,7 @@ func (h *handler) HandleCoils(req *mbserver.CoilsRequest) ([]bool, error) {
 }
 
 func (h *handler) HandleInputRegisters(req *mbserver.InputRegistersRequest) ([]uint16, error) {
+	defer h.trackDuration()()
 	h.log.TRACE.Printf("read input: id %d addr %d qty %d", req.UnitId, req.Addr, req.Quantity)
 	key := fmt.Sprintf("%d/ir/%d/%d", req.UnitId, req.Addr, req.Quantity)
 	b, hit, err := h.registers.Fetch(req.UnitId, gridx.FuncCodeReadInputRegisters, req.Addr, req.Quantity, func() ([]byte, error) {
@@ -230,6 +252,7 @@ func (h *handler) HandleInputRegisters(req *mbserver.InputRegistersRequest) ([]u
 }
 
 func (h *handler) HandleHoldingRegisters(req *mbserver.HoldingRegistersRequest) ([]uint16, error) {
+	defer h.trackDuration()()
 	if req.IsWrite {
 		switch h.readOnly {
 		case ReadOnlyDeny:
