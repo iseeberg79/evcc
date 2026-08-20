@@ -125,6 +125,7 @@ type Site struct {
 	batteryMode              api.BatteryMode             // Battery mode (runtime only, not persisted)
 	batteryModeExternal      api.BatteryMode             // Battery mode (external, runtime only, not persisted)
 	batteryModeExternalTimer time.Time                   // Battery mode timer for external control
+	batteryModeApplied       map[string]api.BatteryMode  // Battery mode last applied per battery meter
 	suggestions              map[string]types.Suggestion // Optimizer suggestions by device key
 	suggestionActions        map[string]string           // last notified actionable optimizer action by device key
 
@@ -1076,9 +1077,10 @@ func (site *Site) sitePower(totalChargePower, flexiblePower float64) (float64, b
 		residualPower = 100 // W
 	}
 
-	// allow using grid and charge as estimate for pv power
-	if site.pvMeters == nil {
-		site.pvPower = totalChargePower - site.gridPower + residualPower
+	// allow using grid, charge and battery power as estimate for pv power
+	// needs a grid meter, otherwise grid power is itself derived from pv power (see above)
+	if site.pvMeters == nil && site.gridMeter != nil {
+		site.pvPower = totalChargePower - site.gridPower - site.battery.Power + residualPower
 		if site.pvPower < 0 {
 			site.pvPower = 0
 		}
@@ -1161,9 +1163,7 @@ func (site *Site) reservedPVPower(lp updater) float64 {
 			continue
 		}
 		if other.EffectivePriority() > prio && other.PvChargeStarting() {
-			// min power is what the loadpoint needs to start, reserving its max
-			// power would starve this loadpoint beyond that (#32778)
-			reserved += other.EffectiveMinPower()
+			reserved += other.EffectiveMaxPower()
 		}
 	}
 

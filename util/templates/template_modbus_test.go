@@ -23,7 +23,7 @@ func TestModbusTemplateDefaultID(t *testing.T) {
 			tmpl, err := ByName(Charger, "phoenix-ev-eth")
 			require.NoError(t, err)
 
-			_, values, err := tmpl.RenderResult(mode, map[string]any{
+			_, values, err := tmpl.RenderResult(Meter, mode, map[string]any{
 				"host": "192.168.0.8",
 				"port": 502,
 			})
@@ -41,7 +41,7 @@ func TestModbusTemplateUserIDOverridesTemplate(t *testing.T) {
 			tmpl, err := ByName(Charger, "phoenix-ev-eth")
 			require.NoError(t, err)
 
-			_, values, err := tmpl.RenderResult(mode, map[string]any{
+			_, values, err := tmpl.RenderResult(Meter, mode, map[string]any{
 				"host": "192.168.0.8",
 				"port": 502,
 				"id":   42,
@@ -61,7 +61,7 @@ func TestModbusTemplateTls(t *testing.T) {
 	tmpl, err := ByName(Meter, "kostal-ksem")
 	require.NoError(t, err)
 
-	b, _, err := tmpl.RenderResult(RenderModeInstance, map[string]any{
+	b, _, err := tmpl.RenderResult(Meter, RenderModeInstance, map[string]any{
 		"usage":      "grid",
 		"host":       "192.168.0.8",
 		"port":       802,
@@ -98,7 +98,7 @@ func TestWallbeTemplateCoveredByPhoenix(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, "phoenix-ev-eth", tmpl.Template)
 
-			_, values, err := tmpl.RenderResult(RenderModeInstance, map[string]any{
+			_, values, err := tmpl.RenderResult(Meter, RenderModeInstance, map[string]any{
 				"host": "192.168.0.8",
 				"port": 502,
 			})
