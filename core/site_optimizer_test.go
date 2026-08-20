@@ -517,6 +517,67 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{ChargingPower: []float32{0}, DischargingPower: []float32{0}}, 5, oobFlags, 1))
 }
 
+func TestHoldChargeReservationWorthwhile(t *testing.T) {
+	assert.True(t, holdChargeReservationWorthwhile(6000, 5000), "exactly at the 20% margin")
+	assert.True(t, holdChargeReservationWorthwhile(7000, 5000), "comfortably above the margin")
+	assert.False(t, holdChargeReservationWorthwhile(5500, 5000), "under the 20% margin")
+	assert.True(t, holdChargeReservationWorthwhile(0, 0), "no headroom left - nothing to reserve for, trivially fine")
+	assert.True(t, holdChargeReservationWorthwhile(0, -1), "negative headroom (already above 100%) treated the same as none")
+}
+
+func TestHeadroomWh(t *testing.T) {
+	detail := batteryDetail{Capacity: 10} // kWh
+	res := optimizer.BatteryResult{StateOfCharge: []float32{2000, 8000}}
+
+	assert.InDelta(t, 8000, headroomWh(detail, res, 0), 1e-6)
+	assert.InDelta(t, 2000, headroomWh(detail, res, 1), 1e-6)
+	assert.Zero(t, headroomWh(detail, res, 2), "out of range index yields zero, not a panic")
+}
+
+func TestRemainingForecastToday(t *testing.T) {
+	base := time.Date(2026, 8, 20, 20, 0, 0, 0, time.Local)
+	timestamps := []time.Time{
+		base,
+		base.Add(15 * time.Minute),
+		base.Add(30 * time.Minute), // still today
+		base.Add(4 * time.Hour),    // crosses into tomorrow
+		base.Add(4*time.Hour + 15*time.Minute),
+	}
+	ft := []float32{100, 200, 300, 100000, 100000}
+
+	assert.InDelta(t, 600, remainingForecastToday(ft, timestamps, 0), 1e-3, "stops at the day boundary")
+	assert.InDelta(t, 300, remainingForecastToday(ft, timestamps, 2), 1e-3, "last slot of today")
+	assert.InDelta(t, 200000, remainingForecastToday(ft, timestamps, 3), 1e-3, "tomorrow's own slots count towards tomorrow")
+	assert.Zero(t, remainingForecastToday(ft, timestamps, 10), "out of range index yields zero")
+
+	t.Run("short ft ends early instead of panicking", func(t *testing.T) {
+		assert.InDelta(t, 100, remainingForecastToday(ft[:1], timestamps, 0), 1e-3)
+	})
+}
+
+func TestDowngradeUnworthwhileHoldCharge(t *testing.T) {
+	detail := batteryDetail{Capacity: 10} // kWh, 10000 Wh
+	res := optimizer.BatteryResult{StateOfCharge: []float32{5000}}
+	holdcharge := types.Suggestion{Action: "holdcharge", Charge: 0}
+
+	t.Run("reservation worthwhile - kept", func(t *testing.T) {
+		// headroom 5000Wh, needs 6000Wh remaining forecast (20% margin) - 7000 clears it
+		s := downgradeUnworthwhileHoldCharge(holdcharge, detail, res, 0, 7000)
+		assert.Equal(t, "holdcharge", s.Action)
+	})
+
+	t.Run("reservation no longer worthwhile - downgraded to normal", func(t *testing.T) {
+		s := downgradeUnworthwhileHoldCharge(holdcharge, detail, res, 0, 4000)
+		assert.Equal(t, "normal", s.Action)
+	})
+
+	t.Run("other actions pass through untouched", func(t *testing.T) {
+		normal := types.Suggestion{Action: "normal"}
+		s := downgradeUnworthwhileHoldCharge(normal, detail, res, 0, 0)
+		assert.Equal(t, "normal", s.Action)
+	})
+}
+
 // TestBuildHoldChargePlanTrimsHorizon guards that the plan only retains slots within
 // holdChargeStale, not the full (potentially multi-day) optimizer horizon -
 // holdChargePlanAvailable() would never look up the rest anyway.

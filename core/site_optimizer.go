@@ -771,6 +771,7 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 		detail := details.BatteryDetails[i]
 
 		suggestion := slotSuggestion(detail, batRes, 0, f, slotHours)
+		suggestion = downgradeUnworthwhileHoldCharge(suggestion, detail, batRes, 0, remainingForecastToday(req.TimeSeries.Ft, details.Timestamps, 0))
 
 		batteries = append(batteries, batteryResult{
 			batteryDetail: detail,
@@ -797,6 +798,7 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 
 	site.Lock()
 	site.holdChargePlan = buildHoldChargePlan(details, &res, req.TimeSeries.Dt, f.canCapCharge)
+	downgradeUnworthwhileHoldChargesInPlan(site.holdChargePlan, &res, details, req.TimeSeries.Ft)
 	site.Unlock()
 
 	site.setSuggestions(suggestions)
@@ -819,6 +821,92 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 // downgraded-to-none request has no such reservation to honor.
 func attenuating(s optimizer.OptimizerStrategyChargingStrategy) bool {
 	return s == optimizer.OptimizerStrategyChargingStrategyAttenuateFeedinPeaks || s == optimizer.OptimizerStrategyChargingStrategyAttenuateGridPeaks
+}
+
+// holdChargeHeadroomMarginFactor gives the remaining forecast some safety margin over a
+// battery's own headroom before treating its later-peak reservation as still worthwhile - see
+// holdChargeReservationWorthwhile. 20% margin: the forecast itself may be optimistic, so
+// "exactly enough" on paper is not treated as enough in practice.
+const holdChargeHeadroomMarginFactor = 1.2
+
+// holdChargeReservationWorthwhile reports whether remainingForecastWh - the site's forecast PV
+// yield from now to the end of today, see remainingForecastToday - still comfortably covers
+// headroomWh, a battery's own remaining capacity to 100% SOC (with
+// holdChargeHeadroomMarginFactor margin against the forecast itself being optimistic). Below
+// it, the reservation attenuate_* preserves capacity for is no longer credible: there is not
+// enough sun left today to be confident the battery fills up regardless of whether it charges
+// now, so every bit of currently available surplus should go in now instead of being deferred
+// for a later peak that may not leave enough behind to complete the fill.
+func holdChargeReservationWorthwhile(remainingForecastWh, headroomWh float64) bool {
+	return headroomWh <= 0 || remainingForecastWh >= holdChargeHeadroomMarginFactor*headroomWh
+}
+
+// headroomWh is battery i's own remaining capacity to 100% SOC at slot i, in Wh - see
+// holdChargeReservationWorthwhile. detail.Capacity is the nominal full capacity (kWh); a
+// configured SMax below 100% (e.g. a lower limit soc) is deliberately not used here, since the
+// question this answers is physical ("can more sun still fit"), not policy ("are we allowed to
+// charge that high").
+func headroomWh(detail batteryDetail, res optimizer.BatteryResult, i int) float64 {
+	if i < 0 || i >= len(res.StateOfCharge) {
+		return 0
+	}
+	return detail.Capacity*1e3 - float64(res.StateOfCharge[i])
+}
+
+// remainingForecastToday sums ft from slot i up to (not including) the first later slot that
+// falls on a different calendar day than timestamps[i] - the portion of the forecast horizon
+// still relevant to today's fill, see holdChargeReservationWorthwhile. ft and timestamps are
+// assumed the same length and slot-aligned (both come from the same optimizer request/response
+// pair); a short ft is treated as ending early rather than panicking.
+func remainingForecastToday(ft []float32, timestamps []time.Time, i int) float64 {
+	if i < 0 || i >= len(timestamps) {
+		return 0
+	}
+	y, m, d := timestamps[i].Date()
+
+	var sum float64
+	for j := i; j < len(ft) && j < len(timestamps); j++ {
+		jy, jm, jd := timestamps[j].Date()
+		if jy != y || jm != m || jd != d {
+			break
+		}
+		sum += float64(ft[j])
+	}
+	return sum
+}
+
+// downgradeUnworthwhileHoldCharge clears s back to Normal when it suggests HoldCharge but
+// detail's remaining forecast for today no longer credibly covers its own headroom to 100% SOC
+// - see holdChargeReservationWorthwhile. Applied as a post-step on slotSuggestion's result
+// instead of threading remaining-forecast data through slotSuggestion/slotFlags's signatures.
+func downgradeUnworthwhileHoldCharge(s types.Suggestion, detail batteryDetail, res optimizer.BatteryResult, i int, remainingForecastWh float64) types.Suggestion {
+	if s.Action != api.BatteryHoldCharge.String() {
+		return s
+	}
+	if holdChargeReservationWorthwhile(remainingForecastWh, headroomWh(detail, res, i)) {
+		return s
+	}
+	s.Action = api.BatteryNormal.String()
+	return s
+}
+
+// downgradeUnworthwhileHoldChargesInPlan walks plan's precomputed per-slot suggestions and
+// downgrades any HoldCharge whose reservation is no longer worthwhile - see
+// downgradeUnworthwhileHoldCharge. plan.starts is index-aligned with details.Timestamps/ft
+// (buildHoldChargePlan only trims a common prefix), so slot index i means the same instant in
+// all three. A post-processing pass instead of threading remaining-forecast data through
+// buildHoldChargePlan/slotSuggestion/slotFlags's signatures.
+func downgradeUnworthwhileHoldChargesInPlan(plan *holdChargePlan, res *optimizer.OptimizationResult, details requestDetails, ft []float32) {
+	for i, slot := range plan.slots {
+		remainingForecastWh := remainingForecastToday(ft, details.Timestamps, i)
+		for name, s := range slot {
+			bi := slices.IndexFunc(details.BatteryDetails, func(d batteryDetail) bool { return d.Name == name })
+			if bi < 0 || bi >= len(res.Batteries) {
+				continue
+			}
+			slot[name] = downgradeUnworthwhileHoldCharge(s, details.BatteryDetails[bi], res.Batteries[bi], i, remainingForecastWh)
+		}
+	}
 }
 
 // gridFlags derives slot i's import/export state from the optimizer's
