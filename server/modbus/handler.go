@@ -120,17 +120,23 @@ func (h *handler) recordRead(key string, hit bool) {
 // trackDuration returns a func to be deferred at the top of each Handle*
 // method; it records how long the request took (queueing behind other
 // requests on the shared downstream connection included) against maxDur,
-// the longest seen since the last reportStats tick.
-func (h *handler) trackDuration() func() {
+// the longest seen since the last reportStats tick, and TRACE-logs the same
+// duration against desc - reportStats's periodic max only ever names a
+// number, not which request it was; this is what actually answers that once
+// a spike shows up live (see PR discussion, a burst of unrelated requests
+// queuing behind each other on the shared connection, not one slow
+// register).
+func (h *handler) trackDuration(desc string) func() {
 	start := time.Now()
 	return func() {
-		d := time.Since(start).Nanoseconds()
+		d := time.Since(start)
 		for {
 			cur := h.maxDur.Load()
-			if d <= cur || h.maxDur.CompareAndSwap(cur, d) {
-				return
+			if int64(d) <= cur || h.maxDur.CompareAndSwap(cur, int64(d)) {
+				break
 			}
 		}
+		h.log.TRACE.Printf("duration %s: %v", desc, d)
 	}
 }
 
@@ -188,7 +194,7 @@ LOOP:
 }
 
 func (h *handler) HandleDiscreteInputs(req *mbserver.DiscreteInputsRequest) ([]bool, error) {
-	defer h.trackDuration()()
+	defer h.trackDuration(fmt.Sprintf("read discrete: id %d addr %d qty %d", req.UnitId, req.Addr, req.Quantity))()
 	h.log.TRACE.Printf("read discrete: id %d addr %d qty %d", req.UnitId, req.Addr, req.Quantity)
 	key := fmt.Sprintf("%d/di/%d/%d", req.UnitId, req.Addr, req.Quantity)
 	b, hit, err := h.cache.Fetch(key, func() ([]byte, error) {
@@ -199,7 +205,7 @@ func (h *handler) HandleDiscreteInputs(req *mbserver.DiscreteInputsRequest) ([]b
 }
 
 func (h *handler) HandleCoils(req *mbserver.CoilsRequest) ([]bool, error) {
-	defer h.trackDuration()()
+	defer h.trackDuration(fmt.Sprintf("coils: id %d addr %d qty %d write %t", req.UnitId, req.Addr, req.Quantity, req.IsWrite))()
 	if req.IsWrite {
 		switch h.readOnly {
 		case ReadOnlyDeny:
@@ -241,7 +247,7 @@ func (h *handler) HandleCoils(req *mbserver.CoilsRequest) ([]bool, error) {
 }
 
 func (h *handler) HandleInputRegisters(req *mbserver.InputRegistersRequest) ([]uint16, error) {
-	defer h.trackDuration()()
+	defer h.trackDuration(fmt.Sprintf("read input: id %d addr %d qty %d", req.UnitId, req.Addr, req.Quantity))()
 	h.log.TRACE.Printf("read input: id %d addr %d qty %d", req.UnitId, req.Addr, req.Quantity)
 	key := fmt.Sprintf("%d/ir/%d/%d", req.UnitId, req.Addr, req.Quantity)
 	b, hit, err := h.registers.Fetch(req.UnitId, gridx.FuncCodeReadInputRegisters, req.Addr, req.Quantity, func() ([]byte, error) {
@@ -252,7 +258,7 @@ func (h *handler) HandleInputRegisters(req *mbserver.InputRegistersRequest) ([]u
 }
 
 func (h *handler) HandleHoldingRegisters(req *mbserver.HoldingRegistersRequest) ([]uint16, error) {
-	defer h.trackDuration()()
+	defer h.trackDuration(fmt.Sprintf("holding registers: id %d addr %d qty %d write %t", req.UnitId, req.Addr, req.Quantity, req.IsWrite))()
 	if req.IsWrite {
 		switch h.readOnly {
 		case ReadOnlyDeny:
