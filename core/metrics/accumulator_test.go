@@ -35,7 +35,7 @@ func TestMeterEnergyMeterTotalIgnoresBackwardRead(t *testing.T) {
 	me.SetEnergyMeterTotal(10)
 	assert.Equal(t, 0.0, me.Energy)
 
-	ok := me.SetEnergyMeterTotal(9.999)
+	ok := me.SetEnergyMeterTotal(9.99) // well beyond meterTotalNoiseFloor
 	assert.False(t, ok)
 	assert.Equal(t, 0.0, me.Energy)
 

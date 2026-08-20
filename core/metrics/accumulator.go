@@ -80,7 +80,7 @@ func (m *Accumulator) String() string {
 	return b.String()
 }
 
-// meterTotalNoiseFloor absorbs sub-Wh backward jitter that is not a real decrease
+// meterTotalNoiseFloor absorbs backward jitter that is not a real decrease
 // (register/timing noise, or - as seen with some Shelly PV meters, see
 // meter/shelly/gen2.go's TotalEnergy - a value derived by subtracting two
 // independently accumulating counters). A meter sitting at a near-constant total
@@ -88,7 +88,7 @@ func (m *Accumulator) String() string {
 // trip the torn-read guard on that noise alone, every poll cycle. Real
 // torn/implausible reads seen in practice are orders of magnitude larger (a
 // baseline reset or garbled register), so this stays well clear of masking them.
-const meterTotalNoiseFloor = 1e-4 // kWh
+const meterTotalNoiseFloor = 1e-3 // kWh
 
 // SetEnergyMeterTotal adds the difference to the last total meter value in
 // kWh. A cumulative counter cannot run backwards, so a decrease relative to
