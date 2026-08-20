@@ -16,11 +16,47 @@
 		@update:port="(port) => updatePort(port)"
 		@update:modbus="(modbus) => updateModbus(modbus)"
 	/>
+	<PropertyCollapsible>
+		<template #advanced>
+			<PropertyEntry
+				:id="formId('clientcert')"
+				Name="clientcert"
+				:Description="$t('config.modbus.clientcert')"
+				:Help="$t('config.modbus.clientcertHint')"
+				v-model="localConnection.settings.clientcert"
+			/>
+			<PropertyEntry
+				:id="formId('clientkey')"
+				Name="clientkey"
+				:Description="$t('config.modbus.clientkey')"
+				:Help="$t('config.modbus.clientkeyHint')"
+				Mask
+				v-model="localConnection.settings.clientkey"
+			/>
+			<PropertyEntry
+				:id="formId('cacert')"
+				Name="cacert"
+				:Description="$t('config.modbus.cacert')"
+				:Help="$t('config.modbus.cacertHint')"
+				v-model="localConnection.settings.cacert"
+			/>
+			<PropertyEntry
+				:id="formId('insecure')"
+				Name="insecure"
+				Type="Bool"
+				:Description="$t('config.modbus.insecure')"
+				:Help="$t('config.modbus.insecureHint')"
+				v-model="localConnection.settings.insecure"
+			/>
+		</template>
+	</PropertyCollapsible>
 </template>
 
 <script lang="ts">
 import { defineComponent } from "vue";
 import Modbus from "./DeviceModal/Modbus.vue";
+import PropertyCollapsible from "./PropertyCollapsible.vue";
+import PropertyEntry from "./PropertyEntry.vue";
 import {
 	MODBUS_BAUDRATE,
 	MODBUS_COMSET,
@@ -43,7 +79,7 @@ function getModbusType(s: ModbusProxySettings) {
 
 export default defineComponent({
 	name: "ModbusProxyConnection",
-	components: { Modbus },
+	components: { Modbus, PropertyCollapsible, PropertyEntry },
 	props: {
 		connection: {
 			type: Object as () => ModbusProxy,
@@ -75,6 +111,9 @@ export default defineComponent({
 		},
 	},
 	methods: {
+		formId(name: string) {
+			return `modbusproxy-connection-${this.index}-${name}`;
+		},
 		getHost(uri?: string) {
 			return uri?.split(":")[0] || "";
 		},

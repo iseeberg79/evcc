@@ -1065,6 +1065,14 @@ export interface ModbusProxySettings {
   baudrate?: MODBUS_BAUDRATE;
   /** Serial communication parameters. */
   comset?: MODBUS_COMSET;
+  /** PEM encoded client certificate, enables Modbus/TLS (mTLS) to the device. */
+  clientcert?: string;
+  /** PEM encoded private key matching clientcert. */
+  clientkey?: string;
+  /** PEM encoded CA certificate used to verify the device certificate. */
+  cacert?: string;
+  /** Skip verification of the device certificate (self-signed certificates). */
+  insecure?: boolean;
 }
 
 export interface Notification {
