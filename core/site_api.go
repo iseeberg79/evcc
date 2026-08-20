@@ -480,6 +480,37 @@ func (site *Site) SetSocDepletionCostLowEnabled(val bool) error {
 	return nil
 }
 
+// GetHoldChargeDisabled returns whether the holdcharge advisory action is temporarily
+// switched off (testing only, see site.go)
+func (site *Site) GetHoldChargeDisabled() bool {
+	site.RLock()
+	defer site.RUnlock()
+	return site.holdChargeDisabled()
+}
+
+// SetHoldChargeDisabled toggles holdcharge off until midnight (testing only, see site.go):
+// while disabled, holdChargeMode never returns api.BatteryHoldCharge, so the battery is never
+// blocked from charging on export purely for peak-shaving. Passing false re-enables it
+// immediately; it also re-enables itself on its own once the deadline passes.
+func (site *Site) SetHoldChargeDisabled(val bool) error {
+	site.Lock()
+	defer site.Unlock()
+
+	var until time.Time
+	if val {
+		now := time.Now()
+		until = time.Date(now.Year(), now.Month(), now.Day(), 24, 0, 0, 0, now.Location())
+	}
+
+	if site.holdChargeDisabledUntil != until {
+		site.holdChargeDisabledUntil = until
+		site.log.DEBUG.Println("set holdcharge disabled until:", until)
+		site.publish(keys.HoldChargeDisabled, val)
+	}
+
+	return nil
+}
+
 // GetSolarAdjusted returns if the solar forecast is adjusted to real production data
 func (site *Site) GetSolarAdjusted() bool {
 	site.RLock()

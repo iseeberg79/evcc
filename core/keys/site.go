@@ -66,6 +66,10 @@ const (
 	// external battery control
 	BatteryModeExternal = "batteryModeExternal"
 
+	// testing only: temporarily disables the holdcharge advisory action, see
+	// Site.SetHoldChargeDisabled
+	HoldChargeDisabled = "holdChargeDisabled"
+
 	// smart charging
 	SmartCostAvailable           = "smartCostAvailable"           // smart cost available
 	SmartFeedInPriorityAvailable = "smartFeedInPriorityAvailable" // smart feed-in priority available

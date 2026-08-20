@@ -278,6 +278,8 @@ export interface State {
   batteryGridDischarge?: boolean;
   /** Low-SOC reserve-comfort price is active, keeping a buffer off the low floor (testing only). */
   socDepletionCostLowEnabled?: boolean;
+  /** Holdcharge advisory action is temporarily switched off, until midnight (testing only). */
+  holdChargeDisabled?: boolean;
   /** Solar forecast is adjusted to real production data (experimental). */
   solarAdjusted?: boolean;
   /** Price or emission limit for charging the home battery from grid. */

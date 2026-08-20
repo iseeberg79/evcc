@@ -115,6 +115,22 @@
 					optimizer: prc_dpl_soc_low 🧪 [testing]
 				</label>
 			</div>
+			<!-- testing only: not part of the PR, temporarily disables the holdcharge advisory
+			     action until midnight (see core/site_battery.go holdChargeMode). Off by default,
+			     not persisted - forgotten on restart. -->
+			<div v-if="experimental" class="form-check form-switch mt-2">
+				<input
+					id="holdChargeDisabled"
+					:checked="holdChargeDisabled"
+					class="form-check-input"
+					type="checkbox"
+					role="switch"
+					@change="changeHoldChargeDisabled"
+				/>
+				<label class="form-check-label text-muted" for="holdChargeDisabled">
+					optimizer: holdcharge disabled until midnight 🧪 [testing]
+				</label>
+			</div>
 		</template>
 	</Card>
 </template>
@@ -143,6 +159,7 @@ export default defineComponent({
 		batteryDischargeControl: Boolean,
 		batteryGridDischarge: Boolean,
 		socDepletionCostLowEnabled: Boolean,
+		holdChargeDisabled: Boolean,
 		battery: { type: Object as PropType<Battery> },
 		experimental: Boolean,
 	},
@@ -291,6 +308,15 @@ export default defineComponent({
 				await api.post(`socdepletioncostlow/${target.checked}`);
 			} catch (err) {
 				target.checked = this.socDepletionCostLowEnabled; // revert to stay in sync with state
+				console.error(err);
+			}
+		},
+		async changeHoldChargeDisabled(e: Event) {
+			const target = e.target as HTMLInputElement;
+			try {
+				await api.post(`holdchargedisabled/${target.checked}`);
+			} catch (err) {
+				target.checked = this.holdChargeDisabled; // revert to stay in sync with state
 				console.error(err);
 			}
 		},

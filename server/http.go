@@ -181,6 +181,8 @@ func (s *HTTPd) RegisterSiteHandlers(site site.API) {
 		"batterygriddischarge":    {"POST", "/batterygriddischarge/{value:[01truefalse]+}", boolHandler(site.SetBatteryGridDischarge, site.GetBatteryGridDischarge)},
 		// testing only: not part of the PR, see site.SetSocDepletionCostLowEnabled
 		"socdepletioncostlow":     {"POST", "/socdepletioncostlow/{value:[01truefalse]+}", boolHandler(site.SetSocDepletionCostLowEnabled, site.GetSocDepletionCostLowEnabled)},
+		// testing only: not part of the PR, see site.SetHoldChargeDisabled
+		"holdchargedisabled":      {"POST", "/holdchargedisabled/{value:[01truefalse]+}", boolHandler(site.SetHoldChargeDisabled, site.GetHoldChargeDisabled)},
 		"batterygridcharge":       {"POST", "/batterygridchargelimit/{value:-?[0-9.]+}", floatPtrHandler(site.SetBatteryGridChargeLimit, site.GetBatteryGridChargeLimit)},
 		"batterygridchargedelete": {"DELETE", "/batterygridchargelimit", floatPtrHandler(site.SetBatteryGridChargeLimit, site.GetBatteryGridChargeLimit)},
 		"gridexportlimit":         {"POST", "/gridexportlimit/{value:[0-9.]+}", floatHandler(site.SetGridExportLimit, site.GetGridExportLimit)},

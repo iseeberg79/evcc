@@ -208,6 +208,12 @@ func (site *Site) holdChargePlanAvailable() bool {
 	return len(site.holdChargePlan.suggestions(time.Now())) > 0
 }
 
+// holdChargeDisabled reports whether the holdcharge advisory action is temporarily switched
+// off (testing only, see SetHoldChargeDisabled). Callers must already hold site.RLock/Lock.
+func (site *Site) holdChargeDisabled() bool {
+	return !site.holdChargeDisabledUntil.IsZero() && time.Now().Before(site.holdChargeDisabledUntil)
+}
+
 // holdChargeMode collapses the plan's current-slot per-battery suggestions into the
 // single global battery mode that applies to all home batteries. The optimizer already
 // classifies each battery (normal/hold/charge/holdcharge), so we map that action
@@ -222,6 +228,10 @@ func (site *Site) holdChargeMode() api.BatteryMode {
 	for _, s := range site.holdChargePlan.suggestions(time.Now()) {
 		switch s.Action {
 		case api.BatteryHoldCharge.String():
+			if site.holdChargeDisabled() {
+				// testing only: holdcharge suppressed, treat as no advisory action
+				continue
+			}
 			return api.BatteryHoldCharge
 		case api.BatteryHold.String():
 			if mode != api.BatteryHoldCharge {

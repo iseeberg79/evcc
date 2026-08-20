@@ -97,6 +97,12 @@ type Site struct {
 	// on the low floor with no buffer on a bad-forecast day; can be switched off temporarily.
 	socDepletionCostLowEnabled bool
 
+	// testing only: lets holdcharge be switched off temporarily while other optimizer
+	// behavior is under test, without touching the strategy/config. Not persisted - forgotten
+	// on restart. Zero means enabled; a non-zero deadline in the future means holdChargeMode
+	// never returns api.BatteryHoldCharge until then, see SetHoldChargeDisabled.
+	holdChargeDisabledUntil time.Time
+
 	// grid settings
 	gridExportLimit float64 // static grid export power limit in W, 0 = disabled
 
@@ -1319,6 +1325,7 @@ func (site *Site) prepare() {
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
 	site.publish(keys.BatteryGridDischarge, site.batteryGridDischarge)
 	site.publish("socDepletionCostLowEnabled", site.socDepletionCostLowEnabled)
+	site.publish(keys.HoldChargeDisabled, site.holdChargeDisabled())
 	site.publish(keys.SolarAdjusted, site.solarAdjusted)
 	site.publish(keys.ResidualPower, site.GetResidualPower())
 	site.publish(keys.GridExportLimit, site.GetGridExportLimit())

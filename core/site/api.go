@@ -105,6 +105,11 @@ type API interface {
 	GetSocDepletionCostLowEnabled() bool
 	SetSocDepletionCostLowEnabled(bool) error
 
+	// GetHoldChargeDisabled and SetHoldChargeDisabled temporarily switch off the holdcharge
+	// advisory action, until midnight (testing only, not persisted)
+	GetHoldChargeDisabled() bool
+	SetHoldChargeDisabled(bool) error
+
 	//
 	// battery control external
 	//

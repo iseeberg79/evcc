@@ -31,6 +31,7 @@
 			:battery-discharge-control="state.batteryDischargeControl"
 			:battery-grid-discharge="state.batteryGridDischarge"
 			:soc-depletion-cost-low-enabled="state.socDepletionCostLowEnabled"
+			:hold-charge-disabled="state.holdChargeDisabled"
 			:battery="state.battery"
 			:experimental="state.experimental"
 		/>
