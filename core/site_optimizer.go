@@ -1135,8 +1135,8 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 
 	// nudge the optimizer to keep a reserve buffer off the low floor (comfort, not aging) so a
 	// spontaneous load or forecast deviation is covered from the battery, not a grid purchase.
-	// testing only: defaults off (0), site.GetSocDepletionCostLowEnabled() switches the old
-	// price back on live, see site.go.
+	// testing only: defaults on (see site.go), site.GetSocDepletionCostLowEnabled() lets it be
+	// switched off live for evaluation.
 	if site.GetSocDepletionCostLowEnabled() {
 		bat.PrcDplSocLow = socDepletionCostLowDefault
 	}

@@ -93,7 +93,8 @@ type Site struct {
 
 	// testing only: not part of the PR, lets the low-SOC reserve-comfort price (see
 	// socDepletionCostLowDefault) be toggled live while it's under evaluation. Not persisted -
-	// forgotten on restart, defaults to off (0.0).
+	// forgotten on restart, defaults to on (see NewSite) so the battery isn't left sitting
+	// on the low floor with no buffer on a bad-forecast day; can be switched off temporarily.
 	socDepletionCostLowEnabled bool
 
 	// grid settings
@@ -361,9 +362,10 @@ func (site *Site) Boot(log *util.Logger, loadpoints []*Loadpoint, tariffs *tarif
 // NewSite creates a Site with sane defaults
 func NewSite() *Site {
 	site := &Site{
-		log:        util.NewLogger("site"),
-		Voltage:    230, // V
-		collectors: make(map[string]*metrics.Collector),
+		log:                        util.NewLogger("site"),
+		Voltage:                    230, // V
+		collectors:                 make(map[string]*metrics.Collector),
+		socDepletionCostLowEnabled: true,
 	}
 
 	// the result only depends on completed days, so it cannot change within a day
@@ -1316,6 +1318,7 @@ func (site *Site) prepare() {
 	site.publish(keys.BatteryMode, site.batteryMode)
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
 	site.publish(keys.BatteryGridDischarge, site.batteryGridDischarge)
+	site.publish("socDepletionCostLowEnabled", site.socDepletionCostLowEnabled)
 	site.publish(keys.SolarAdjusted, site.solarAdjusted)
 	site.publish(keys.ResidualPower, site.GetResidualPower())
 	site.publish(keys.GridExportLimit, site.GetGridExportLimit())

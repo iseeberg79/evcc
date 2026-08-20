@@ -276,6 +276,8 @@ export interface State {
   batteryDischargeControl?: boolean;
   /** Home battery is allowed to discharge to the grid (experimental). */
   batteryGridDischarge?: boolean;
+  /** Low-SOC reserve-comfort price is active, keeping a buffer off the low floor (testing only). */
+  socDepletionCostLowEnabled?: boolean;
   /** Solar forecast is adjusted to real production data (experimental). */
   solarAdjusted?: boolean;
   /** Price or emission limit for charging the home battery from grid. */
