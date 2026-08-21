@@ -1162,6 +1162,8 @@ export interface BatterySuggestion {
   charge?: number;
   /** Recommended discharge power in W. */
   discharge?: number;
+  /** Planned site grid flow of the slot in W, positive means import. */
+  grid?: number;
   /** Suggestion differs from the current operating mode. */
   actionable?: boolean;
 }
@@ -1174,6 +1176,8 @@ export interface LoadpointSuggestion {
   charge?: number;
   /** Recommended discharge power in W. */
   discharge?: number;
+  /** Planned site grid flow of the slot in W, positive means import. */
+  grid?: number;
   /** Suggestion differs from the current operating mode. */
   actionable?: boolean;
 }
