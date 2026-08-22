@@ -80,67 +80,36 @@ func (m *Accumulator) String() string {
 	return b.String()
 }
 
-// meterTotalNoiseFloor absorbs backward jitter that is not a real decrease
-// (register/timing noise, or - as seen with some Shelly PV meters, see
-// meter/shelly/gen2.go's TotalEnergy - a value derived by subtracting two
-// independently accumulating counters). A meter sitting at a near-constant total
-// for a long stretch (e.g. return energy while barely exporting) would otherwise
-// trip the torn-read guard on that noise alone, every poll cycle. Real
-// torn/implausible reads seen in practice are orders of magnitude larger (a
-// baseline reset or garbled register), so this stays well clear of masking them.
-const meterTotalNoiseFloor = 1e-3 // kWh
-
-// floatEpsilon absorbs float64 representation error in the noise-floor
-// comparison itself - e.g. 166.570-166.569 is 0.00100000000000477485, not
-// exactly meterTotalNoiseFloor, so a dip that is decimally exactly at the
-// floor would otherwise randomly land on either side of it.
-const floatEpsilon = 1e-9 // kWh
-
-// SetEnergyMeterTotal adds the difference to the last total meter value in
-// kWh. A cumulative counter cannot run backwards, so a decrease relative to
-// the last known total (beyond meterTotalNoiseFloor) is treated as a torn or
-// implausible read and ignored without moving the baseline - the next valid
-// reading is then still measured against the last known-good total instead of
-// booking the recovery as one spike. Returns false in that case so the caller
-// can log it for diagnosis, true otherwise, including for the very first
-// reading (no baseline to compare against) and a within-noise-floor dip
-// (nothing to diagnose).
-func (m *Accumulator) SetEnergyMeterTotal(v float64) bool {
-	defer func() { m.updated = m.clock.Now() }()
+// SetEnergyMeterTotal adds the difference to the last total meter value in kWh
+func (m *Accumulator) SetEnergyMeterTotal(v float64) {
+	defer func() {
+		m.updated = m.clock.Now()
+		m.energyMeter = new(v)
+	}()
 
 	if m.energyMeter == nil {
-		m.energyMeter = new(v)
-		return true
+		return
 	}
 
-	if v < *m.energyMeter {
-		return *m.energyMeter-v <= meterTotalNoiseFloor+floatEpsilon
+	if v >= *m.energyMeter {
+		m.Energy += v - *m.energyMeter
 	}
-
-	m.Energy += v - *m.energyMeter
-	m.energyMeter = new(v)
-
-	return true
 }
 
-// SetReturnEnergyMeterTotal adds the difference to the last total meter value
-// in kWh (see SetEnergyMeterTotal for the return value).
-func (m *Accumulator) SetReturnEnergyMeterTotal(v float64) bool {
-	defer func() { m.updated = m.clock.Now() }()
+// SetReturnEnergyMeterTotal adds the difference to the last total meter value in kWh
+func (m *Accumulator) SetReturnEnergyMeterTotal(v float64) {
+	defer func() {
+		m.updated = m.clock.Now()
+		m.returnEnergyMeter = new(v)
+	}()
 
 	if m.returnEnergyMeter == nil {
-		m.returnEnergyMeter = new(v)
-		return true
+		return
 	}
 
-	if v < *m.returnEnergyMeter {
-		return *m.returnEnergyMeter-v <= meterTotalNoiseFloor+floatEpsilon
+	if v >= *m.returnEnergyMeter {
+		m.ReturnEnergy += v - *m.returnEnergyMeter
 	}
-
-	m.ReturnEnergy += v - *m.returnEnergyMeter
-	m.returnEnergyMeter = new(v)
-
-	return true
 }
 
 // AddEnergy adds the given energy in kWh to the energy total

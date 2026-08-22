@@ -152,7 +152,7 @@ func (c *Collector) advanceSlot(now time.Time) error {
 			// which is never slot-aligned): the buffered energy can't be
 			// attributed to any single slot and is discarded below instead of
 			// persisted
-			log.WARN.Printf("%s %s data gap: %v missed since %v, discarding %.3f kWh",
+			log.DEBUG.Printf("%s %s data gap: %v missed since %v, discarding %.3f kWh",
 				c.entity.Group, c.entity.Title, slotStart.Sub(c.started)-tariff.SlotDuration, c.started, c.accu.Energy)
 		}
 
@@ -178,7 +178,7 @@ const persistGapWarnRatio = 0.5
 
 func (c *Collector) persist(recovered bool) error {
 	if c.maxGap > time.Duration(float64(tariff.SlotDuration)*persistGapWarnRatio) {
-		log.WARN.Printf("%s %s slot %v built from a %v read gap, energy may be misattributed across the slot boundary",
+		log.DEBUG.Printf("%s %s slot %v built from a %v read gap, energy may be misattributed across the slot boundary",
 			c.entity.Group, c.entity.Title, c.started, c.maxGap)
 	}
 
@@ -269,18 +269,10 @@ func (c *Collector) AddEnergy(energyTotal, returnEnergyTotal *float64, power flo
 		}
 
 		if energyTotal != nil {
-			prev := c.accu.energyMeter
-			// see SetEnergyMeterTotal: the baseline is kept, not reset, so the
-			// next valid reading recovers cleanly instead of booking a spike
-			if !c.accu.SetEnergyMeterTotal(*energyTotal) {
-				log.WARN.Printf("%s %s energy decreased: %.3f -> %.3f kWh, ignoring reading (torn/implausible read?)", c.entity.Group, c.entity.Title, *prev, *energyTotal)
-			}
+			c.accu.SetEnergyMeterTotal(*energyTotal)
 		}
 		if returnEnergyTotal != nil {
-			prev := c.accu.returnEnergyMeter
-			if !c.accu.SetReturnEnergyMeterTotal(*returnEnergyTotal) {
-				log.WARN.Printf("%s %s return energy decreased: %.3f -> %.3f kWh, ignoring reading (torn/implausible read?)", c.entity.Group, c.entity.Title, *prev, *returnEnergyTotal)
-			}
+			c.accu.SetReturnEnergyMeterTotal(*returnEnergyTotal)
 		}
 	})
 }
