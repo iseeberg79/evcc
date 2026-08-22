@@ -248,18 +248,42 @@ func (c *Collector) SetReturnEnergyMeterTotal(v float64) error {
 }
 
 // AddEnergy adds energy using meter totals if available, falling back to power
-// integration only for directions without an energy meter. A direction that has
-// reported a total before keeps using meter deltas even if a single read fails,
-// so a transient failure is recovered via the next delta and not double-counted.
+// integration only for directions without an energy meter, plus a direction
+// whose total is flagged stale (see noteEnergyMeterActivity) - a device that
+// keeps answering with the same total while its own power is clearly active
+// is bridged the same way as one that stops answering outright. A direction
+// that has reported a total before keeps using meter deltas even if a single
+// read fails, so a transient failure is recovered via the next delta and not
+// double-counted.
 func (c *Collector) AddEnergy(energyTotal, returnEnergyTotal *float64, power float64) error {
 	return c.process(func() {
+		// note staleness before computing hasEnergyMeter/hasReturnMeter below,
+		// so the very call that raises the flag already falls back to power
+		// integration for its own interval instead of losing it: the meter
+		// delta for this call is 0 anyway (the reading is unchanged), and
+		// evaluating the flag's old value here would skip power too
+		if energyTotal != nil {
+			prev := c.accu.energyMeter
+			if c.accu.noteEnergyMeterActivity(prev != nil && *energyTotal == *prev, power >= meterStalePowerFloor) {
+				log.WARN.Printf("%s %s energy total stuck at %.3f kWh for over %v while power indicates activity, falling back to power integration",
+					c.entity.Group, c.entity.Title, *prev, energyMeterStaleDuration)
+			}
+		}
+		if returnEnergyTotal != nil {
+			prev := c.accu.returnEnergyMeter
+			if c.accu.noteReturnEnergyMeterActivity(prev != nil && *returnEnergyTotal == *prev, -power >= meterStalePowerFloor) {
+				log.WARN.Printf("%s %s return energy total stuck at %.3f kWh for over %v while power indicates activity, falling back to power integration",
+					c.entity.Group, c.entity.Title, *prev, energyMeterStaleDuration)
+			}
+		}
+
 		// a direction that ever reported a total is metered, so a nil read is a
 		// transient failure rather than a power-only meter
-		hasEnergyMeter := energyTotal != nil || c.accu.energyMeter != nil
-		hasReturnMeter := returnEnergyTotal != nil || c.accu.returnEnergyMeter != nil
+		hasEnergyMeter := (energyTotal != nil || c.accu.energyMeter != nil) && !c.accu.energyMeterStale
+		hasReturnMeter := (returnEnergyTotal != nil || c.accu.returnEnergyMeter != nil) && !c.accu.returnEnergyMeterStale
 
-		// integrate power for the unmetered direction first, since applying a
-		// meter total advances the accumulator clock
+		// integrate power for the unmetered (or stale) direction first, since
+		// applying a meter total advances the accumulator clock
 		if power >= 0 {
 			if !hasEnergyMeter {
 				c.accu.AddPower(power)

@@ -229,6 +229,50 @@ func TestCollectorRecoversAfterFailedEnergyRead(t *testing.T) {
 	require.InDelta(t, 0.15, col.accu.Energy, 1e-9)
 }
 
+// TestCollectorFallsBackToPowerWhileEnergyMeterStuck verifies the wiring for
+// a meter that keeps answering with the same total while its own power is
+// clearly active (e.g. a stale MQTT-bridged reading, see
+// noteEnergyMeterActivity) - unlike a nil read, AddEnergy has no other signal
+// that something is wrong, so it must recognize the repeat itself and fall
+// back to power integration once it has gone on for energyMeterStaleDuration,
+// then resume trusting the meter without double-counting once it moves again.
+func TestCollectorFallsBackToPowerWhileEnergyMeterStuck(t *testing.T) {
+	clock := clock.NewMock()
+
+	require.NoError(t, db.NewInstance("sqlite", ":memory:"))
+	require.NoError(t, SetupSchema())
+
+	col, err := NewCollector("stuck", "stuck", "", WithClock(clock))
+	require.NoError(t, err)
+
+	// seed the meter, then keep reporting the same total while power is active
+	clock.Add(time.Minute)
+	require.NoError(t, col.AddEnergy(new(10.0), nil, 500))
+	require.Equal(t, 0.0, col.accu.Energy)
+
+	// first repeat arms the stale timer, it does not trip on its own
+	clock.Add(time.Minute)
+	require.NoError(t, col.AddEnergy(new(10.0), nil, 500))
+	require.False(t, col.accu.energyMeterStale)
+
+	clock.Add(energyMeterStaleDuration)
+	require.NoError(t, col.AddEnergy(new(10.0), nil, 500))
+	require.True(t, col.accu.energyMeterStale, "must give up on the meter after the grace duration")
+
+	// further calls while stuck fall back to power integration
+	clock.Add(10 * time.Minute)
+	require.NoError(t, col.AddEnergy(new(10.0), nil, 500))
+	require.InDelta(t, 500.0*10/60/1e3, col.accu.Energy, 1e-9) // 10min @ 500W
+
+	// the total finally moves - the jump must not be credited on top of the
+	// power already integrated while stuck
+	energyBefore := col.accu.Energy
+	clock.Add(time.Minute)
+	require.NoError(t, col.AddEnergy(new(10.5), nil, 500))
+	require.InDelta(t, energyBefore+500.0*1/60/1e3, col.accu.Energy, 1e-9, "must resume via power integration for this last stale cycle, not credit the meter jump")
+	require.False(t, col.accu.energyMeterStale)
+}
+
 // TestCollectorTracksMaxReadGap verifies that maxGap tracks the largest
 // single read gap within a slot, is not shrunk by a smaller subsequent gap,
 // and resets once the slot rolls over. This is the signal persist() uses to
