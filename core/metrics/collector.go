@@ -251,23 +251,27 @@ func (c *Collector) SetReturnEnergyMeterTotal(v float64) error {
 // reported total and adds the difference to the last reading. If a
 // direction has no total at all, or its total is stuck (see
 // noteEnergyMeterActivity - the meter keeps answering, always with the same
-// value, while its own power reading shows real activity), it counts energy
-// from the power reading instead. A direction that has reported a total
-// before is trusted as metered even if a single reading is missing: the
-// next real reading's difference covers the gap, so nothing is lost or
-// counted twice.
+// value, while its own power reading shows real activity) or has been
+// missing for too long (see MissEnergyMeterTotal - the meter stops
+// answering at all, e.g. its register was removed from the config), it
+// counts energy from the power reading instead. A direction that has
+// reported a total before is trusted as metered through an occasional
+// missing reading: the next real reading's difference covers the gap, so
+// nothing is lost or counted twice.
 func (c *Collector) AddEnergy(energyTotal, returnEnergyTotal *float64, power float64) error {
 	return c.process(func() {
-		// check for a stuck meter first: this way, the very call that
-		// discovers it is stuck already counts its own time slice from
-		// power too, instead of losing it (the meter contributes nothing
-		// this call anyway, since its value hasn't changed)
+		// check for a stuck or missing meter first: this way, the very call
+		// that gives up on it already counts its own time slice from power
+		// too, instead of losing it
 		if energyTotal != nil {
 			prev := c.accu.energyMeter
 			if c.accu.noteEnergyMeterActivity(prev != nil && *energyTotal == *prev, power >= meterStalePowerFloor) {
 				log.WARN.Printf("%s %s energy total stuck at %.3f kWh for over %v while power indicates activity, falling back to power integration",
 					c.entity.Group, c.entity.Title, *prev, energyMeterStaleDuration)
 			}
+		} else if c.accu.MissEnergyMeterTotal() {
+			log.WARN.Printf("%s %s energy reading missing for over %v, falling back to power integration",
+				c.entity.Group, c.entity.Title, energyMeterStaleDuration)
 		}
 		if returnEnergyTotal != nil {
 			prev := c.accu.returnEnergyMeter
@@ -275,11 +279,14 @@ func (c *Collector) AddEnergy(energyTotal, returnEnergyTotal *float64, power flo
 				log.WARN.Printf("%s %s return energy total stuck at %.3f kWh for over %v while power indicates activity, falling back to power integration",
 					c.entity.Group, c.entity.Title, *prev, energyMeterStaleDuration)
 			}
+		} else if c.accu.MissReturnEnergyMeterTotal() {
+			log.WARN.Printf("%s %s return energy reading missing for over %v, falling back to power integration",
+				c.entity.Group, c.entity.Title, energyMeterStaleDuration)
 		}
 
 		// once a direction has reported a total, it stays metered through a
-		// single missing reading - only being marked stuck (above) switches
-		// it to power
+		// single missing reading - only being marked stuck or given up on
+		// (above) switches it to power
 		hasEnergyMeter := (energyTotal != nil || c.accu.energyMeter != nil) && !c.accu.energyMeterStale
 		hasReturnMeter := (returnEnergyTotal != nil || c.accu.returnEnergyMeter != nil) && !c.accu.returnEnergyMeterStale
 

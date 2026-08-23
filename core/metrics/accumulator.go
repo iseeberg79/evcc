@@ -21,6 +21,11 @@ type Accumulator struct {
 	energyMeterStale            bool
 	returnEnergyMeterStale      bool
 
+	// how long a direction has been missing (nil) readings in a row - see
+	// MissEnergyMeterTotal
+	energyMeterFailingSince       time.Time
+	returnEnergyMeterFailingSince time.Time
+
 	Energy       float64  `json:"energy"`       // kWh
 	ReturnEnergy float64  `json:"returnEnergy"` // kWh
 	SocTemp      *float64 `json:"socTemp,omitempty"`
@@ -100,6 +105,8 @@ func (m *Accumulator) SetEnergyMeterTotal(v float64) {
 		m.energyMeter = new(v)
 	}()
 
+	m.energyMeterFailingSince = time.Time{}
+
 	if m.energyMeter == nil {
 		return
 	}
@@ -124,6 +131,8 @@ func (m *Accumulator) SetReturnEnergyMeterTotal(v float64) {
 		m.returnEnergyMeter = new(v)
 	}()
 
+	m.returnEnergyMeterFailingSince = time.Time{}
+
 	if m.returnEnergyMeter == nil {
 		return
 	}
@@ -137,19 +146,25 @@ func (m *Accumulator) SetReturnEnergyMeterTotal(v float64) {
 	}
 }
 
-// energyMeterStaleDuration is how long a meter total may stay exactly the
-// same, while its own power reading shows real activity, before it's treated
-// as stuck instead of just quiet. Seen live: a balcony solar panel behind a
-// custom MQTT bridge reported the same total for over an hour while
-// producing - when a fresh value finally arrived, the whole missed period
-// was booked as one big, wrong jump.
+// energyMeterStaleDuration is how long a direction may go wrong - either a
+// total stuck at the same value while its power reading shows real
+// activity, or reads failing (nil) outright - before it's given up on and
+// AddEnergy switches to counting energy from power instead.
+//
+// The stuck case was seen live: a balcony solar panel behind a custom MQTT
+// bridge reported the same total for over an hour while producing - when a
+// fresh value finally arrived, the whole missed period was booked as one
+// big, wrong jump. The missing-reads case was seen live too: a meter's
+// energy register removed from its template left the old total frozen in
+// the database forever, showing flat zero history despite normal live power
+// (evcc-io/evcc#33091).
 //
 // Chosen shorter than a 15-minute history slot on purpose: the wait itself
-// is never added back afterwards (see SetEnergyMeterTotal), so a meter
-// getting stuck right at a slot's start would zero out that whole slot if
-// the wait were as long as the slot. A shorter wait keeps at least some
-// correct data in every slot.
-const energyMeterStaleDuration = 10 * time.Minute
+// is never added back afterwards (see SetEnergyMeterTotal), so a problem
+// starting right at a slot's start would zero out that whole slot if the
+// wait were as long as the slot. A shorter wait keeps at least some correct
+// data in every slot.
+const energyMeterStaleDuration = 5 * time.Minute
 
 // meterStalePowerFloor (W): below this power, an unchanged total isn't
 // suspicious - the device just isn't producing or consuming much, not stuck.
@@ -185,6 +200,44 @@ func noteStale(since *time.Time, stale *bool, clock clock.Clock, unchanged, acti
 		return false
 	}
 	*stale = true
+	return true
+}
+
+// MissEnergyMeterTotal records a missing (nil) reading for a direction that
+// has reported a total before. Once that has lasted energyMeterStaleDuration
+// in a row, the stored total is dropped, so AddEnergy treats this direction
+// as having no meter at all and counts energy from power instead. Returns
+// true only on the one call that drops the total, so the caller can log it.
+func (m *Accumulator) MissEnergyMeterTotal() bool {
+	if m.energyMeter == nil {
+		return false
+	}
+	if m.energyMeterFailingSince.IsZero() {
+		m.energyMeterFailingSince = m.clock.Now()
+		return false
+	}
+	if m.clock.Since(m.energyMeterFailingSince) < energyMeterStaleDuration {
+		return false
+	}
+	m.energyMeter = nil
+	m.energyMeterFailingSince = time.Time{}
+	return true
+}
+
+// MissReturnEnergyMeterTotal is MissEnergyMeterTotal for the return direction.
+func (m *Accumulator) MissReturnEnergyMeterTotal() bool {
+	if m.returnEnergyMeter == nil {
+		return false
+	}
+	if m.returnEnergyMeterFailingSince.IsZero() {
+		m.returnEnergyMeterFailingSince = m.clock.Now()
+		return false
+	}
+	if m.clock.Since(m.returnEnergyMeterFailingSince) < energyMeterStaleDuration {
+		return false
+	}
+	m.returnEnergyMeter = nil
+	m.returnEnergyMeterFailingSince = time.Time{}
 	return true
 }
 
