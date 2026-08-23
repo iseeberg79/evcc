@@ -96,10 +96,10 @@ type Site struct {
 	// on the low floor with no buffer on a bad-forecast day; can be switched off temporarily.
 	socDepletionCostLowEnabled bool
 
-	// testing only: not part of the PR, requests the optimizer's charge-activation penalty
+	// experimental, not part of the PR: requests the optimizer's charge-activation penalty
 	// (BatteryConfig.CContinuous) for every loadpoint, so it prefers fewer, longer charging runs
 	// over short bursts up to c_max. Only effective together with a minimum charge power
-	// (c_min > 0). Not persisted - forgotten on restart, defaults to off while under evaluation.
+	// (c_min > 0). Defaults to off, persisted once set (see keys.CContinuous).
 	cContinuousEnabled bool
 
 	// testing only: lets holdcharge be switched off temporarily while other optimizer
@@ -478,6 +478,11 @@ func (site *Site) restoreSettings() error {
 	}
 	if v, err := settings.Bool(keys.BatteryGridDischarge); err == nil {
 		if err := site.SetBatteryGridDischarge(v); err != nil && !errors.Is(err, ErrBatteryControlNotAvailable) {
+			return err
+		}
+	}
+	if v, err := settings.Bool(keys.CContinuous); err == nil {
+		if err := site.SetCContinuousEnabled(v); err != nil {
 			return err
 		}
 	}
@@ -1391,6 +1396,7 @@ func (site *Site) prepare() {
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
 	site.publish(keys.BatteryGridDischarge, site.batteryGridDischarge)
 	site.publish("socDepletionCostLowEnabled", site.socDepletionCostLowEnabled)
+	site.publish(keys.CContinuous, site.cContinuousEnabled)
 	site.publish(keys.HoldChargeDisabled, site.holdChargeDisabled())
 	site.publish(keys.SolarAdjusted, site.solarAdjusted)
 	site.publish(keys.ResidualPower, site.GetResidualPower())

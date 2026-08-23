@@ -148,10 +148,10 @@
 					optimizer: holdcharge disabled until midnight 🧪 [testing]
 				</label>
 			</div>
-			<!-- testing only: not part of the PR, requests the optimizer's charge-activation
+			<!-- experimental, not part of the PR: requests the optimizer's charge-activation
 			     penalty (BatteryConfig.CContinuous) for every loadpoint (see
 			     core/site_optimizer.go loadpointRequest). Only effective with a minimum charge
-			     power (c_min > 0). Off by default, not persisted - forgotten on restart. -->
+			     power (c_min > 0). Off by default, persisted once set. -->
 			<div v-if="experimental" class="form-check form-switch mt-2">
 				<input
 					id="cContinuousEnabled"

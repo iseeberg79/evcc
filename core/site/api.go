@@ -108,7 +108,7 @@ type API interface {
 	SetSocDepletionCostLowEnabled(bool) error
 
 	// GetCContinuousEnabled and SetCContinuousEnabled toggle the optimizer's charge-activation
-	// penalty for loadpoints (testing only, not part of the PR, not persisted)
+	// penalty for loadpoints (experimental, not part of the PR)
 	GetCContinuousEnabled() bool
 	SetCContinuousEnabled(bool) error
 

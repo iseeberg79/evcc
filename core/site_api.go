@@ -497,15 +497,15 @@ func (site *Site) SetSocDepletionCostLowEnabled(val bool) error {
 }
 
 // GetCContinuousEnabled returns whether the optimizer's charge-activation penalty
-// (BatteryConfig.CContinuous) is requested for every loadpoint (testing only, see site.go)
+// (BatteryConfig.CContinuous) is requested for every loadpoint (experimental, see site.go)
 func (site *Site) GetCContinuousEnabled() bool {
 	site.RLock()
 	defer site.RUnlock()
 	return site.cContinuousEnabled
 }
 
-// SetCContinuousEnabled toggles the optimizer's charge-activation penalty (testing only, see
-// site.go). Not persisted, deliberately - forgotten on restart.
+// SetCContinuousEnabled toggles the optimizer's charge-activation penalty (experimental, see
+// site.go)
 func (site *Site) SetCContinuousEnabled(val bool) error {
 	site.log.DEBUG.Println("set c_continuous enabled:", val)
 
@@ -514,7 +514,8 @@ func (site *Site) SetCContinuousEnabled(val bool) error {
 
 	if site.cContinuousEnabled != val {
 		site.cContinuousEnabled = val
-		site.publish("cContinuousEnabled", val)
+		settings.SetBool(keys.CContinuous, val)
+		site.publish(keys.CContinuous, val)
 	}
 
 	return nil

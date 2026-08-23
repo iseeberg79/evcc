@@ -58,6 +58,7 @@ const (
 	// optimizer
 	OptimizerChargingStrategy   = "optimizerChargingStrategy"
 	OptimizerChargingStrategies = "optimizerChargingStrategies"
+	CContinuous                 = "cContinuous"
 
 	// battery status
 	Battery     = "battery"
