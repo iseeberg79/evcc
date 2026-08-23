@@ -21,11 +21,6 @@ type Accumulator struct {
 	energyMeterStale            bool
 	returnEnergyMeterStale      bool
 
-	// how long a direction has been missing (nil) readings in a row - see
-	// MissEnergyMeterTotal
-	energyMeterFailingSince       time.Time
-	returnEnergyMeterFailingSince time.Time
-
 	Energy       float64  `json:"energy"`       // kWh
 	ReturnEnergy float64  `json:"returnEnergy"` // kWh
 	SocTemp      *float64 `json:"socTemp,omitempty"`
@@ -98,7 +93,6 @@ func (m *Accumulator) String() string {
 // here - that time was already counted from power - it just updates the
 // last known value and clears the stuck mark.
 func (m *Accumulator) SetEnergyMeterTotal(v float64) {
-	m.energyMeterFailingSince = time.Time{}
 	defer func() { m.energyMeter = new(v) }()
 
 	if m.energyMeter == nil {
@@ -127,7 +121,6 @@ func (m *Accumulator) SetEnergyMeterTotal(v float64) {
 // SetReturnEnergyMeterTotal is SetEnergyMeterTotal for the return direction
 // (e.g. feed-in).
 func (m *Accumulator) SetReturnEnergyMeterTotal(v float64) {
-	m.returnEnergyMeterFailingSince = time.Time{}
 	defer func() { m.returnEnergyMeter = new(v) }()
 
 	if m.returnEnergyMeter == nil {
@@ -147,12 +140,11 @@ func (m *Accumulator) SetReturnEnergyMeterTotal(v float64) {
 	}
 }
 
-// energyMeterStaleDuration is how long a direction may repeat the same value,
-// or miss readings, before it's given up on and AddEnergy switches to
-// counting from power instead. Seen live: a balcony panel's total froze for
-// over an hour while producing, booked as one big spike once it finally
-// moved; a meter's energy register removed from its config left its total
-// frozen forever, history stuck at flat zero (evcc-io/evcc#33091).
+// energyMeterStaleDuration is how long a direction may repeat the same value
+// before it's given up on and AddEnergy switches to counting from power
+// instead: a meter can keep reporting an unchanged total while its own power
+// reading shows real activity. Without this, the eventual recovery would be
+// booked as one large, implausible jump.
 //
 // No energy is lost either way - the eventual catch-up covers the whole gap,
 // not just the last poll (see SetEnergyMeterTotal). A shorter wait only
@@ -191,43 +183,6 @@ func noteStale(since *time.Time, stale *bool, clock clock.Clock, unchanged, acti
 		return false
 	}
 	*stale = true
-	return true
-}
-
-// MissEnergyMeterTotal counts a missing (nil) reading for a direction that
-// has reported a total before. Past energyMeterStaleDuration in a row, the
-// stored total is dropped. Returns true only on that call, so the caller
-// can log it.
-func (m *Accumulator) MissEnergyMeterTotal() bool {
-	if m.energyMeter == nil {
-		return false
-	}
-	if m.energyMeterFailingSince.IsZero() {
-		m.energyMeterFailingSince = m.clock.Now()
-		return false
-	}
-	if m.clock.Since(m.energyMeterFailingSince) < energyMeterStaleDuration {
-		return false
-	}
-	m.energyMeter = nil
-	m.energyMeterFailingSince = time.Time{}
-	return true
-}
-
-// MissReturnEnergyMeterTotal is MissEnergyMeterTotal for the return direction.
-func (m *Accumulator) MissReturnEnergyMeterTotal() bool {
-	if m.returnEnergyMeter == nil {
-		return false
-	}
-	if m.returnEnergyMeterFailingSince.IsZero() {
-		m.returnEnergyMeterFailingSince = m.clock.Now()
-		return false
-	}
-	if m.clock.Since(m.returnEnergyMeterFailingSince) < energyMeterStaleDuration {
-		return false
-	}
-	m.returnEnergyMeter = nil
-	m.returnEnergyMeterFailingSince = time.Time{}
 	return true
 }
 

@@ -278,46 +278,6 @@ func TestCollectorFallsBackToPowerWhileEnergyMeterStuck(t *testing.T) {
 	require.False(t, col.accu.energyMeterStale)
 }
 
-// TestCollectorFallsBackToPowerWhileEnergyMeterMissing verifies the wiring
-// for a meter total that stops arriving altogether (e.g. its register was
-// removed from the config, see evcc-io/evcc#33091) rather than just
-// repeating: once that has lasted energyMeterStaleDuration, the stored total
-// is dropped so AddEnergy switches to power for good (there is no value left
-// to compare future readings against, unlike the stuck-but-answering case).
-func TestCollectorFallsBackToPowerWhileEnergyMeterMissing(t *testing.T) {
-	clock := clock.NewMock()
-
-	require.NoError(t, db.NewInstance("sqlite", ":memory:"))
-	require.NoError(t, SetupSchema())
-
-	col, err := NewCollector("missing", "missing", "", WithClock(clock))
-	require.NoError(t, err)
-
-	// seed the meter, then the reading starts failing (nil) while power stays active
-	clock.Add(time.Minute)
-	require.NoError(t, col.AddEnergy(new(10.0), nil, 500))
-	require.Equal(t, 0.0, col.accu.Energy)
-
-	clock.Add(time.Minute)
-	require.NoError(t, col.AddEnergy(nil, nil, 500))
-	require.NotNil(t, col.accu.energyMeter, "a single missing reading must not give up on the meter yet")
-
-	// the call that reaches the grace duration bridges the entire gap since
-	// the last real reading, not just the grace window itself: while readings
-	// are missing, nothing touches the accumulator's clock, so once power
-	// integration starts it counts the full 6 minutes since the meter was
-	// last seen (1min seed-to-first-miss + 5min grace) - no energy is lost
-	clock.Add(energyMeterStaleDuration)
-	require.NoError(t, col.AddEnergy(nil, nil, 500))
-	require.Nil(t, col.accu.energyMeter, "must give up on the meter once readings stay missing for the grace duration")
-	require.InDelta(t, 500.0*(energyMeterStaleDuration.Minutes()+1)/60/1e3, col.accu.Energy, 1e-9)
-
-	// stays on power for as long as readings keep missing
-	clock.Add(time.Minute)
-	require.NoError(t, col.AddEnergy(nil, nil, 500))
-	require.InDelta(t, 500.0*(energyMeterStaleDuration.Minutes()+2)/60/1e3, col.accu.Energy, 1e-9)
-}
-
 // TestCollectorTracksMaxReadGap verifies that maxGap tracks the largest
 // single read gap within a slot, is not shrunk by a smaller subsequent gap,
 // and resets once the slot rolls over. This is the signal persist() uses to
