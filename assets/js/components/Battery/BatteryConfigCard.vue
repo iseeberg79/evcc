@@ -131,6 +131,23 @@
 					optimizer: holdcharge disabled until midnight 🧪 [testing]
 				</label>
 			</div>
+			<!-- testing only: not part of the PR, requests the optimizer's charge-activation
+			     penalty (BatteryConfig.CContinuous) for every loadpoint (see
+			     core/site_optimizer.go loadpointRequest). Only effective with a minimum charge
+			     power (c_min > 0). Off by default, not persisted - forgotten on restart. -->
+			<div v-if="experimental" class="form-check form-switch mt-2">
+				<input
+					id="cContinuousEnabled"
+					:checked="cContinuousEnabled"
+					class="form-check-input"
+					type="checkbox"
+					role="switch"
+					@change="changeCContinuous"
+				/>
+				<label class="form-check-label text-muted" for="cContinuousEnabled">
+					optimizer: c_continuous 🧪 [testing]
+				</label>
+			</div>
 		</template>
 	</Card>
 </template>
@@ -160,6 +177,7 @@ export default defineComponent({
 		batteryGridDischarge: Boolean,
 		socDepletionCostLowEnabled: Boolean,
 		holdChargeDisabled: Boolean,
+		cContinuousEnabled: Boolean,
 		battery: { type: Object as PropType<Battery> },
 		experimental: Boolean,
 	},
@@ -317,6 +335,15 @@ export default defineComponent({
 				await api.post(`holdchargedisabled/${target.checked}`);
 			} catch (err) {
 				target.checked = this.holdChargeDisabled; // revert to stay in sync with state
+				console.error(err);
+			}
+		},
+		async changeCContinuous(e: Event) {
+			const target = e.target as HTMLInputElement;
+			try {
+				await api.post(`ccontinuous/${target.checked}`);
+			} catch (err) {
+				target.checked = this.cContinuousEnabled; // revert to stay in sync with state
 				console.error(err);
 			}
 		},
