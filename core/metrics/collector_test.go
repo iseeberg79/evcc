@@ -255,18 +255,19 @@ func TestCollectorFallsBackToPowerWhileEnergyMeterStuck(t *testing.T) {
 	require.NoError(t, col.AddEnergy(new(10.0), nil, 500))
 	require.False(t, col.accu.energyMeterStale)
 
-	// the call that trips the flag bridges its own gap too (arm was 2min in,
-	// this call lands energyMeterStaleDuration later) - no interval is lost
-	// on the transition tick itself
+	// the call that trips the flag bridges the entire gap since the last real
+	// reading (1min seed-to-first-repeat + the grace duration), not just the
+	// time since the last call: while the value sits unchanged, nothing
+	// touches the accumulator's clock, so no energy is lost
 	clock.Add(energyMeterStaleDuration)
 	require.NoError(t, col.AddEnergy(new(10.0), nil, 500))
 	require.True(t, col.accu.energyMeterStale, "must give up on the meter after the grace duration")
-	require.InDelta(t, 500.0*energyMeterStaleDuration.Minutes()/60/1e3, col.accu.Energy, 1e-9)
+	require.InDelta(t, 500.0*(energyMeterStaleDuration.Minutes()+1)/60/1e3, col.accu.Energy, 1e-9)
 
 	// further calls while stuck keep integrating power
 	clock.Add(time.Minute)
 	require.NoError(t, col.AddEnergy(new(10.0), nil, 500))
-	require.InDelta(t, 500.0*(energyMeterStaleDuration.Minutes()+1)/60/1e3, col.accu.Energy, 1e-9)
+	require.InDelta(t, 500.0*(energyMeterStaleDuration.Minutes()+2)/60/1e3, col.accu.Energy, 1e-9)
 
 	// the total finally moves - the jump must not be credited on top of the
 	// power already integrated while stuck

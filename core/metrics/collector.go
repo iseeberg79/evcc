@@ -247,22 +247,16 @@ func (c *Collector) SetReturnEnergyMeterTotal(v float64) error {
 	})
 }
 
-// AddEnergy adds energy for this update. It normally trusts a meter's
-// reported total and adds the difference to the last reading. If a
-// direction has no total at all, or its total is stuck (see
-// noteEnergyMeterActivity - the meter keeps answering, always with the same
-// value, while its own power reading shows real activity) or has been
-// missing for too long (see MissEnergyMeterTotal - the meter stops
-// answering at all, e.g. its register was removed from the config), it
-// counts energy from the power reading instead. A direction that has
-// reported a total before is trusted as metered through an occasional
-// missing reading: the next real reading's difference covers the gap, so
-// nothing is lost or counted twice.
+// AddEnergy adds energy for this update. It trusts a meter's reported total
+// and adds the difference from the last reading. If a direction has no
+// total, or its total is stuck (see noteEnergyMeterActivity) or missing too
+// long (see MissEnergyMeterTotal), it counts energy from power instead. A
+// single missing or unchanged reading alone doesn't switch it - only those
+// two mechanisms do.
 func (c *Collector) AddEnergy(energyTotal, returnEnergyTotal *float64, power float64) error {
 	return c.process(func() {
-		// check for a stuck or missing meter first: this way, the very call
-		// that gives up on it already counts its own time slice from power
-		// too, instead of losing it
+		// check stuck/missing first, so the call that gives up on a
+		// direction already counts its own slice from power too
 		if energyTotal != nil {
 			prev := c.accu.energyMeter
 			if c.accu.noteEnergyMeterActivity(prev != nil && *energyTotal == *prev, power >= meterStalePowerFloor) {
