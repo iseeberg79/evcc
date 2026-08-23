@@ -36,9 +36,6 @@ const (
 	// batteryPower is the default power of the battery in W
 	batteryPower = 6000
 
-	// optimizerDebounce limits how often on-demand optimizer runs execute
-	optimizerDebounce = 2 * time.Minute
-
 	// socDepletionCostHigh was a small €/h price meant to nudge the optimizer away from parking
 	// a home battery above 80% SOC (calendar aging). Set to 0: priced per hour rather than as a
 	// one-off, it rewarded finishing a charge late (minimizing time above 80%) over finishing
