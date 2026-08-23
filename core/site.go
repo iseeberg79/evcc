@@ -1396,7 +1396,7 @@ func (site *Site) prepare() {
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
 	site.publish(keys.BatteryGridDischarge, site.batteryGridDischarge)
 	site.publish("socDepletionCostLowEnabled", site.socDepletionCostLowEnabled)
-	site.publish(keys.CContinuous, site.cContinuousEnabled)
+	site.publish("cContinuousEnabled", site.cContinuousEnabled)
 	site.publish(keys.HoldChargeDisabled, site.holdChargeDisabled())
 	site.publish(keys.SolarAdjusted, site.solarAdjusted)
 	site.publish(keys.ResidualPower, site.GetResidualPower())

@@ -515,7 +515,7 @@ func (site *Site) SetCContinuousEnabled(val bool) error {
 	if site.cContinuousEnabled != val {
 		site.cContinuousEnabled = val
 		settings.SetBool(keys.CContinuous, val)
-		site.publish(keys.CContinuous, val)
+		site.publish("cContinuousEnabled", val)
 	}
 
 	return nil
