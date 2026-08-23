@@ -490,7 +490,7 @@ func (site *Site) SetSocDepletionCostLowEnabled(val bool) error {
 
 	if site.socDepletionCostLowEnabled != val {
 		site.socDepletionCostLowEnabled = val
-		site.publish("socDepletionCostLowEnabled", val)
+		site.publish(keys.SocDepletionCostLowEnabled, val)
 	}
 
 	return nil
@@ -514,8 +514,8 @@ func (site *Site) SetCContinuousEnabled(val bool) error {
 
 	if site.cContinuousEnabled != val {
 		site.cContinuousEnabled = val
-		settings.SetBool(keys.CContinuous, val)
-		site.publish("cContinuousEnabled", val)
+		settings.SetBool(keys.ChargeContinuousEnabled, val)
+		site.publish(keys.ChargeContinuousEnabled, val)
 	}
 
 	return nil
