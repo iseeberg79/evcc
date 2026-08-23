@@ -247,21 +247,21 @@ func (c *Collector) SetReturnEnergyMeterTotal(v float64) error {
 	})
 }
 
-// AddEnergy adds energy using meter totals if available, falling back to power
-// integration only for directions without an energy meter, plus a direction
-// whose total is flagged stale (see noteEnergyMeterActivity) - a device that
-// keeps answering with the same total while its own power is clearly active
-// is bridged the same way as one that stops answering outright. A direction
-// that has reported a total before keeps using meter deltas even if a single
-// read fails, so a transient failure is recovered via the next delta and not
-// double-counted.
+// AddEnergy adds energy for this update. It normally trusts a meter's
+// reported total and adds the difference to the last reading. If a
+// direction has no total at all, or its total is stuck (see
+// noteEnergyMeterActivity - the meter keeps answering, always with the same
+// value, while its own power reading shows real activity), it counts energy
+// from the power reading instead. A direction that has reported a total
+// before is trusted as metered even if a single reading is missing: the
+// next real reading's difference covers the gap, so nothing is lost or
+// counted twice.
 func (c *Collector) AddEnergy(energyTotal, returnEnergyTotal *float64, power float64) error {
 	return c.process(func() {
-		// note staleness before computing hasEnergyMeter/hasReturnMeter below,
-		// so the very call that raises the flag already falls back to power
-		// integration for its own interval instead of losing it: the meter
-		// delta for this call is 0 anyway (the reading is unchanged), and
-		// evaluating the flag's old value here would skip power too
+		// check for a stuck meter first: this way, the very call that
+		// discovers it is stuck already counts its own time slice from
+		// power too, instead of losing it (the meter contributes nothing
+		// this call anyway, since its value hasn't changed)
 		if energyTotal != nil {
 			prev := c.accu.energyMeter
 			if c.accu.noteEnergyMeterActivity(prev != nil && *energyTotal == *prev, power >= meterStalePowerFloor) {
@@ -277,13 +277,15 @@ func (c *Collector) AddEnergy(energyTotal, returnEnergyTotal *float64, power flo
 			}
 		}
 
-		// a direction that ever reported a total is metered, so a nil read is a
-		// transient failure rather than a power-only meter
+		// once a direction has reported a total, it stays metered through a
+		// single missing reading - only being marked stuck (above) switches
+		// it to power
 		hasEnergyMeter := (energyTotal != nil || c.accu.energyMeter != nil) && !c.accu.energyMeterStale
 		hasReturnMeter := (returnEnergyTotal != nil || c.accu.returnEnergyMeter != nil) && !c.accu.returnEnergyMeterStale
 
-		// integrate power for the unmetered (or stale) direction first, since
-		// applying a meter total advances the accumulator clock
+		// count energy from power for the direction that has no total or is
+		// stuck - do this before touching the meter total below, since that
+		// also moves the accumulator's own clock forward
 		if power >= 0 {
 			if !hasEnergyMeter {
 				c.accu.AddPower(power)

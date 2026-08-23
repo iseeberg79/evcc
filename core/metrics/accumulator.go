@@ -14,7 +14,8 @@ type Accumulator struct {
 	energyMeter       *float64 // kWh
 	returnEnergyMeter *float64 // kWh
 
-	// stuck-meter fallback state, see noteEnergyMeterActivity/SetEnergyMeterTotal
+	// whether the meter total is stuck (same value for too long while power
+	// shows real activity) - see noteEnergyMeterActivity and SetEnergyMeterTotal
 	energyMeterStaleSince       time.Time
 	returnEnergyMeterStaleSince time.Time
 	energyMeterStale            bool
@@ -87,10 +88,12 @@ func (m *Accumulator) String() string {
 	return b.String()
 }
 
-// SetEnergyMeterTotal adds the difference to the last total meter value in
-// kWh. A reading that arrives while the meter is flagged stale (see
-// noteEnergyMeterActivity) is not credited - that period was already bridged
-// via power integration - it just resyncs the baseline and clears the flag.
+// SetEnergyMeterTotal adds the difference between v and the last known meter
+// total to the running energy total, in kWh. If the meter is currently
+// marked stuck (see noteEnergyMeterActivity), this reading is not added -
+// that time period was already counted from the power reading instead. The
+// last known value is still updated so later readings compare against it,
+// and the stuck mark is cleared.
 func (m *Accumulator) SetEnergyMeterTotal(v float64) {
 	defer func() {
 		m.updated = m.clock.Now()
@@ -101,9 +104,9 @@ func (m *Accumulator) SetEnergyMeterTotal(v float64) {
 		return
 	}
 
-	// > not >=: an exact repeat must not clear the stale flag noteEnergyMeterActivity
-	// may just have set for this very call - only an actual move past the baseline
-	// means the reading recovered
+	// deliberately > and not >=: an unchanged value is not a recovery - it
+	// might be this very call that just marked the meter stuck. Only an
+	// actual increase means the meter is reporting real values again.
 	if v > *m.energyMeter {
 		if !m.energyMeterStale {
 			m.Energy += v - *m.energyMeter
@@ -113,8 +116,8 @@ func (m *Accumulator) SetEnergyMeterTotal(v float64) {
 	}
 }
 
-// SetReturnEnergyMeterTotal adds the difference to the last total meter value
-// in kWh (see SetEnergyMeterTotal for the stale-baseline handling).
+// SetReturnEnergyMeterTotal is SetEnergyMeterTotal for the return direction
+// (e.g. feed-in).
 func (m *Accumulator) SetReturnEnergyMeterTotal(v float64) {
 	defer func() {
 		m.updated = m.clock.Now()
@@ -134,26 +137,30 @@ func (m *Accumulator) SetReturnEnergyMeterTotal(v float64) {
 	}
 }
 
-// energyMeterStaleDuration bounds how long an energy-total reading may repeat
-// exactly while its direction's power indicates real activity before the
-// meter is treated as stuck rather than reporting a genuine flat stretch -
-// see noteEnergyMeterActivity. Seen live: a Balkonkraftwerk fed through a
-// custom MQTT bridge sat frozen at the same total for over an hour while
-// producing, then booked the whole gap as one implausible spike once a fresh
-// value finally arrived.
-const energyMeterStaleDuration = 15 * time.Minute
+// energyMeterStaleDuration is how long a meter total may stay exactly the
+// same, while its own power reading shows real activity, before it's treated
+// as stuck instead of just quiet. Seen live: a balcony solar panel behind a
+// custom MQTT bridge reported the same total for over an hour while
+// producing - when a fresh value finally arrived, the whole missed period
+// was booked as one big, wrong jump.
+//
+// Chosen shorter than a 15-minute history slot on purpose: the wait itself
+// is never added back afterwards (see SetEnergyMeterTotal), so a meter
+// getting stuck right at a slot's start would zero out that whole slot if
+// the wait were as long as the slot. A shorter wait keeps at least some
+// correct data in every slot.
+const energyMeterStaleDuration = 10 * time.Minute
 
-// meterStalePowerFloor (W) is the power below which an unchanged total is
-// unremarkable - the direction is genuinely idle, not stuck.
+// meterStalePowerFloor (W): below this power, an unchanged total isn't
+// suspicious - the device just isn't producing or consuming much, not stuck.
 const meterStalePowerFloor = 10.0
 
-// noteEnergyMeterActivity tracks how long the energy-total reading has sat
-// unchanged while active is true (this direction's own power is above
-// meterStalePowerFloor). Once that has gone on for energyMeterStaleDuration,
-// it flags the meter stale so AddEnergy falls back to integrating power for
-// this direction until the reading moves again (see SetEnergyMeterTotal).
-// Returns true exactly once, on the call that raises the flag, so the caller
-// can log the transition.
+// noteEnergyMeterActivity checks how long the total has stayed the same
+// while active is true (this direction's power is above
+// meterStalePowerFloor). Once that has lasted energyMeterStaleDuration, it
+// marks the meter stuck, so AddEnergy switches to counting energy from power
+// instead, until the total changes again (see SetEnergyMeterTotal). Returns
+// true only on the one call that makes that decision, so the caller can log it.
 func (m *Accumulator) noteEnergyMeterActivity(unchanged, active bool) bool {
 	return noteStale(&m.energyMeterStaleSince, &m.energyMeterStale, m.clock, unchanged, active)
 }
@@ -163,9 +170,8 @@ func (m *Accumulator) noteReturnEnergyMeterActivity(unchanged, active bool) bool
 	return noteStale(&m.returnEnergyMeterStaleSince, &m.returnEnergyMeterStale, m.clock, unchanged, active)
 }
 
-// noteStale is the shared implementation behind noteEnergyMeterActivity and
-// noteReturnEnergyMeterActivity, parameterized over which direction's fields
-// to update.
+// noteStale holds the check shared by noteEnergyMeterActivity and
+// noteReturnEnergyMeterActivity - same logic, different fields per direction.
 func noteStale(since *time.Time, stale *bool, clock clock.Clock, unchanged, active bool) bool {
 	if !unchanged || !active {
 		*since = time.Time{}
