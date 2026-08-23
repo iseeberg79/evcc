@@ -1113,6 +1113,14 @@ func (site *Site) loadpointRequest(lp loadpoint.API, minLen int, firstSlotDurati
 		CContinuous: site.GetCContinuousEnabled(),
 	}
 
+	// breaks cost ties between the loadpoint and the home battery- without it, two equally
+	// priced schedules can flip which one charges from one solve to the next, toggling the
+	// charger for no real reason. Follows the same rule as the PV-surplus loop (site.go): the
+	// home battery keeps priority below prioritySoc, the loadpoint wins once it is past that.
+	if site.GetBatterySoc() >= site.GetPrioritySoc() {
+		bat.CPriority = 1
+	}
+
 	if profile := loadpointProfile(lp, minLen); profile != nil {
 		bat.PDemand = prorate(profile, firstSlotDuration)
 	}
@@ -1245,6 +1253,12 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 		// clamp against current soc to prevent infeasible if it is outside the configured limits
 		bat.SMin = min(bat.SInitial, float32(*b.Capacity*minSoc*10)) // Wh
 		bat.SMax = max(bat.SInitial, float32(*b.Capacity*maxSoc*10)) // Wh
+	}
+
+	// mirrors the loadpoint side (see loadpointRequest): below prioritySoc the home battery
+	// wins a cost tie against a concurrently charging loadpoint, past it the loadpoint wins
+	if site.GetBatterySoc() < site.GetPrioritySoc() {
+		bat.CPriority = 1
 	}
 
 	detail := batteryDetail{
