@@ -480,6 +480,30 @@ func (site *Site) SetSocDepletionCostLowEnabled(val bool) error {
 	return nil
 }
 
+// GetCContinuousEnabled returns whether the optimizer's charge-activation penalty
+// (BatteryConfig.CContinuous) is requested for every loadpoint (testing only, see site.go)
+func (site *Site) GetCContinuousEnabled() bool {
+	site.RLock()
+	defer site.RUnlock()
+	return site.cContinuousEnabled
+}
+
+// SetCContinuousEnabled toggles the optimizer's charge-activation penalty (testing only, see
+// site.go). Not persisted, deliberately - forgotten on restart.
+func (site *Site) SetCContinuousEnabled(val bool) error {
+	site.log.DEBUG.Println("set c_continuous enabled:", val)
+
+	site.Lock()
+	defer site.Unlock()
+
+	if site.cContinuousEnabled != val {
+		site.cContinuousEnabled = val
+		site.publish("cContinuousEnabled", val)
+	}
+
+	return nil
+}
+
 // GetHoldChargeDisabled returns whether the holdcharge advisory action is temporarily
 // switched off (testing only, see site.go)
 func (site *Site) GetHoldChargeDisabled() bool {

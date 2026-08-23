@@ -180,7 +180,9 @@ func (s *HTTPd) RegisterSiteHandlers(site site.API) {
 		"batterydischargecontrol": {"POST", "/batterydischargecontrol/{value:[01truefalse]+}", boolHandler(site.SetBatteryDischargeControl, site.GetBatteryDischargeControl)},
 		"batterygriddischarge":    {"POST", "/batterygriddischarge/{value:[01truefalse]+}", boolHandler(site.SetBatteryGridDischarge, site.GetBatteryGridDischarge)},
 		// testing only: not part of the PR, see site.SetSocDepletionCostLowEnabled
-		"socdepletioncostlow":     {"POST", "/socdepletioncostlow/{value:[01truefalse]+}", boolHandler(site.SetSocDepletionCostLowEnabled, site.GetSocDepletionCostLowEnabled)},
+		"socdepletioncostlow": {"POST", "/socdepletioncostlow/{value:[01truefalse]+}", boolHandler(site.SetSocDepletionCostLowEnabled, site.GetSocDepletionCostLowEnabled)},
+		// testing only: not part of the PR, see site.SetCContinuousEnabled
+		"ccontinuous": {"POST", "/ccontinuous/{value:[01truefalse]+}", boolHandler(site.SetCContinuousEnabled, site.GetCContinuousEnabled)},
 		// testing only: not part of the PR, see site.SetHoldChargeDisabled
 		"holdchargedisabled":      {"POST", "/holdchargedisabled/{value:[01truefalse]+}", boolHandler(site.SetHoldChargeDisabled, site.GetHoldChargeDisabled)},
 		"batterygridcharge":       {"POST", "/batterygridchargelimit/{value:-?[0-9.]+}", floatPtrHandler(site.SetBatteryGridChargeLimit, site.GetBatteryGridChargeLimit)},

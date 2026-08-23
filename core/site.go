@@ -95,6 +95,12 @@ type Site struct {
 	// on the low floor with no buffer on a bad-forecast day; can be switched off temporarily.
 	socDepletionCostLowEnabled bool
 
+	// testing only: not part of the PR, requests the optimizer's charge-activation penalty
+	// (BatteryConfig.CContinuous) for every loadpoint, so it prefers fewer, longer charging runs
+	// over short bursts up to c_max. Only effective together with a minimum charge power
+	// (c_min > 0). Not persisted - forgotten on restart, defaults to off while under evaluation.
+	cContinuousEnabled bool
+
 	// testing only: lets holdcharge be switched off temporarily while other optimizer
 	// behavior is under test, without touching the strategy/config. Not persisted - forgotten
 	// on restart. Zero means enabled; a non-zero deadline in the future means holdChargeMode
@@ -138,7 +144,7 @@ type Site struct {
 
 	solarScaleCached        func() (float64, error) // util.Cached wrapper around querySolarScale
 	consumptionSignalCached func() (float64, error) // util.Cached wrapper around queryConsumptionSignal
-	holdChargeYieldCached   func() (bool, error)     // util.Cached wrapper around queryHoldChargeYieldSufficient
+	holdChargeYieldCached   func() (bool, error)    // util.Cached wrapper around queryHoldChargeYieldSufficient
 }
 
 // MetersConfig contains the site's meter configuration

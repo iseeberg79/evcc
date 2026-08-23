@@ -1068,6 +1068,8 @@ func (site *Site) loadpointRequest(lp loadpoint.API, minLen int, firstSlotDurati
 		DMax:           0,
 		SMin:           0,
 		// PA:             pa,
+		// testing only, see site.SetCContinuousEnabled: only effective together with CMin > 0
+		CContinuous: site.GetCContinuousEnabled(),
 	}
 
 	if profile := loadpointProfile(lp, minLen); profile != nil {
