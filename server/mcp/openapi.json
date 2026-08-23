@@ -2966,6 +2966,10 @@
             "description": "Recommended discharge power in W.",
             "type": "number"
           },
+          "grid": {
+            "description": "Planned site grid flow of the slot in W, positive means import.",
+            "type": "number"
+          },
           "actionable": {
             "description": "Suggestion differs from the current operating mode.",
             "type": "boolean"
@@ -3227,6 +3231,10 @@
             "description": "Current offered to the vehicle in A.",
             "type": "number"
           },
+          "optimizerControlled": {
+            "description": "Optimizer decides start/stop for this loadpoint, replacing the price limits.",
+            "type": "boolean"
+          },
           "phaseAction": {
             "$ref": "#/components/schemas/PhaseAction",
             "description": "Pending phase switching action in solar mode."
@@ -3469,6 +3477,7 @@
           "minSocNotReached",
           "mode",
           "offeredCurrent",
+          "optimizerControlled",
           "phaseAction",
           "phaseRemaining",
           "phasesActive",
@@ -3724,6 +3733,10 @@
           },
           "discharge": {
             "description": "Recommended discharge power in W.",
+            "type": "number"
+          },
+          "grid": {
+            "description": "Planned site grid flow of the slot in W, positive means import.",
             "type": "number"
           },
           "actionable": {
@@ -5257,6 +5270,10 @@
           },
           "optimizer": {
             "description": "Battery optimizer is enabled.",
+            "type": "boolean"
+          },
+          "optimizerAutomatic": {
+            "description": "Optimizer controls the devices instead of only advising.",
             "type": "boolean"
           },
           "optimizerChargingStrategy": {

@@ -180,6 +180,9 @@ render: |
           headers:
           - content-type: application/json
           body: '{"value": 0}'
+      default:
+        source: error
+        error: ErrNotAvailable
   {{- end }}
   {{- include "battery-params" . }}
   {{- end }}

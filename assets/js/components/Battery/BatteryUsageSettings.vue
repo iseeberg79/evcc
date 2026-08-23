@@ -189,12 +189,26 @@
 					class="form-check-input"
 					type="checkbox"
 					role="switch"
+					:disabled="optimizerAutomatic"
 					@change="changeDischargeControl"
 				/>
 				<div class="form-check-label">
 					<label for="batteryDischargeControl">
 						{{ $t("batterySettings.discharge") }}
 					</label>
+					<i18n-t
+						v-if="optimizerAutomatic"
+						keypath="config.optimizer.controlled"
+						tag="div"
+						class="text-muted small"
+						scope="global"
+					>
+						<template #optimizer>
+							<router-link to="/optimize" class="text-muted">
+								{{ $t("config.optimizer.linkWord") }}
+							</router-link>
+						</template>
+					</i18n-t>
 				</div>
 			</div>
 		</div>
@@ -222,6 +236,7 @@ export default defineComponent({
 		batteryDischargeControl: Boolean,
 		experimental: Boolean,
 		battery: { type: Object as PropType<Battery> },
+		optimizerAutomatic: Boolean,
 	},
 	data() {
 		return {

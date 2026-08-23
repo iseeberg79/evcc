@@ -451,23 +451,24 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 		typ               batteryType
 		charge, disch     float32
 		importing, export bool
+		gridImp, gridExp  float32
 		canCapCharge      bool
 		attenuating       bool
 		want              string
 	}{
-		{"battery grid charge", batteryTypeBattery, 3000, 0, true, false, true, true, "charge"},
-		{"battery pv charge (no import)", batteryTypeBattery, 3000, 0, false, true, true, true, "holdcharge"},
-		{"battery pv charge (no import, no charge-cap capability)", batteryTypeBattery, 3000, 0, false, true, false, true, "normal"},
-		{"battery pv charge (no import, not attenuating)", batteryTypeBattery, 3000, 0, false, true, true, false, "normal"},
-		{"battery hold (idle while importing)", batteryTypeBattery, 0, 0, true, false, true, true, "hold"},
-		{"battery holdcharge (idle while exporting)", batteryTypeBattery, 0, 0, false, true, true, true, "holdcharge"},
-		{"battery normal (idle while exporting, not attenuating)", batteryTypeBattery, 0, 0, false, true, true, false, "normal"},
-		{"battery discharge (self-consumption while importing)", batteryTypeBattery, 0, 2000, true, false, true, true, "normal"},
-		{"battery grid discharge (discharge while exporting)", batteryTypeBattery, 0, 2000, false, true, true, true, "discharge"},
-		{"battery idle balanced", batteryTypeBattery, 0, 0, false, false, true, true, "normal"},
-		{"loadpoint charge", batteryTypeLoadpoint, 11000, 0, false, false, true, true, "charge"},
-		{"loadpoint stop", batteryTypeLoadpoint, 0, 0, false, false, true, true, "stop"},
-		{"vehicle below threshold is stop", batteryTypeVehicle, 40, 0, false, false, true, true, "stop"},
+		{"battery grid charge", batteryTypeBattery, 3000, 0, true, false, 1000, 0, true, true, "charge"},
+		{"battery pv charge (no import)", batteryTypeBattery, 3000, 0, false, true, 0, 1000, true, true, "holdcharge"},
+		{"battery pv charge (no import, no charge-cap capability)", batteryTypeBattery, 3000, 0, false, true, 0, 1000, false, true, "normal"},
+		{"battery pv charge (no import, not attenuating)", batteryTypeBattery, 3000, 0, false, true, 0, 1000, true, false, "normal"},
+		{"battery hold (idle while importing)", batteryTypeBattery, 0, 0, true, false, 1000, 0, true, true, "hold"},
+		{"battery holdcharge (idle while exporting)", batteryTypeBattery, 0, 0, false, true, 0, 1000, true, true, "holdcharge"},
+		{"battery normal (idle while exporting, not attenuating)", batteryTypeBattery, 0, 0, false, true, 0, 1000, true, false, "normal"},
+		{"battery discharge (self-consumption while importing)", batteryTypeBattery, 0, 2000, true, false, 1000, 0, true, true, "normal"},
+		{"battery grid discharge (discharge while exporting)", batteryTypeBattery, 0, 2000, false, true, 0, 1000, true, true, "discharge"},
+		{"battery idle balanced", batteryTypeBattery, 0, 0, false, false, 0, 0, true, true, "normal"},
+		{"loadpoint charge", batteryTypeLoadpoint, 11000, 0, false, false, 0, 0, true, true, "charge"},
+		{"loadpoint stop", batteryTypeLoadpoint, 0, 0, false, false, 0, 0, true, true, "stop"},
+		{"vehicle below threshold is stop", batteryTypeVehicle, 40, 0, false, false, 0, 0, true, true, "stop"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			res := optimizer.BatteryResult{
@@ -475,10 +476,11 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 				DischargingPower: []float32{tc.disch},
 			}
 			f := slotFlags{attenuating: tc.attenuating, canCapCharge: tc.canCapCharge, gridImporting: tc.importing, gridExporting: tc.export}
-			s := slotSuggestion(batteryDetail{Type: tc.typ}, res, 0, f, 1)
+			s := slotSuggestion(batteryDetail{Type: tc.typ}, res, 0, f, 1, tc.gridImp, tc.gridExp)
 			assert.Equal(t, tc.want, s.Action)
 			assert.InDelta(t, tc.charge, s.Charge, 1e-3)
 			assert.InDelta(t, tc.disch, s.Discharge, 1e-3)
+			assert.InDelta(t, tc.gridImp-tc.gridExp, s.Grid, 1e-3)
 		})
 	}
 
@@ -491,11 +493,11 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 			DischargingPower: []float32{0, 0},
 		}
 		f := slotFlags{attenuating: true, canCapCharge: true}
-		s0 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 0, f, 285.0/3600)
+		s0 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 0, f, 285.0/3600, 0, 0)
 		assert.Equal(t, "normal", s0.Action)
 		assert.InDelta(t, 0, s0.Charge, 1e-3)
 
-		s1 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 1, f, 900.0/3600)
+		s1 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 1, f, 900.0/3600, 0, 0)
 		assert.Equal(t, "holdcharge", s1.Action)
 		assert.InDelta(t, 1592/(900.0/3600), s1.Charge, 1e-3) // Wh -> W at the full-slot rate
 	})
@@ -506,15 +508,15 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 			ChargingPower:    []float32{0, 0},
 			DischargingPower: []float32{500, 0}, // discharging now, idle next full slot
 		}
-		s := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 0, slotFlags{attenuating: true, canCapCharge: true, gridImporting: true}, 1)
+		s := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 0, slotFlags{attenuating: true, canCapCharge: true, gridImporting: true}, 1, 0, 0)
 		assert.InDelta(t, 500, s.Discharge, 1e-3)
 		assert.Equal(t, "normal", s.Action) // discharge > threshold while importing -> not hold
 	})
 
 	// an out-of-range index yields an empty suggestion
 	oobFlags := slotFlags{attenuating: true, canCapCharge: true, gridImporting: true}
-	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{}, 0, oobFlags, 1))
-	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{ChargingPower: []float32{0}, DischargingPower: []float32{0}}, 5, oobFlags, 1))
+	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{}, 0, oobFlags, 1, 0, 0))
+	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{ChargingPower: []float32{0}, DischargingPower: []float32{0}}, 5, oobFlags, 1, 0, 0))
 }
 
 func TestHoldChargeReservationWorthwhile(t *testing.T) {

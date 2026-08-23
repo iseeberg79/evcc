@@ -152,7 +152,7 @@ type batteryResult struct {
 	Suggestion types.Suggestion `json:"suggestion,omitzero"`
 }
 
-// suggestionThreshold ignores numerical noise around zero power (W)
+// suggestionThreshold ignores numerical noise in power comparisons (W)
 const suggestionThreshold = 50
 
 // advisory actions for a loadpoint/vehicle slot; battery actions use api.BatteryMode
@@ -224,7 +224,7 @@ type slotFlags struct {
 // mode is dispatched site-wide (applyBatteryMode has no per-battery mode concept), so if any
 // other battery lacked the cap it would receive the same HoldCharge mode and, without a value
 // push of its own, fall back to an unconditional 0 W block instead of the intended partial cap.
-func slotSuggestion(detail batteryDetail, res optimizer.BatteryResult, i int, f slotFlags, slotHours float64) types.Suggestion {
+func slotSuggestion(detail batteryDetail, res optimizer.BatteryResult, i int, f slotFlags, slotHours float64, gridImport, gridExport float32) types.Suggestion {
 	if slotHours <= 0 || i < 0 || i >= len(res.ChargingPower) || i >= len(res.DischargingPower) {
 		return types.Suggestion{}
 	}
@@ -248,7 +248,11 @@ func slotSuggestion(detail batteryDetail, res optimizer.BatteryResult, i int, f 
 	charge := float64(res.ChargingPower[i]) / slotHours
 	discharge := float64(res.DischargingPower[i]) / slotHours
 
-	s := types.Suggestion{Charge: charge, Discharge: discharge}
+	s := types.Suggestion{
+		Charge:    charge,
+		Discharge: discharge,
+		Grid:      float64(gridImport-gridExport) / slotHours,
+	}
 
 	if detail.Type == batteryTypeBattery {
 		idle := charge <= suggestionThreshold && discharge <= suggestionThreshold
@@ -304,12 +308,26 @@ func loadpointCurrentAction(lp *Loadpoint) string {
 	return actionStop
 }
 
+// suggestionMaxAge invalidates suggestions of a stalled optimizer. Runs happen
+// once per loadpoint update cycle, so two slots without a result mean the
+// optimizer is no longer keeping up.
+const suggestionMaxAge = 2 * tariff.SlotDuration
+
 // setSuggestions replaces the suggestions applied on each publish
 func (site *Site) setSuggestions(suggestions map[string]types.Suggestion) {
 	site.Lock()
 	defer site.Unlock()
 
 	site.suggestions = suggestions
+	site.suggestionsUpdated = time.Now()
+}
+
+// setBatteryForecast replaces the battery forecast of the cached state
+func (site *Site) setBatteryForecast(forecast *types.BatteryForecast) {
+	site.Lock()
+	defer site.Unlock()
+
+	site.battery.Forecast = forecast
 }
 
 // suggestion returns the optimizer suggestion for the given device key.
@@ -318,9 +336,10 @@ func (site *Site) setSuggestions(suggestions map[string]types.Suggestion) {
 func (site *Site) suggestion(key, currentAction string) *types.Suggestion {
 	site.RLock()
 	s, ok := site.suggestions[key]
+	stale := time.Since(site.suggestionsUpdated) > suggestionMaxAge
 	site.RUnlock()
 
-	if !ok {
+	if !ok || stale {
 		return nil
 	}
 
@@ -329,18 +348,23 @@ func (site *Site) suggestion(key, currentAction string) *types.Suggestion {
 	return &s
 }
 
-// publishSuggestions publishes the loadpoints' suggestions
+// publishSuggestions publishes the loadpoints' suggestions and hands them to the
+// loadpoints, where they act as start/stop gate while the optimizer is in control
 func (site *Site) publishSuggestions() {
 	for id, lp := range site.loadpoints {
 		if lp == nil {
 			continue
 		}
 
+		s := site.suggestion(loadpointKey(id), loadpointCurrentAction(lp))
+
 		var val any
-		if s := site.suggestion(loadpointKey(id), loadpointCurrentAction(lp)); s != nil {
+		if s != nil {
 			val = *s
 		}
 		site.publishLoadpoint(id, keys.Suggestion, val)
+
+		lp.setSuggestion(s)
 	}
 }
 
@@ -348,7 +372,7 @@ func (site *Site) publishSuggestions() {
 // optimizer result is stale
 func (site *Site) clearSuggestions() {
 	site.setSuggestions(nil)
-	site.battery.Forecast = nil
+	site.setBatteryForecast(nil)
 
 	site.publishBattery()
 	site.publishSuggestions()
@@ -435,12 +459,13 @@ const slotsPerHour = float64(time.Hour / tariff.SlotDuration)
 // startup); the slot gate is left open so the next cycle retries.
 var errOptimizerNotReady = errors.New("battery measurements not ready")
 
-// optimizerUpdateAsync runs the optimizer unless the last run is younger than
-// minAge. Pass 0 to force a run, e.g. when a changed setting should take effect
-// without waiting for the next slot. It is a no-op when the optimizer is not
-// active or a run is already in progress; the running update reflects the
-// change on its next slot.
-func (site *Site) optimizerUpdateAsync(minAge time.Duration) {
+// optimizerUpdateAsync runs the optimizer. In automatic mode it runs on every
+// loadpoint cycle since the loadpoint gate needs a fresh result, while advisory
+// suggestions only need one run per slot. Pass force to run regardless, e.g.
+// when a changed setting should take effect immediately. It is a no-op when the
+// optimizer is not active or a run is already in progress; the running update
+// reflects the change on its next run.
+func (site *Site) optimizerUpdateAsync(force bool) {
 	if !sponsor.IsAuthorized() || !optimizerEnabled() {
 		return
 	}
@@ -450,10 +475,10 @@ func (site *Site) optimizerUpdateAsync(minAge time.Duration) {
 	}
 	defer site.optimizerMu.Unlock()
 
-	if minAge == 0 {
+	if force {
 		// keep the gate open so a not-ready run is retried on the next cycle
 		site.optimizerUpdated = time.Time{}
-	} else if time.Since(site.optimizerUpdated) < minAge {
+	} else if !site.Automatic() && time.Since(site.optimizerUpdated) < tariff.SlotDuration {
 		return
 	}
 
@@ -479,7 +504,7 @@ func (site *Site) optimizerUpdateAsync(minAge time.Duration) {
 		}
 	}()
 
-	err = site.optimizerUpdate(site.battery.Devices)
+	err = site.optimizerUpdate(site.state().battery.Devices)
 }
 
 // optimizerRequest assembles the optimizer request and the matching device
@@ -753,6 +778,14 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 	}
 	f.gridImporting, f.gridExporting = gridFlags(&res, 0, slotHours)
 
+	var gridImport, gridExport float32
+	if len(res.GridImport) > 0 {
+		gridImport = res.GridImport[0]
+	}
+	if len(res.GridExport) > 0 {
+		gridExport = res.GridExport[0]
+	}
+
 	var batteries []batteryResult
 	suggestions := make(map[string]types.Suggestion, len(req.Batteries))
 
@@ -767,7 +800,7 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 		batRes := res.Batteries[i]
 		detail := details.BatteryDetails[i]
 
-		suggestion := slotSuggestion(detail, batRes, 0, f, slotHours)
+		suggestion := slotSuggestion(detail, batRes, 0, f, slotHours, gridImport, gridExport)
 		remainingSurplusWh := remainingForecastToday(req.TimeSeries.Ft, details.Timestamps, 0) - remainingForecastToday(req.TimeSeries.Gt, details.Timestamps, 0)
 		suggestion = downgradeUnworthwhileHoldCharge(suggestion, detail, batRes, 0, remainingSurplusWh)
 
@@ -800,7 +833,7 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 	site.Unlock()
 
 	site.setSuggestions(suggestions)
-	site.battery.Forecast = site.addBatteryForecastTotals(req.Batteries, res.Batteries)
+	site.setBatteryForecast(site.addBatteryForecastTotals(req.Batteries, res.Batteries))
 
 	site.publishBattery()
 
@@ -958,13 +991,21 @@ func buildHoldChargePlan(details requestDetails, res *optimizer.OptimizationResu
 		f := slotFlags{attenuating: attenuate, canCapCharge: canCapCharge}
 		f.gridImporting, f.gridExporting = gridFlags(res, i, slotHours)
 
+		var gridImport, gridExport float32
+		if i < len(res.GridImport) {
+			gridImport = res.GridImport[i]
+		}
+		if i < len(res.GridExport) {
+			gridExport = res.GridExport[i]
+		}
+
 		slot := make(map[string]types.Suggestion)
 		for bi, detail := range details.BatteryDetails {
 			// uncontrollable batteries can't act on a suggestion
 			if detail.Type != batteryTypeBattery || !detail.controllable || bi >= len(res.Batteries) {
 				continue
 			}
-			if s := slotSuggestion(detail, res.Batteries[bi], i, f, slotHours); s.Action != "" {
+			if s := slotSuggestion(detail, res.Batteries[bi], i, f, slotHours, gridImport, gridExport); s.Action != "" {
 				slot[detail.Name] = s
 			}
 		}

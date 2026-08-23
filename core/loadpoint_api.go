@@ -186,6 +186,7 @@ func (lp *Loadpoint) SetMode(mode api.ChargeMode) {
 		}
 
 		lp.requestUpdate()
+		lp.triggerOptimizer()
 	}
 }
 
@@ -312,6 +313,7 @@ func (lp *Loadpoint) SetLimitSoc(soc int) {
 	if lp.limitSoc != soc {
 		lp.setLimitSoc(soc)
 		lp.requestUpdate()
+		lp.triggerOptimizer()
 	}
 }
 
@@ -373,6 +375,7 @@ func (lp *Loadpoint) SetLimitEnergy(energy float64) {
 	if lp.limitEnergy != energy {
 		lp.setLimitEnergy(energy)
 		lp.requestUpdate()
+		lp.triggerOptimizer()
 	}
 }
 
@@ -427,6 +430,7 @@ func (lp *Loadpoint) SetPlanEnergy(finishAt time.Time, energy float64) error {
 	if lp.planEnergy != energy || !lp.planTime.Equal(finishAt) {
 		lp.setPlanEnergy(finishAt, energy)
 		lp.requestUpdate()
+		lp.triggerOptimizer()
 	}
 
 	return nil
@@ -680,7 +684,8 @@ func (lp *Loadpoint) GetBatteryBoostLimit() int {
 	return lp.batteryBoostLimit
 }
 
-// SetBatteryBoostLimit sets the battery boost soc limit
+// SetBatteryBoostLimit sets the battery boost soc limit. Relaxing the limit
+// resumes a boost held by it, 100 disables the feature and ends an active boost.
 func (lp *Loadpoint) SetBatteryBoostLimit(limit int) {
 	lp.Lock()
 	defer lp.Unlock()
@@ -688,9 +693,24 @@ func (lp *Loadpoint) SetBatteryBoostLimit(limit int) {
 	lp.log.DEBUG.Println("set battery boost limit:", limit)
 
 	if lp.batteryBoostLimit != limit {
+		relaxed := limit < lp.batteryBoostLimit && lp.batteryBoostLimit < 100
+
 		lp.batteryBoostLimit = limit
 		lp.settings.SetInt(keys.BatteryBoostLimit, int64(limit))
 		lp.publish(keys.BatteryBoostLimit, limit)
+
+		// lock is held, hence assign instead of setBatteryBoost
+		switch {
+		case limit == 100 && lp.batteryBoost != boostDisabled:
+			lp.log.DEBUG.Println("battery boost disable: limit removed")
+			lp.batteryBoost = boostDisabled
+			lp.publish(keys.BatteryBoost, false)
+		case relaxed && lp.batteryBoost == boostHold:
+			lp.log.DEBUG.Println("battery boost resume: limit relaxed")
+			lp.batteryBoost = boostStart
+		}
+
+		lp.requestUpdate()
 	}
 }
 
@@ -901,15 +921,36 @@ func (lp *Loadpoint) StartVehicleDetection() {
 	lp.startVehicleDetection()
 }
 
-// GetSmartCostLimit gets the smart cost limit
+// GetSmartCostLimit gets the smart cost limit. The optimizer replaces it in
+// automatic mode, so it reads as unset and none of its consumers apply it.
 func (lp *Loadpoint) GetSmartCostLimit() *float64 {
+	if lp.optimizerControlled() {
+		return nil
+	}
+
 	lp.RLock()
 	defer lp.RUnlock()
 	return lp.smartCostLimit
 }
 
 // SetSmartCostLimit sets the smart cost limit
-func (lp *Loadpoint) SetSmartCostLimit(val *float64) {
+func (lp *Loadpoint) SetSmartCostLimit(val *float64) error {
+	if lp.optimizerControlled() {
+		// the getter reads nil in automatic mode- a config round-trip writing it
+		// back must not discard the stored limit
+		if val != nil {
+			return ErrOptimizerAutomatic
+		}
+
+		return nil
+	}
+
+	lp.setSmartCostLimit(val)
+
+	return nil
+}
+
+func (lp *Loadpoint) setSmartCostLimit(val *float64) {
 	lp.Lock()
 	defer lp.Unlock()
 
@@ -923,15 +964,34 @@ func (lp *Loadpoint) SetSmartCostLimit(val *float64) {
 	}
 }
 
-// GetSmartFeedInPriorityLimit gets the smart feed-in limit
+// GetSmartFeedInPriorityLimit gets the smart feed-in limit. The optimizer
+// replaces it in automatic mode, so it reads as unset.
 func (lp *Loadpoint) GetSmartFeedInPriorityLimit() *float64 {
+	if lp.optimizerControlled() {
+		return nil
+	}
+
 	lp.RLock()
 	defer lp.RUnlock()
 	return lp.smartFeedInPriorityLimit
 }
 
 // SetSmartFeedInPriorityLimit sets the smart cost feed-in
-func (lp *Loadpoint) SetSmartFeedInPriorityLimit(val *float64) {
+func (lp *Loadpoint) SetSmartFeedInPriorityLimit(val *float64) error {
+	if lp.optimizerControlled() {
+		if val != nil {
+			return ErrOptimizerAutomatic
+		}
+
+		return nil
+	}
+
+	lp.setSmartFeedInPriorityLimit(val)
+
+	return nil
+}
+
+func (lp *Loadpoint) setSmartFeedInPriorityLimit(val *float64) {
 	lp.Lock()
 	defer lp.Unlock()
 
