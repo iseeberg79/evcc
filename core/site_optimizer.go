@@ -923,7 +923,15 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 
 	controllable := api.HasCap[api.BatteryController](instance)
 	if controllable {
-		bat.ChargeFromGrid = true
+		// Local patch (not upstream): "controllable" only means the battery
+		// mode can be commanded (hold/normal/charge/...), not that a real
+		// grid-charge command channel exists. Generic type:custom devices
+		// (as used here) never implement one - the incoming "charge" mode
+		// change is at best a no-op on the real device. Defaulting to false
+		// avoids the optimizer planning grid-import charging that no
+		// hardware in this deployment can actually perform. Revisit if a
+		// device with genuine AC-charge control is ever added.
+		bat.ChargeFromGrid = false
 		bat.DischargeToGrid = site.GetBatteryGridDischarge()
 	}
 
