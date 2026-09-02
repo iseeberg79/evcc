@@ -172,9 +172,7 @@ func (site *Site) batterySuggestionMode() (api.BatteryMode, bool) {
 			continue
 		}
 
-		name := dev.Config().Name
-
-		s := site.suggestion(batteryKey(name), site.GetBatteryMode().String())
+		s := site.suggestion(batteryKey(dev.Config().Name), site.GetBatteryMode().String())
 		if s == nil {
 			continue
 		}
@@ -182,7 +180,7 @@ func (site *Site) batterySuggestionMode() (api.BatteryMode, bool) {
 		mode, err := api.BatteryModeString(s.Action)
 		if err != nil {
 			// discharging to grid has no matching battery mode
-			site.log.DEBUG.Printf("battery %s: cannot apply suggestion %s", name, s.Action)
+			site.log.DEBUG.Printf("battery %s: cannot apply suggestion %s", deviceTitleOrName(dev), s.Action)
 			return api.BatteryNormal, true
 		}
 

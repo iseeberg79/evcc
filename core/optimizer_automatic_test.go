@@ -165,7 +165,7 @@ func TestOptimizerGateInactive(t *testing.T) {
 	enableAutomatic(t)
 
 	// automatic disabled: pv surplus decides, the suggestion is advisory only
-	lp, _, ctrl := automaticLoadpoint(t, api.ModePV, false)
+	lp, _, ctrl := automaticLoadpoint(t, api.ModeSmart, false)
 	lp.setSuggestion(&types.Suggestion{Action: actionCharge})
 
 	assert.Nil(t, lp.gate())
@@ -180,7 +180,7 @@ func TestOptimizerGateStale(t *testing.T) {
 	enableAutomatic(t)
 
 	// a stalled optimizer must not keep the loadpoint gated
-	lp, _, ctrl := automaticLoadpoint(t, api.ModePV, true)
+	lp, _, ctrl := automaticLoadpoint(t, api.ModeSmart, true)
 	lp.setSuggestion(&types.Suggestion{Action: actionCharge})
 	lp.suggestionUpdated = lp.clock.Now().Add(-suggestionMaxAge - time.Minute)
 
