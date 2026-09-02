@@ -231,13 +231,37 @@ func loadpointCurrentAction(lp *Loadpoint) string {
 // optimizer is no longer keeping up.
 const suggestionMaxAge = 2 * tariff.SlotDuration
 
-// setSuggestions replaces the suggestions applied on each publish
+// suggestionConfirmDefer is how long a device's Action must hold unbroken
+// before suggestionConfirmed adopts it (see setSuggestions); covers the
+// settling period after a slot boundary, when the LP is prone to flap.
+const suggestionConfirmDefer = 90 * time.Second
+
+// setSuggestions replaces the suggestions applied on each publish, and
+// updates the debounced Action used for mode control (see suggestion).
 func (site *Site) setSuggestions(suggestions map[string]types.Suggestion) {
 	site.Lock()
 	defer site.Unlock()
 
+	now := time.Now()
 	site.suggestions = suggestions
-	site.suggestionsUpdated = time.Now()
+	site.suggestionsUpdated = now
+
+	if site.suggestionPendingAction == nil {
+		site.suggestionPendingAction = make(map[string]string)
+		site.suggestionPendingSince = make(map[string]time.Time)
+		site.suggestionConfirmed = make(map[string]string)
+	}
+
+	for key, s := range suggestions {
+		if s.Action != site.suggestionPendingAction[key] {
+			site.suggestionPendingAction[key] = s.Action
+			site.suggestionPendingSince[key] = now
+		}
+
+		if now.Sub(site.suggestionPendingSince[key]) >= suggestionConfirmDefer {
+			site.suggestionConfirmed[key] = s.Action
+		}
+	}
 }
 
 // setBatteryForecast replaces the battery forecast of the cached state
@@ -248,17 +272,23 @@ func (site *Site) setBatteryForecast(forecast *types.BatteryForecast) {
 	site.battery.Forecast = forecast
 }
 
-// suggestion returns the optimizer suggestion for the given device key.
+// suggestion returns the optimizer suggestion for the given device key, with
+// Action replaced by its debounced value (see setSuggestions).
 // The actionable flag is evaluated on read against the device's current
 // action since that changes between optimizer runs.
 func (site *Site) suggestion(key, currentAction string) *types.Suggestion {
 	site.RLock()
 	s, ok := site.suggestions[key]
 	stale := time.Since(site.suggestionsUpdated) > suggestionMaxAge
+	confirmed, hasConfirmed := site.suggestionConfirmed[key]
 	site.RUnlock()
 
 	if !ok || stale {
 		return nil
+	}
+
+	if hasConfirmed {
+		s.Action = confirmed
 	}
 
 	s.Actionable = s.Action != currentAction
@@ -297,6 +327,9 @@ func (site *Site) clearSuggestions() {
 
 	site.Lock()
 	site.suggestionActions = nil
+	site.suggestionPendingAction = nil
+	site.suggestionPendingSince = nil
+	site.suggestionConfirmed = nil
 	site.Unlock()
 }
 

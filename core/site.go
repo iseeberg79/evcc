@@ -121,6 +121,11 @@ type Site struct {
 	suggestionsUpdated       time.Time                   // time the suggestions were applied
 	suggestionActions        map[string]string           // last notified actionable optimizer action by device key
 
+	// debounces suggestionActions across slot-boundary LP restructuring, see setSuggestions
+	suggestionPendingAction map[string]string    // action last seen per device key, awaiting confirmation
+	suggestionPendingSince  map[string]time.Time // when suggestionPendingAction was first seen, unbroken
+	suggestionConfirmed     map[string]string    // debounced action actually used for mode control
+
 	optimizerMu      sync.Mutex // guards optimizer runs
 	optimizerUpdated time.Time  // last optimizer run, guarded by optimizerMu
 
