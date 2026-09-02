@@ -956,7 +956,8 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 
 	controllable := api.HasCap[api.BatteryController](instance)
 	if controllable {
-		bat.ChargeFromGrid = true
+		// local patch: no grid-charge command channel on this hardware
+		bat.ChargeFromGrid = false
 		bat.DischargeToGrid = site.GetBatteryGridDischarge()
 	}
 
