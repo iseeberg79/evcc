@@ -10,7 +10,7 @@ import (
 	"github.com/evcc-io/evcc/core/keys"
 	coresettings "github.com/evcc-io/evcc/core/settings"
 	"github.com/evcc-io/evcc/core/types"
-	"github.com/evcc-io/evcc/server/db/settings"
+	"github.com/evcc-io/evcc/db/settings"
 	"github.com/evcc-io/evcc/util"
 	"github.com/evcc-io/evcc/util/config"
 	"github.com/evcc-io/evcc/util/sponsor"
@@ -98,29 +98,31 @@ func TestOptimizerGate(t *testing.T) {
 
 	tc := []struct {
 		mode   api.ChargeMode
+		ac     api.AlwaysCharge
 		s      types.Suggestion
 		expect func(h *api.MockCharger)
 	}{
 		// optimizer starts and stops pv charging, replacing the price limits
-		{api.ModePV, full, func(h *api.MockCharger) { h.EXPECT().MaxCurrent(int64(maxA)) }},
-		{api.ModePV, stop, func(h *api.MockCharger) { h.EXPECT().Enable(false) }},
+		{api.ModeSmart, api.AlwaysChargeOff, full, func(h *api.MockCharger) { h.EXPECT().MaxCurrent(int64(maxA)) }},
+		{api.ModeSmart, api.AlwaysChargeOff, stop, func(h *api.MockCharger) { h.EXPECT().Enable(false) }},
 
-		// minpv keeps its minimum power when the optimizer stops
-		{api.ModeMinPV, full, func(h *api.MockCharger) { h.EXPECT().MaxCurrent(int64(maxA)) }},
-		{api.ModeMinPV, stop, nil}, // already at min current
+		// always charge keeps its minimum power when the optimizer stops
+		{api.ModeSmart, api.AlwaysChargeOn, full, func(h *api.MockCharger) { h.EXPECT().MaxCurrent(int64(maxA)) }},
+		{api.ModeSmart, api.AlwaysChargeOn, stop, nil}, // already at min current
 
 		// a grid-fed power below the maximum is applied as current
-		{api.ModePV, types.Suggestion{Action: actionCharge, Charge: 2300, Grid: 1000}, func(h *api.MockCharger) { h.EXPECT().MaxCurrent(int64(10)) }},
+		{api.ModeSmart, api.AlwaysChargeOff, types.Suggestion{Action: actionCharge, Charge: 2300, Grid: 1000}, func(h *api.MockCharger) { h.EXPECT().MaxCurrent(int64(10)) }},
 
 		// off and fast remain the user's decision
-		{api.ModeOff, full, func(h *api.MockCharger) { h.EXPECT().Enable(false) }},
-		{api.ModeNow, stop, func(h *api.MockCharger) { h.EXPECT().MaxCurrent(int64(maxA)) }},
+		{api.ModeOff, api.AlwaysChargeOff, full, func(h *api.MockCharger) { h.EXPECT().Enable(false) }},
+		{api.ModeNow, api.AlwaysChargeOff, stop, func(h *api.MockCharger) { h.EXPECT().MaxCurrent(int64(maxA)) }},
 	}
 
 	for _, tc := range tc {
 		t.Log(tc)
 
 		lp, charger, ctrl := automaticLoadpoint(t, tc.mode, true)
+		lp.alwaysCharge = tc.ac
 		lp.setSuggestion(&tc.s)
 
 		if tc.expect != nil {
@@ -139,7 +141,7 @@ func TestOptimizerGate(t *testing.T) {
 func TestOptimizerSurplusRegime(t *testing.T) {
 	enableAutomatic(t)
 
-	lp, charger, ctrl := automaticLoadpoint(t, api.ModePV, true)
+	lp, charger, ctrl := automaticLoadpoint(t, api.ModeSmart, true)
 	lp.Disable.Delay = time.Minute
 	lp.offeredCurrent = maxA
 
@@ -226,19 +228,12 @@ func TestSmartCostLimitUnavailable(t *testing.T) {
 	assert.Equal(t, &limit, lp.GetSmartFeedInPriorityLimit())
 }
 
-type featureCharger struct {
-	features []api.Feature
-}
-
-func (c *featureCharger) Features() []api.Feature {
-	return c.features
-}
-
 func TestBatteryModeAutomatic(t *testing.T) {
 	enableAutomatic(t)
 
 	ctrl := gomock.NewController(t)
 	batCon := api.NewMockBatteryController(ctrl)
+	batCon.EXPECT().BatteryModes().Return([]api.BatteryMode{api.BatteryNormal, api.BatteryHold, api.BatteryCharge, api.BatteryDischarge}).AnyTimes()
 
 	var bat api.Meter = &struct {
 		api.Meter
@@ -258,14 +253,14 @@ func TestBatteryModeAutomatic(t *testing.T) {
 	})
 
 	batCon.EXPECT().SetBatteryMode(api.BatteryCharge)
-	site.updateBatteryMode(false, api.Rate{})
+	site.updateBatteryMode(false, false, api.Rate{})
 	assert.Equal(t, api.BatteryCharge, site.GetBatteryMode())
 
 	// a stalled optimizer releases the battery
 	site.suggestionsUpdated = time.Now().Add(-suggestionMaxAge - time.Minute)
 
 	batCon.EXPECT().SetBatteryMode(api.BatteryNormal)
-	site.updateBatteryMode(false, api.Rate{})
+	site.updateBatteryMode(false, false, api.Rate{})
 	assert.Equal(t, api.BatteryNormal, site.GetBatteryMode())
 
 	ctrl.Finish()

@@ -27,6 +27,7 @@
 				:last-limit="loadpoint?.lastSmartFeedInPriorityLimit"
 				:currency="currency"
 				:loadpoint-id="id"
+				is-loadpoint
 				:multiple-loadpoints="multipleLoadpoints"
 				:possible="smartFeedInPriorityAvailable"
 				:disabled-hint="optimizerHint"
@@ -173,8 +174,6 @@ import SettingsBatteryBoost from "./SettingsBatteryBoost.vue";
 import { defineComponent, type PropType } from "vue";
 import { PHASES, CURRENCY, SMART_COST_TYPE, type UiForecast, type UiLoadpoint } from "@/types/evcc";
 import api from "@/api";
-
-const V = 230;
 
 const range = (start: number, stop: number, step = -1) =>
 	Array.from({ length: (stop - start) / step + 1 }, (_, i) => start + i * step);
@@ -328,9 +327,6 @@ export default defineComponent({
 		},
 		apiPath(func: string) {
 			return "loadpoints/" + this.id + "/" + func;
-		},
-		fmtPhasePower(current?: number, phases?: PHASES) {
-			return this.fmtW(V * (current || 0) * (phases || 0));
 		},
 		formId(name: string) {
 			return `loadpoint_${this.id}_${name}`;
