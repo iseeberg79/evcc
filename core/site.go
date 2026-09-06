@@ -138,6 +138,10 @@ type Site struct {
 	suggestionsUpdated       time.Time                   // time the suggestions were applied
 	suggestionActions        map[string]string           // last notified actionable optimizer action by device key
 
+	batterySuggestionPending   api.BatteryMode // last raw holdChargeMode() result
+	batterySuggestionSince     time.Time       // time batterySuggestionPending last changed
+	batterySuggestionConfirmed api.BatteryMode // debounced mode actually returned
+
 	optimizerMu      sync.Mutex // guards optimizer runs
 	optimizerUpdated time.Time  // last optimizer run, guarded by optimizerMu
 

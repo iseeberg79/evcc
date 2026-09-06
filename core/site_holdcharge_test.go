@@ -73,6 +73,75 @@ func TestHoldChargeMode(t *testing.T) {
 	}
 }
 
+// TestHoldChargeModeDebounce guards the fix for a degenerate solve near a very
+// short slot briefly suggesting the wrong mode (previously only caught by an
+// ad-hoc trace-logging patch, see evcc_slot0_findings.md): a single flip must
+// not surface, a change that persists past batterySuggestionDebounce must.
+func TestHoldChargeModeDebounce(t *testing.T) {
+	site := &Site{log: util.NewLogger("foo")}
+
+	setPlan := func(action string) {
+		site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: action}})
+	}
+
+	setPlan(api.BatteryHold.String())
+	require.Equal(t, api.BatteryHold, site.holdChargeMode(), "first suggestion is adopted immediately")
+
+	setPlan(api.BatteryNormal.String())
+	require.Equal(t, api.BatteryHold, site.holdChargeMode(), "single flip is filtered")
+
+	setPlan(api.BatteryHold.String())
+	require.Equal(t, api.BatteryHold, site.holdChargeMode(), "reverting before the debounce elapses leaves no trace")
+
+	setPlan(api.BatteryCharge.String())
+	require.Equal(t, api.BatteryHold, site.holdChargeMode(), "not yet debounced")
+
+	site.batterySuggestionSince = time.Now().Add(-batterySuggestionDebounce - time.Second)
+	require.Equal(t, api.BatteryCharge, site.holdChargeMode(), "adopted once it has held long enough")
+}
+
+// TestHoldChargeModeDebounceResetsWhenPlanUnavailable guards that leaving the
+// plan (optimizer stalled, or requiredBatteryMode takes a different branch)
+// does not let a stale debounce window delay the next real suggestion.
+func TestHoldChargeModeDebounceResetsWhenPlanUnavailable(t *testing.T) {
+	site := &Site{log: util.NewLogger("foo"), batteryMeters: []config.Device[api.Meter]{
+		config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, &struct{ api.Meter }{}),
+	}}
+
+	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryCharge.String()}})
+	require.Equal(t, api.BatteryCharge, site.requiredBatteryMode(false, api.Rate{}))
+	site.batteryMode = api.BatteryCharge // simulate updateBatteryMode having applied it
+
+	// plan gone (stalled optimizer): requiredBatteryMode releases the battery
+	// and must reset the debounce, not just leave it unfed
+	site.holdChargePlan = nil
+	require.Equal(t, api.BatteryNormal, site.requiredBatteryMode(false, api.Rate{}))
+	site.batteryMode = api.BatteryNormal
+
+	// a fresh, different suggestion is adopted immediately, not held to the
+	// debounce window left over from before the stall
+	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
+	require.Equal(t, api.BatteryHold, site.requiredBatteryMode(false, api.Rate{}))
+}
+
+// TestHoldChargeModeDebounceFiltersRealDegenerateSolve replays the exact
+// mode transition of a captured optimizer response (dt[0]=1s, right at a
+// 15min boundary): slotSuggestion on that slot alone does flip to normal
+// (charging_power=0.0068433, no grid flow), the very next slot's suggestion
+// was hold (matches what was actually observed live).
+func TestHoldChargeModeDebounceFiltersRealDegenerateSolve(t *testing.T) {
+	site := &Site{log: util.NewLogger("foo")}
+
+	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
+	require.Equal(t, api.BatteryHold, site.holdChargeMode())
+
+	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryNormal.String()}})
+	require.Equal(t, api.BatteryHold, site.holdChargeMode(), "the one-off normal must not surface")
+
+	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
+	require.Equal(t, api.BatteryHold, site.holdChargeMode())
+}
+
 // TestHoldChargeYieldsToSmartChargeSession guards that Hold wins over the fork's
 // HoldCharge for the whole duration of a smart-cost/fast charge session, even when the
 // loadpoint status briefly drops from C to B (PWM pause, phase switch, handshake retry).
