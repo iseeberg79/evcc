@@ -162,60 +162,18 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive bool, rate api.Rat
 	return res
 }
 
-// holdChargeStale bounds how long a stored plan is trusted, regardless of whether its
-// slots still cover "now" - the plan's inputs (SoC, PV, prices) age independently of
-// slot coverage.
-const holdChargeStale = 30 * time.Minute
-
-// holdChargePlan is an immutable per-slot snapshot of each home battery's planned
-// action, keyed by battery name. slotSuggestion only depends on plan data, never on
-// live measurements, so the full horizon is computed once per run instead of being
-// re-derived from a single frozen "slot 0" on every site cycle - which drifted behind
-// the wall clock the longer the cached plan was reused (see FORK_CHANGES_evcc.md).
-// The producer (optimizerUpdate) swaps the pointer under site.Lock; consumers read it
-// once under RLock, so a run landing mid-cycle can never mix mode and charge value
-// from two different plans.
-type holdChargePlan struct {
-	updated time.Time
-	starts  []time.Time
-	ends    []time.Time
-	slots   []map[string]types.Suggestion
-}
-
-// singleSlotHoldChargePlan wraps a one-off suggestion in the same plan shape the
-// optimizer produces - useful for tests and any other single-cycle plan producer that
-// doesn't solve a multi-slot horizon.
-func singleSlotHoldChargePlan(now time.Time, suggestions map[string]types.Suggestion) *holdChargePlan {
-	return &holdChargePlan{
-		updated: now,
-		starts:  []time.Time{now},
-		ends:    []time.Time{now.Add(holdChargeStale)},
-		slots:   []map[string]types.Suggestion{suggestions},
-	}
-}
-
-// suggestions returns the plan's slot covering now, or nil if none does.
-// suggestions returns the plan's slot covering now, or nil if the plan is stale or no
-// slot covers now. The single staleness check here is what holdChargePlanAvailable,
-// holdChargeMode, and holdChargeSuggestion all resolve against - keeping "is this plan
-// still trusted" in one place instead of each caller re-deriving it.
-func (p *holdChargePlan) suggestions(now time.Time) map[string]types.Suggestion {
-	if p == nil || now.Sub(p.updated) >= holdChargeStale {
-		return nil
-	}
-	for i, start := range p.starts {
-		if !now.Before(start) && now.Before(p.ends[i]) {
-			return p.slots[i]
+// holdChargePlanAvailable reports whether a recent, current-slot suggestion exists
+// for any home battery - see site.suggestion for the staleness/slot-coverage check.
+func (site *Site) holdChargePlanAvailable() bool {
+	for _, dev := range site.batteryMeters {
+		if dev == nil {
+			continue
+		}
+		if site.suggestion(batteryKey(dev.Config().Name), site.GetBatteryMode().String()) != nil {
+			return true
 		}
 	}
-	return nil
-}
-
-// holdChargePlanAvailable reports whether a recent plan exists with a slot for now
-func (site *Site) holdChargePlanAvailable() bool {
-	site.RLock()
-	defer site.RUnlock()
-	return len(site.holdChargePlan.suggestions(time.Now())) > 0
+	return false
 }
 
 // holdChargeDisabled reports whether the holdcharge advisory action is temporarily switched
@@ -236,12 +194,24 @@ func (site *Site) holdChargeDisabled() bool {
 // caught only by an ad-hoc trace-logging patch before this - see evcc_slot0_findings.md.
 func (site *Site) holdChargeMode() api.BatteryMode {
 	site.RLock()
+	disabled := site.holdChargeDisabled()
+	site.RUnlock()
+
 	mode := api.BatteryNormal
 loop:
-	for _, s := range site.holdChargePlan.suggestions(time.Now()) {
+	for _, dev := range site.batteryMeters {
+		if dev == nil {
+			continue
+		}
+
+		s := site.suggestion(batteryKey(dev.Config().Name), site.GetBatteryMode().String())
+		if s == nil {
+			continue
+		}
+
 		switch s.Action {
 		case api.BatteryHoldCharge.String():
-			if site.holdChargeDisabled() {
+			if disabled {
 				// testing only: holdcharge suppressed, treat as no advisory action
 				continue
 			}
@@ -257,7 +227,6 @@ loop:
 			}
 		}
 	}
-	site.RUnlock()
 
 	return site.debounceBatterySuggestion(mode)
 }
@@ -344,9 +313,10 @@ func (site *Site) batteryMaxSocReached(dev config.Device[api.Meter]) (bool, erro
 // holdChargeSuggestion returns the current-slot plan for the given home battery,
 // or the zero value if none is available
 func (site *Site) holdChargeSuggestion(name string) types.Suggestion {
-	site.RLock()
-	defer site.RUnlock()
-	return site.holdChargePlan.suggestions(time.Now())[name]
+	if s := site.suggestion(batteryKey(name), site.GetBatteryMode().String()); s != nil {
+		return *s
+	}
+	return types.Suggestion{}
 }
 
 // applyBatteryMode applies the mode to each battery

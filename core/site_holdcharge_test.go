@@ -46,9 +46,9 @@ func TestAllBatteriesHaveChargeCap(t *testing.T) {
 // disable the automation for every battery template that doesn't implement them.
 func TestRequiredBatteryModeIndependentOfCapability(t *testing.T) {
 	site := &Site{
-		batteryMeters:  []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{}, &struct{ api.Meter }{})},
-		holdChargePlan: singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryHoldCharge.String()}}),
+		batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, &struct{ api.Meter }{})},
 	}
+	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHoldCharge.String()}})
 
 	got := site.requiredBatteryMode(false, api.Rate{})
 	require.Equal(t, api.BatteryHoldCharge.String(), got.String())
@@ -68,7 +68,12 @@ func TestHoldChargeMode(t *testing.T) {
 		{"holdcharge wins over charge", map[string]types.Suggestion{"a": {Action: api.BatteryCharge.String()}, "b": {Action: api.BatteryHoldCharge.String()}}, api.BatteryHoldCharge},
 		{"hold wins over charge", map[string]types.Suggestion{"a": {Action: api.BatteryCharge.String()}, "b": {Action: api.BatteryHold.String()}}, api.BatteryHold},
 	} {
-		site := &Site{holdChargePlan: singleSlotHoldChargePlan(time.Now(), tc.suggestions)}
+		devs := make([]config.Device[api.Meter], 0, len(tc.suggestions))
+		for name := range tc.suggestions {
+			devs = append(devs, config.NewStaticDevice[api.Meter](config.Named{Name: name}, &struct{ api.Meter }{}))
+		}
+		site := &Site{batteryMeters: devs}
+		setBatterySuggestions(site, tc.suggestions)
 		require.Equal(t, tc.want, site.holdChargeMode(), tc.name)
 	}
 }
@@ -78,10 +83,13 @@ func TestHoldChargeMode(t *testing.T) {
 // ad-hoc trace-logging patch, see evcc_slot0_findings.md): a single flip must
 // not surface, a change that persists past batterySuggestionDebounce must.
 func TestHoldChargeModeDebounce(t *testing.T) {
-	site := &Site{log: util.NewLogger("foo")}
+	site := &Site{
+		log:           util.NewLogger("foo"),
+		batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, &struct{ api.Meter }{})},
+	}
 
 	setPlan := func(action string) {
-		site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: action}})
+		setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: action}})
 	}
 
 	setPlan(api.BatteryHold.String())
@@ -108,19 +116,19 @@ func TestHoldChargeModeDebounceResetsWhenPlanUnavailable(t *testing.T) {
 		config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, &struct{ api.Meter }{}),
 	}}
 
-	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryCharge.String()}})
+	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryCharge.String()}})
 	require.Equal(t, api.BatteryCharge, site.requiredBatteryMode(false, api.Rate{}))
 	site.batteryMode = api.BatteryCharge // simulate updateBatteryMode having applied it
 
 	// plan gone (stalled optimizer): requiredBatteryMode releases the battery
 	// and must reset the debounce, not just leave it unfed
-	site.holdChargePlan = nil
+	site.setSuggestions(nil)
 	require.Equal(t, api.BatteryNormal, site.requiredBatteryMode(false, api.Rate{}))
 	site.batteryMode = api.BatteryNormal
 
 	// a fresh, different suggestion is adopted immediately, not held to the
 	// debounce window left over from before the stall
-	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
+	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
 	require.Equal(t, api.BatteryHold, site.requiredBatteryMode(false, api.Rate{}))
 }
 
@@ -130,15 +138,18 @@ func TestHoldChargeModeDebounceResetsWhenPlanUnavailable(t *testing.T) {
 // (charging_power=0.0068433, no grid flow), the very next slot's suggestion
 // was hold (matches what was actually observed live).
 func TestHoldChargeModeDebounceFiltersRealDegenerateSolve(t *testing.T) {
-	site := &Site{log: util.NewLogger("foo")}
+	site := &Site{
+		log:           util.NewLogger("foo"),
+		batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, &struct{ api.Meter }{})},
+	}
 
-	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
+	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
 	require.Equal(t, api.BatteryHold, site.holdChargeMode())
 
-	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryNormal.String()}})
+	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryNormal.String()}})
 	require.Equal(t, api.BatteryHold, site.holdChargeMode(), "the one-off normal must not surface")
 
-	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
+	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
 	require.Equal(t, api.BatteryHold, site.holdChargeMode())
 }
 
@@ -177,11 +188,11 @@ func TestHoldChargeYieldsToSmartChargeSession(t *testing.T) {
 	} {
 		site := &Site{
 			log:                     util.NewLogger("site"),
-			batteryMeters:           []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{}, chargePowerLimiterMeter{})},
+			batteryMeters:           []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, chargePowerLimiterMeter{})},
 			batteryDischargeControl: true,
-			holdChargePlan:          singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Action: api.BatteryHoldCharge.String()}}),
 			loadpoints:              []*Loadpoint{newLoadpoint(tc.status, &limit)},
 		}
+		setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHoldCharge.String()}})
 		site.batteryMode = tc.batMode
 
 		got := site.requiredBatteryMode(false, tc.rate)
@@ -190,35 +201,26 @@ func TestHoldChargeYieldsToSmartChargeSession(t *testing.T) {
 }
 
 func TestHoldChargePlanAvailable(t *testing.T) {
-	site := &Site{}
+	site := &Site{batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, &struct{ api.Meter }{})}}
 	require.False(t, site.holdChargePlanAvailable(), "no plan")
 
-	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{"b": {Charge: 1000}})
+	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Charge: 1000}})
 	require.True(t, site.holdChargePlanAvailable(), "fresh plan")
 
-	site.holdChargePlan.updated = time.Now().Add(-2 * holdChargeStale)
+	site.suggestionsUpdated = time.Now().Add(-2 * suggestionMaxAge)
 	require.False(t, site.holdChargePlanAvailable(), "stale plan")
 }
 
-// TestHoldChargePlanSlotLookup guards the actual bug this design fixes: a multi-slot
-// plan retains a suggestion per slot, so looking it up by wall-clock time resolves to
-// the slot that actually covers "now" instead of the frozen slot 0 it was built with -
-// even though the plan itself (its "updated" timestamp) may be many minutes old.
-func TestHoldChargePlanSlotLookup(t *testing.T) {
+// TestActiveSlotLookup guards the actual bug this design fixes: a multi-slot plan
+// retains a boundary per slot, so looking it up by wall-clock time resolves to the
+// slot that actually covers "now" instead of the frozen slot 0 it was built with.
+func TestActiveSlotLookup(t *testing.T) {
 	base := time.Date(2026, 8, 1, 10, 42, 0, 0, time.UTC)
-	plan := &holdChargePlan{
-		updated: base,
-		starts:  []time.Time{base, base.Add(3 * time.Minute), base.Add(18 * time.Minute)},
-		ends:    []time.Time{base.Add(3 * time.Minute), base.Add(18 * time.Minute), base.Add(33 * time.Minute)},
-		slots: []map[string]types.Suggestion{
-			{"b": {Action: "normal"}},
-			{"b": {Action: "holdcharge"}},
-			{"b": {Action: "hold"}},
-		},
-	}
+	starts := []time.Time{base, base.Add(3 * time.Minute), base.Add(18 * time.Minute)}
+	ends := []time.Time{base.Add(3 * time.Minute), base.Add(18 * time.Minute), base.Add(33 * time.Minute)}
 
-	require.Equal(t, "normal", plan.suggestions(base)["b"].Action, "at run time: slot 0")
-	require.Equal(t, "holdcharge", plan.suggestions(base.Add(10 * time.Minute))["b"].Action, "10:52, within slot 1's window: slot 1, not the frozen slot 0")
-	require.Equal(t, "hold", plan.suggestions(base.Add(20 * time.Minute))["b"].Action, "11:02, within slot 2's window: slot 2")
-	require.Nil(t, plan.suggestions(base.Add(40*time.Minute)), "beyond the plan's horizon: no slot matches")
+	require.Equal(t, 0, activeSlot(starts, ends, base), "at run time: slot 0")
+	require.Equal(t, 1, activeSlot(starts, ends, base.Add(10*time.Minute)), "10:52, within slot 1's window: slot 1, not the frozen slot 0")
+	require.Equal(t, 2, activeSlot(starts, ends, base.Add(20*time.Minute)), "11:02, within slot 2's window: slot 2")
+	require.Equal(t, -1, activeSlot(starts, ends, base.Add(40*time.Minute)), "beyond the plan's horizon: no slot matches")
 }

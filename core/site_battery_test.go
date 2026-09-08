@@ -14,6 +14,17 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+// setBatterySuggestions installs suggestions for the slot covering now, keyed by
+// bare battery name (translated to batteryKey internally) - the shape a real
+// solve would apply.
+func setBatterySuggestions(site *Site, suggestions map[string]types.Suggestion) {
+	m := make(map[string]types.Suggestion, len(suggestions))
+	for name, s := range suggestions {
+		m[batteryKey(name)] = s
+	}
+	site.setSuggestions(m)
+}
+
 // TestBatterySocRetainOnReadError guards that a failed soc read keeps the last
 // known soc instead of reporting the pack as empty (discussion #26560).
 func TestBatterySocRetainOnReadError(t *testing.T) {
@@ -136,10 +147,10 @@ func TestUpdateBatteryChargeValues(t *testing.T) {
 		}
 
 		site := &Site{
-			log:            util.NewLogger("foo"),
-			batteryMeters:  []config.Device[api.Meter]{config.NewStaticDevice(config.Named{Name: "battery1"}, bat)},
-			holdChargePlan: singleSlotHoldChargePlan(time.Now(), suggestions),
+			log:           util.NewLogger("foo"),
+			batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice(config.Named{Name: "battery1"}, bat)},
 		}
+		setBatterySuggestions(site, suggestions)
 
 		site.updateBatteryChargeValues()
 		assert.Equal(t, tc.expectedCap, pushedCap, "charge power cap")

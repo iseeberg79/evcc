@@ -437,10 +437,6 @@ func (site *Site) diffSuggestions(pending map[string]pendingSuggestion) []messen
 type requestDetails struct {
 	Timestamps     []time.Time     `json:"timestamp"`
 	BatteryDetails []batteryDetail `json:"batteryDetails"`
-	// ChargingStrategy is the strategy actually sent to the optimizer, after
-	// optimizerRequest's downgrade-to-none - buildHoldChargePlan needs it to
-	// build slotFlags, since it doesn't otherwise see the request.
-	ChargingStrategy optimizer.OptimizerStrategyChargingStrategy `json:"chargingStrategy"`
 }
 
 // optimizerBattery pairs a battery request entry with its device detail
@@ -623,8 +619,7 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 	pa := lo.Min(req.TimeSeries.PN) * eta * 0.99
 
 	details = requestDetails{
-		Timestamps:       asTimestamps(dt, now),
-		ChargingStrategy: req.Strategy.ChargingStrategy,
+		Timestamps: asTimestamps(dt, now),
 	}
 
 	if site.circuit != nil {
@@ -763,27 +758,113 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 		return errors.New(string(status))
 	}
 
-	site.applyOptimizerResult(req, details, *resp.JSON200)
+	site.applyOptimizerResult(req, details, *resp.JSON200, time.Now())
 
 	return nil
 }
 
+// optimizerSolve holds a solve's inputs so the control cycle can reapply it to a
+// newer slot without a new network round-trip - see reapplySuggestions. starts/ends
+// are index-aligned with req/details/res (buildSlotBounds only trims a common
+// prefix), so slot index i means the same instant in all of them.
+type optimizerSolve struct {
+	req     optimizer.OptimizationInput
+	details requestDetails
+	res     optimizer.OptimizationResult
+	starts  []time.Time
+	ends    []time.Time
+	slot    int // the slot last applied from this solve
+}
+
+// buildSlotBounds pairs each slot's start (from timestamps) with its end
+// (start+dt), trimmed to the shorter of the two inputs.
+func buildSlotBounds(timestamps []time.Time, dt []int) (starts, ends []time.Time) {
+	n := min(len(timestamps), len(dt))
+	starts = timestamps[:n]
+	ends = make([]time.Time, n)
+	for i := range ends {
+		ends[i] = starts[i].Add(time.Duration(dt[i]) * time.Second)
+	}
+	return starts, ends
+}
+
+// activeSlot returns the index of the slot covering now, or -1 if none does.
+func activeSlot(starts, ends []time.Time, now time.Time) int {
+	for i, start := range starts {
+		if !now.Before(start) && now.Before(ends[i]) {
+			return i
+		}
+	}
+	return -1
+}
+
+// setLastOptimizerSolve remembers a solve's inputs for reapplySuggestions
+func (site *Site) setLastOptimizerSolve(solve *optimizerSolve) {
+	site.Lock()
+	defer site.Unlock()
+
+	site.lastOptimizerSolve = solve
+}
+
+// reapplySuggestions re-derives the last solve's suggestions for whichever slot
+// covers now, without a new network round-trip. optimizerUpdateAsync only
+// re-solves once per loadpoint-update-cycle (or immediately on demand), not
+// aligned to the slot grid - a solve completing partway into its slot leaves the
+// applied suggestions describing that slot for as long after it ends, until the
+// next solve. This closes that gap every control cycle in between, from data
+// already on hand.
+//
+// Guarded the same way as optimizerUpdateAsync: skipped while the optimizer is
+// disabled or unsponsored (that state is cleared by clearSuggestions, not
+// reapplied here), and TryLock'd against optimizerMu so this never applies a
+// stale cached solve over a fresher one a concurrent real solve just wrote.
+func (site *Site) reapplySuggestions(now time.Time) {
+	if !sponsor.IsAuthorized() || !optimizerEnabled() {
+		return
+	}
+
+	if !site.optimizerMu.TryLock() {
+		return
+	}
+	defer site.optimizerMu.Unlock()
+
+	site.RLock()
+	last := site.lastOptimizerSolve
+	site.RUnlock()
+
+	if last == nil {
+		return
+	}
+
+	if slot := activeSlot(last.starts, last.ends, now); slot != last.slot {
+		site.applyOptimizerResult(last.req, last.details, last.res, now)
+	}
+}
+
 // applyOptimizerResult maps the optimizer response onto suggestions, battery
-// forecast and notifications
-func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details requestDetails, res optimizer.OptimizationResult) {
-	slotHours := (time.Duration(req.TimeSeries.Dt[0]) * time.Second).Hours()
+// forecast and notifications, for whichever slot covers now
+func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details requestDetails, res optimizer.OptimizationResult, now time.Time) {
+	starts, ends := buildSlotBounds(details.Timestamps, req.TimeSeries.Dt)
+	slot := activeSlot(starts, ends, now)
+	if slot < 0 {
+		// wholly expired - a stalled optimizer is handled by suggestionMaxAge/
+		// clearSuggestions, not here
+		return
+	}
+
+	slotHours := (time.Duration(req.TimeSeries.Dt[slot]) * time.Second).Hours()
 	f := slotFlags{
 		attenuating:  attenuating(req.Strategy.ChargingStrategy),
 		canCapCharge: site.allBatteriesHaveChargeCap(),
 	}
-	f.gridImporting, f.gridExporting = gridFlags(&res, 0, slotHours)
+	f.gridImporting, f.gridExporting = gridFlags(&res, slot, slotHours)
 
 	var gridImport, gridExport float32
-	if len(res.GridImport) > 0 {
-		gridImport = res.GridImport[0]
+	if slot < len(res.GridImport) {
+		gridImport = res.GridImport[slot]
 	}
-	if len(res.GridExport) > 0 {
-		gridExport = res.GridExport[0]
+	if slot < len(res.GridExport) {
+		gridExport = res.GridExport[slot]
 	}
 
 	var batteries []batteryResult
@@ -800,9 +881,9 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 		batRes := res.Batteries[i]
 		detail := details.BatteryDetails[i]
 
-		suggestion := slotSuggestion(detail, batRes, 0, f, slotHours, gridImport, gridExport)
-		remainingSurplusWh := remainingForecastToday(req.TimeSeries.Ft, details.Timestamps, 0) - remainingForecastToday(req.TimeSeries.Gt, details.Timestamps, 0)
-		suggestion = downgradeUnworthwhileHoldCharge(suggestion, detail, batRes, 0, remainingSurplusWh)
+		suggestion := slotSuggestion(detail, batRes, slot, f, slotHours, gridImport, gridExport)
+		remainingSurplusWh := remainingForecastToday(req.TimeSeries.Ft, details.Timestamps, slot) - remainingForecastToday(req.TimeSeries.Gt, details.Timestamps, slot)
+		suggestion = downgradeUnworthwhileHoldCharge(suggestion, detail, batRes, slot, remainingSurplusWh)
 
 		batteries = append(batteries, batteryResult{
 			batteryDetail: detail,
@@ -827,11 +908,6 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 
 	site.publish("evopt-batteries", batteries)
 
-	site.Lock()
-	site.holdChargePlan = buildHoldChargePlan(details, &res, req.TimeSeries.Dt, f.canCapCharge)
-	downgradeUnworthwhileHoldChargesInPlan(site.holdChargePlan, &res, details, req.TimeSeries.Ft, req.TimeSeries.Gt)
-	site.Unlock()
-
 	site.setSuggestions(suggestions)
 	site.setBatteryForecast(site.addBatteryForecastTotals(req.Batteries, res.Batteries))
 
@@ -844,6 +920,8 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 	for _, ev := range site.diffSuggestions(site.pendingSuggestions(details.BatteryDetails)) {
 		site.pushEvent(ev)
 	}
+
+	site.setLastOptimizerSolve(&optimizerSolve{req: req, details: details, res: res, starts: starts, ends: ends, slot: slot})
 }
 
 // attenuating reports whether s is one of the strategies that deliberately
@@ -924,95 +1002,14 @@ func downgradeUnworthwhileHoldCharge(s types.Suggestion, detail batteryDetail, r
 	return s
 }
 
-// downgradeUnworthwhileHoldChargesInPlan walks plan's precomputed per-slot suggestions and
-// downgrades any HoldCharge whose reservation is no longer worthwhile - see
-// downgradeUnworthwhileHoldCharge. plan.starts is index-aligned with details.Timestamps/ft/gt
-// (buildHoldChargePlan only trims a common prefix), so slot index i means the same instant in
-// all of them. A post-processing pass instead of threading remaining-forecast data through
-// buildHoldChargePlan/slotSuggestion/slotFlags's signatures.
-func downgradeUnworthwhileHoldChargesInPlan(plan *holdChargePlan, res *optimizer.OptimizationResult, details requestDetails, ft, gt []float32) {
-	for i, slot := range plan.slots {
-		remainingSurplusWh := remainingForecastToday(ft, details.Timestamps, i) - remainingForecastToday(gt, details.Timestamps, i)
-		for name, s := range slot {
-			bi := slices.IndexFunc(details.BatteryDetails, func(d batteryDetail) bool { return d.Name == name })
-			if bi < 0 || bi >= len(res.Batteries) {
-				continue
-			}
-			slot[name] = downgradeUnworthwhileHoldCharge(s, details.BatteryDetails[bi], res.Batteries[bi], i, remainingSurplusWh)
-		}
-	}
-}
-
 // gridFlags derives slot i's import/export state from the optimizer's
 // site-level flow, at the same power threshold as charge/discharge so a
 // trickle (numerical residual) does not count as importing or exporting for
-// mode selection. Shared by applyOptimizerResult and buildHoldChargePlan so
-// the two can't drift into different thresholds for the same fact.
+// mode selection.
 func gridFlags(res *optimizer.OptimizationResult, i int, slotHours float64) (importing, exporting bool) {
 	importing = i < len(res.GridImport) && float64(res.GridImport[i])/slotHours > suggestionThreshold
 	exporting = i < len(res.GridExport) && float64(res.GridExport[i])/slotHours > suggestionThreshold
 	return
-}
-
-// buildHoldChargePlan precomputes each home battery's suggestion for every planning
-// slot, so holdChargeMode/updateBatteryChargeValues can look up whichever slot covers
-// "now" instead of always trusting slot 0 of a cached response that ages between
-// optimizer runs (see holdChargePlan in site_battery.go).
-func buildHoldChargePlan(details requestDetails, res *optimizer.OptimizationResult, dt []int, canCapCharge bool) *holdChargePlan {
-	now := time.Now()
-	attenuate := attenuating(details.ChargingStrategy)
-
-	// holdChargePlanAvailable() discards the whole plan once it's older than
-	// holdChargeStale, so slots starting beyond that horizon are never looked up -
-	// skip computing and storing them. With a 15-min slot duration and a 30-min
-	// stale window, this trims down to a handful of slots instead of the full
-	// (up to multi-day) optimizer horizon.
-	n := len(dt)
-	cutoff := now.Add(holdChargeStale)
-	for i, s := range details.Timestamps {
-		if !s.Before(cutoff) {
-			n = i
-			break
-		}
-	}
-
-	starts := details.Timestamps[:n]
-	dt = dt[:n]
-	ends := make([]time.Time, n)
-	slots := make([]map[string]types.Suggestion, n)
-
-	for i := range dt {
-		slotHours := float64(dt[i]) / 3600
-		ends[i] = starts[i].Add(time.Duration(dt[i]) * time.Second)
-		if slotHours <= 0 {
-			continue
-		}
-
-		f := slotFlags{attenuating: attenuate, canCapCharge: canCapCharge}
-		f.gridImporting, f.gridExporting = gridFlags(res, i, slotHours)
-
-		var gridImport, gridExport float32
-		if i < len(res.GridImport) {
-			gridImport = res.GridImport[i]
-		}
-		if i < len(res.GridExport) {
-			gridExport = res.GridExport[i]
-		}
-
-		slot := make(map[string]types.Suggestion)
-		for bi, detail := range details.BatteryDetails {
-			// uncontrollable batteries can't act on a suggestion
-			if detail.Type != batteryTypeBattery || !detail.controllable || bi >= len(res.Batteries) {
-				continue
-			}
-			if s := slotSuggestion(detail, res.Batteries[bi], i, f, slotHours, gridImport, gridExport); s.Action != "" {
-				slot[detail.Name] = s
-			}
-		}
-		slots[i] = slot
-	}
-
-	return &holdChargePlan{updated: now, starts: starts, ends: ends, slots: slots}
 }
 
 func (site *Site) addBatteryForecastTotals(req []optimizer.BatteryConfig, resp []optimizer.BatteryResult) *types.BatteryForecast {

@@ -82,13 +82,12 @@ type Site struct {
 	curtailPercent *int
 
 	// battery settings
-	prioritySoc             float64         // prefer battery up to this Soc
-	bufferSoc               float64         // continue charging on battery above this Soc
-	bufferStartSoc          float64         // start charging on battery above this Soc
-	batteryDischargeControl bool            // prevent battery discharge for fast and planned charging
-	holdChargePlan          *holdChargePlan // per-slot plan (optimizer) per home battery name
-	batteryGridChargeLimit  *float64        // grid charging limit
-	batteryGridDischarge    bool            // allow battery discharge to grid (experimental)
+	prioritySoc             float64  // prefer battery up to this Soc
+	bufferSoc               float64  // continue charging on battery above this Soc
+	bufferStartSoc          float64  // start charging on battery above this Soc
+	batteryDischargeControl bool     // prevent battery discharge for fast and planned charging
+	batteryGridChargeLimit  *float64 // grid charging limit
+	batteryGridDischarge    bool     // allow battery discharge to grid (experimental)
 
 	// testing only: not part of the PR, lets the low-SOC reserve-comfort price (see
 	// socDepletionCostLowDefault) be toggled live while it's under evaluation. Not persisted -
@@ -137,6 +136,7 @@ type Site struct {
 	suggestions              map[string]types.Suggestion // Optimizer suggestions by device key
 	suggestionsUpdated       time.Time                   // time the suggestions were applied
 	suggestionActions        map[string]string           // last notified actionable optimizer action by device key
+	lastOptimizerSolve       *optimizerSolve             // last successful solve, reapplied to newer slots by the control cycle
 
 	batterySuggestionPending   api.BatteryMode // last raw holdChargeMode() result
 	batterySuggestionSince     time.Time       // time batterySuggestionPending last changed
@@ -1285,6 +1285,9 @@ func (site *Site) update(lp updater) {
 
 	// smart grid charging
 	rate := site.currentRate(consumption)
+
+	// close the gap between solves before battery mode / loadpoint gates read suggestions
+	site.reapplySuggestions(time.Now())
 
 	// update battery after reading meters to ensure that (modbus) connection is open
 	batteryGridChargeActive := site.batteryGridChargeActive(rate)

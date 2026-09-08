@@ -252,10 +252,10 @@ func TestBatteryModeAutomatic(t *testing.T) {
 		batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice(config.Named{Name: "bat"}, bat)},
 	}
 
-	// optimizer decides to grid charge, driven by our holdChargePlan/holdChargeMode
+	// optimizer decides to grid charge, driven by our suggestions/holdChargeMode
 	// (replaces the PR's own suggestions-map/batterySuggestionMode path, see
 	// site_battery.go requiredBatteryMode)
-	site.holdChargePlan = singleSlotHoldChargePlan(time.Now(), map[string]types.Suggestion{
+	setBatterySuggestions(site, map[string]types.Suggestion{
 		"bat": {Action: api.BatteryCharge.String()},
 	})
 
@@ -264,7 +264,7 @@ func TestBatteryModeAutomatic(t *testing.T) {
 	assert.Equal(t, api.BatteryCharge, site.GetBatteryMode())
 
 	// a stale/missing plan releases the battery
-	site.holdChargePlan = nil
+	site.setSuggestions(nil)
 
 	batCon.EXPECT().SetBatteryMode(api.BatteryNormal)
 	site.updateBatteryMode(false, api.Rate{})
