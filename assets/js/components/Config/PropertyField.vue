@@ -87,7 +87,7 @@
 		:valueLabel="zonesValueLabel"
 	/>
 	<div v-else class="d-flex" :class="sizeClass">
-		<div class="position-relative flex-grow-1">
+		<div class="position-relative flex-grow-1 shrinkable">
 			<input
 				:id="id"
 				:value="value"
@@ -347,8 +347,7 @@ export default {
 			if (this.chargeModes) {
 				return [
 					{ key: "off", name: this.$t("main.mode.off") },
-					{ key: "pv", name: this.$t("main.mode.pv") },
-					{ key: "minpv", name: this.$t("main.mode.minpv") },
+					{ key: "smart", name: this.$t("main.mode.smart") },
 					{ key: "now", name: this.$t("main.mode.now") },
 				];
 			}
@@ -470,6 +469,9 @@ export default {
 </script>
 
 <style scoped>
+.shrinkable {
+	min-width: 0;
+}
 .w-min-100 {
 	min-width: min(100px, 100%);
 }

@@ -7,7 +7,7 @@ import (
 	"github.com/evcc-io/evcc/api/globalconfig"
 	"github.com/evcc-io/evcc/core"
 	"github.com/evcc-io/evcc/core/keys"
-	"github.com/evcc-io/evcc/server/db/settings"
+	"github.com/evcc-io/evcc/db/settings"
 	"github.com/evcc-io/evcc/util/sponsor"
 )
 
@@ -15,6 +15,11 @@ func setOptimizer(pub publisher) func(bool) error {
 	return func(b bool) error {
 		settings.SetBool(keys.Optimizer, b)
 		pub(keys.Optimizer, b)
+		if !b {
+			// automatic mode cannot outlive the optimizer
+			settings.SetBool(keys.OptimizerAutomatic, false)
+			pub(keys.OptimizerAutomatic, false)
+		}
 		return nil
 	}
 }

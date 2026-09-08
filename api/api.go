@@ -97,6 +97,7 @@ type CurrentGetter interface {
 
 // BatteryController optionally allows to control home battery (dis)charging behavior
 type BatteryController interface {
+	BatteryModes() []BatteryMode
 	SetBatteryMode(BatteryMode) error
 }
 
