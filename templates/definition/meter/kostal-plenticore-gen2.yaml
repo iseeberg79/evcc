@@ -179,9 +179,6 @@ render: |
               address: 1034 # Battery charge power (DC) setpoint, absolute [W];
               type: writemultiple
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
-      default:
-        source: error
-        error: ErrNotAvailable
   maxchargepowerlimit: # site push target (BatteryChargePowerLimiter); consumed by batterymode case 4
     source: memory
     name: maxchargepowerlimit
