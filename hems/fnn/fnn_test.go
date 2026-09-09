@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/evcc-io/evcc/core/site"
-	"github.com/evcc-io/evcc/db"
+	"github.com/evcc-io/evcc/server/db"
 	"github.com/evcc-io/evcc/hems/hems"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

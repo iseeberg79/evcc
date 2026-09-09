@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/evcc-io/evcc/db"
+	"github.com/evcc-io/evcc/server/db"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

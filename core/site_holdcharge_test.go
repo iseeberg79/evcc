@@ -50,7 +50,7 @@ func TestRequiredBatteryModeIndependentOfCapability(t *testing.T) {
 	}
 	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHoldCharge.String()}})
 
-	got := site.requiredBatteryMode(false, api.Rate{})
+	got := site.requiredBatteryMode(false, false, api.Rate{})
 	require.Equal(t, api.BatteryHoldCharge.String(), got.String())
 }
 
@@ -117,19 +117,19 @@ func TestHoldChargeModeDebounceResetsWhenPlanUnavailable(t *testing.T) {
 	}}
 
 	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryCharge.String()}})
-	require.Equal(t, api.BatteryCharge, site.requiredBatteryMode(false, api.Rate{}))
+	require.Equal(t, api.BatteryCharge, site.requiredBatteryMode(false, false, api.Rate{}))
 	site.batteryMode = api.BatteryCharge // simulate updateBatteryMode having applied it
 
 	// plan gone (stalled optimizer): requiredBatteryMode releases the battery
 	// and must reset the debounce, not just leave it unfed
 	site.setSuggestions(nil)
-	require.Equal(t, api.BatteryNormal, site.requiredBatteryMode(false, api.Rate{}))
+	require.Equal(t, api.BatteryNormal, site.requiredBatteryMode(false, false, api.Rate{}))
 	site.batteryMode = api.BatteryNormal
 
 	// a fresh, different suggestion is adopted immediately, not held to the
 	// debounce window left over from before the stall
 	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
-	require.Equal(t, api.BatteryHold, site.requiredBatteryMode(false, api.Rate{}))
+	require.Equal(t, api.BatteryHold, site.requiredBatteryMode(false, false, api.Rate{}))
 }
 
 // TestHoldChargeModeDebounceFiltersRealDegenerateSolve replays the exact
@@ -195,7 +195,7 @@ func TestHoldChargeYieldsToSmartChargeSession(t *testing.T) {
 		setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHoldCharge.String()}})
 		site.batteryMode = tc.batMode
 
-		got := site.requiredBatteryMode(false, tc.rate)
+		got := site.requiredBatteryMode(false, false, tc.rate)
 		require.Equal(t, tc.want.String(), got.String(), tc.name)
 	}
 }
@@ -211,16 +211,7 @@ func TestHoldChargePlanAvailable(t *testing.T) {
 	require.False(t, site.holdChargePlanAvailable(), "stale plan")
 }
 
-// TestActiveSlotLookup guards the actual bug this design fixes: a multi-slot plan
-// retains a boundary per slot, so looking it up by wall-clock time resolves to the
-// slot that actually covers "now" instead of the frozen slot 0 it was built with.
-func TestActiveSlotLookup(t *testing.T) {
-	base := time.Date(2026, 8, 1, 10, 42, 0, 0, time.UTC)
-	starts := []time.Time{base, base.Add(3 * time.Minute), base.Add(18 * time.Minute)}
-	ends := []time.Time{base.Add(3 * time.Minute), base.Add(18 * time.Minute), base.Add(33 * time.Minute)}
-
-	require.Equal(t, 0, activeSlot(starts, ends, base), "at run time: slot 0")
-	require.Equal(t, 1, activeSlot(starts, ends, base.Add(10*time.Minute)), "10:52, within slot 1's window: slot 1, not the frozen slot 0")
-	require.Equal(t, 2, activeSlot(starts, ends, base.Add(20*time.Minute)), "11:02, within slot 2's window: slot 2")
-	require.Equal(t, -1, activeSlot(starts, ends, base.Add(40*time.Minute)), "beyond the plan's horizon: no slot matches")
-}
+// the slot-boundary lookup itself is covered by TestOptimizerSchedule
+// (core/optimizer_schedule_test.go) - optimizerSchedule.activeSlot is the
+// production mechanism now, this file only exercises the site/battery layer
+// built on top of it.

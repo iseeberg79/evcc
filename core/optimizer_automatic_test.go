@@ -10,7 +10,7 @@ import (
 	"github.com/evcc-io/evcc/core/keys"
 	coresettings "github.com/evcc-io/evcc/core/settings"
 	"github.com/evcc-io/evcc/core/types"
-	"github.com/evcc-io/evcc/db/settings"
+	"github.com/evcc-io/evcc/server/db/settings"
 	"github.com/evcc-io/evcc/util"
 	"github.com/evcc-io/evcc/util/config"
 	"github.com/evcc-io/evcc/util/sponsor"

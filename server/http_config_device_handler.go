@@ -19,7 +19,7 @@ import (
 	"github.com/evcc-io/evcc/core/keys"
 	"github.com/evcc-io/evcc/core/site"
 	"github.com/evcc-io/evcc/curtailer"
-	"github.com/evcc-io/evcc/db/settings"
+	"github.com/evcc-io/evcc/server/db/settings"
 	"github.com/evcc-io/evcc/hems"
 	hemsapi "github.com/evcc-io/evcc/hems/hems"
 	"github.com/evcc-io/evcc/messenger"

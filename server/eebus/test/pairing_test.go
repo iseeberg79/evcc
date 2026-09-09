@@ -12,7 +12,7 @@ import (
 	"github.com/enbility/eebus-go/usecases/eg/lpc"
 	shipapi "github.com/enbility/ship-go/api"
 	"github.com/enbility/ship-go/cert"
-	"github.com/evcc-io/evcc/db/settings"
+	"github.com/evcc-io/evcc/server/db/settings"
 	hems "github.com/evcc-io/evcc/hems/eebus"
 	server "github.com/evcc-io/evcc/server/eebus"
 	"github.com/evcc-io/evcc/util/test"

@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/evcc-io/evcc/db"
+	"github.com/evcc-io/evcc/server/db"
 )
 
 // EntityInfo describes a metric entity and the extent of its stored data.
