@@ -388,6 +388,7 @@ func (site *Site) clearSuggestions() {
 
 	site.Lock()
 	site.suggestionActions = nil
+	site.lastOptimizerSolve = nil
 	site.Unlock()
 }
 
@@ -780,7 +781,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 		return errors.New("optimizer result expired")
 	}
 
-	site.applyOptimizerResult(req, details, *resp.JSON200, schedule, now)
+	site.applyOptimizerResult(req, details, *resp.JSON200, schedule, now, now)
 
 	return nil
 }
@@ -788,11 +789,12 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 // optimizerSolve holds a solve's inputs so the control cycle can reapply it to a
 // newer slot without a new network round-trip - see reapplySuggestions.
 type optimizerSolve struct {
-	req      optimizer.OptimizationInput
-	details  requestDetails
-	res      optimizer.OptimizationResult
-	schedule optimizerSchedule
-	slot     int // the slot last applied from this solve
+	req       optimizer.OptimizationInput
+	details   requestDetails
+	res       optimizer.OptimizationResult
+	schedule  optimizerSchedule
+	slot      int       // the slot last applied from this solve
+	completed time.Time // when this solve completed, not when a slot was last (re)applied from it
 }
 
 // setLastOptimizerSolve remembers a solve's inputs for reapplySuggestions
@@ -817,6 +819,8 @@ func (site *Site) setLastOptimizerSolve(solve *optimizerSolve) {
 // stale cached solve over a fresher one a concurrent real solve just wrote.
 func (site *Site) reapplySuggestions(now time.Time) {
 	if !sponsor.IsAuthorized() || !optimizerEnabled() {
+		// don't resurrect the pre-disable solve on re-enable
+		site.setLastOptimizerSolve(nil)
 		return
 	}
 
@@ -833,14 +837,45 @@ func (site *Site) reapplySuggestions(now time.Time) {
 		return
 	}
 
-	if slot := last.schedule.activeSlot(now); slot != last.slot {
-		site.applyOptimizerResult(last.req, last.details, last.res, last.schedule, now)
+	slot := last.schedule.activeSlot(now)
+	if slot == last.slot {
+		return
 	}
+
+	// horizon passed, or the solve is older than two slots: don't march a
+	// dead plan forward. last.completed, not site.optimizerUpdated - that
+	// gate gets zeroed on every forced call and stays zero on
+	// errOptimizerNotReady, which would make a genuinely fresh solve look
+	// decades stale. Without this, a stalled optimizer would keep
+	// refreshing site.suggestionsUpdated on every slot boundary (via
+	// applyOptimizerResult -> setSuggestions) forever, defeating
+	// suggestionMaxAge - the read side would never see the data as stale.
+	if slot < 0 || now.Sub(last.completed) > suggestionMaxAge {
+		site.clearSuggestions()
+		return
+	}
+
+	// a loadpoint that disconnected since the solve is excluded from a fresh
+	// request (optimizerRequest); reapplying would advise an empty charger.
+	// Discarding the whole cache is deliberate: evVehicleDisconnectHandler
+	// already forces an immediate fresh solve, this only bridges the gap
+	// until it lands.
+	for _, d := range last.details.BatteryDetails {
+		if d.loadpoint == nil {
+			continue
+		}
+		if lp := site.loadpoints[*d.loadpoint]; lp == nil || (lp.GetStatus() != api.StatusB && lp.GetStatus() != api.StatusC) {
+			site.setLastOptimizerSolve(nil)
+			return
+		}
+	}
+
+	site.applyOptimizerResult(last.req, last.details, last.res, last.schedule, now, last.completed)
 }
 
 // applyOptimizerResult maps the optimizer response onto suggestions, battery
 // forecast and notifications, for whichever slot covers now
-func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details requestDetails, res optimizer.OptimizationResult, schedule optimizerSchedule, now time.Time) {
+func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details requestDetails, res optimizer.OptimizationResult, schedule optimizerSchedule, now time.Time, completed time.Time) {
 	slot := schedule.activeSlot(now)
 	slotHours := schedule.duration(slot).Hours()
 	f := slotFlags{
@@ -911,7 +946,7 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 		site.pushEvent(ev)
 	}
 
-	site.setLastOptimizerSolve(&optimizerSolve{req: req, details: details, res: res, schedule: schedule, slot: slot})
+	site.setLastOptimizerSolve(&optimizerSolve{req: req, details: details, res: res, schedule: schedule, slot: slot, completed: completed})
 }
 
 // attenuating reports whether s is one of the strategies that deliberately
