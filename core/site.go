@@ -26,10 +26,10 @@ import (
 	"github.com/evcc-io/evcc/core/soc"
 	"github.com/evcc-io/evcc/core/types"
 	"github.com/evcc-io/evcc/core/vehicle"
-	"github.com/evcc-io/evcc/server/db"
-	"github.com/evcc-io/evcc/server/db/settings"
 	"github.com/evcc-io/evcc/hems/hems"
 	"github.com/evcc-io/evcc/messenger"
+	"github.com/evcc-io/evcc/server/db"
+	"github.com/evcc-io/evcc/server/db/settings"
 	"github.com/evcc-io/evcc/tariff"
 	"github.com/evcc-io/evcc/util"
 	"github.com/evcc-io/evcc/util/config"
@@ -97,12 +97,6 @@ type Site struct {
 	// forgotten on restart, defaults to on (see NewSite) so the battery isn't left sitting
 	// on the low floor with no buffer on a bad-forecast day; can be switched off temporarily.
 	socDepletionCostLowEnabled bool
-
-	// experimental, not part of the PR: requests the optimizer's charge-activation penalty
-	// (BatteryConfig.CContinuous) for every loadpoint, so it prefers fewer, longer charging runs
-	// over short bursts up to c_max. Only effective together with a minimum charge power
-	// (c_min > 0). Defaults to off, persisted once set (see keys.ChargeContinuousEnabled).
-	cContinuousEnabled bool
 
 	// testing only: lets holdcharge be switched off temporarily while other optimizer
 	// behavior is under test, without touching the strategy/config. Not persisted - forgotten
@@ -515,11 +509,6 @@ func (site *Site) restoreSettings() error {
 	}
 	if v, err := settings.Bool(keys.BatteryGridDischarge); err == nil {
 		if err := site.SetBatteryGridDischarge(v); err != nil && !errors.Is(err, ErrBatteryControlNotAvailable) {
-			return err
-		}
-	}
-	if v, err := settings.Bool(keys.ChargeContinuousEnabled); err == nil {
-		if err := site.SetCContinuousEnabled(v); err != nil {
 			return err
 		}
 	}
@@ -1462,7 +1451,6 @@ func (site *Site) prepare() {
 	site.publish(keys.BatteryDischargeControl, site.batteryDischargeControl)
 	site.publish(keys.BatteryGridDischarge, site.batteryGridDischarge)
 	site.publish(keys.SocDepletionCostLowEnabled, site.socDepletionCostLowEnabled)
-	site.publish(keys.ChargeContinuousEnabled, site.cContinuousEnabled)
 	site.publish(keys.HoldChargeDisabled, site.holdChargeDisabled())
 	site.publish(keys.SolarAdjusted, site.solarAdjusted)
 	site.publish(keys.ResidualPower, site.GetResidualPower())

@@ -286,8 +286,6 @@ export interface State {
   socDepletionCostLowEnabled?: boolean;
   /** Holdcharge advisory action is temporarily switched off, until midnight (testing only). */
   holdChargeDisabled?: boolean;
-  /** Optimizer's charge-activation penalty (c_continuous) is requested for every loadpoint (testing only). */
-  cContinuousEnabled?: boolean;
   /** Solar forecast is adjusted to real production data (experimental). */
   solarAdjusted?: boolean;
   /** Price or emission limit for charging the home battery from grid. */

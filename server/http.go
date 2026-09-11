@@ -182,14 +182,12 @@ func (s *HTTPd) RegisterSiteHandlers(site site.API) {
 	}
 
 	routes := map[string]route{
-		"buffersoc":                       {"POST", "/buffersoc/{value:[0-9.]+}", floatHandler(site.SetBufferSoc, site.GetBufferSoc)},
-		"bufferstartsoc":                  {"POST", "/bufferstartsoc/{value:[0-9.]+}", floatHandler(site.SetBufferStartSoc, site.GetBufferStartSoc)},
-		"batterydischargecontrol":         {"POST", "/batterydischargecontrol/{value:[01truefalse]+}", boolHandler(site.SetBatteryDischargeControl, site.GetBatteryDischargeControl)},
-		"batterygriddischarge":            {"POST", "/batterygriddischarge/{value:[01truefalse]+}", boolHandler(site.SetBatteryGridDischarge, site.GetBatteryGridDischarge)},
+		"buffersoc":               {"POST", "/buffersoc/{value:[0-9.]+}", floatHandler(site.SetBufferSoc, site.GetBufferSoc)},
+		"bufferstartsoc":          {"POST", "/bufferstartsoc/{value:[0-9.]+}", floatHandler(site.SetBufferStartSoc, site.GetBufferStartSoc)},
+		"batterydischargecontrol": {"POST", "/batterydischargecontrol/{value:[01truefalse]+}", boolHandler(site.SetBatteryDischargeControl, site.GetBatteryDischargeControl)},
+		"batterygriddischarge":    {"POST", "/batterygriddischarge/{value:[01truefalse]+}", boolHandler(site.SetBatteryGridDischarge, site.GetBatteryGridDischarge)},
 		// testing only: not part of the PR, see site.SetSocDepletionCostLowEnabled
 		"socdepletioncostlow": {"POST", "/socdepletioncostlow/{value:[01truefalse]+}", boolHandler(site.SetSocDepletionCostLowEnabled, site.GetSocDepletionCostLowEnabled)},
-		// testing only: not part of the PR, see site.SetCContinuousEnabled
-		"ccontinuous": {"POST", "/ccontinuous/{value:[01truefalse]+}", boolHandler(site.SetCContinuousEnabled, site.GetCContinuousEnabled)},
 		// testing only: not part of the PR, see site.SetHoldChargeDisabled
 		"holdchargedisabled":              {"POST", "/holdchargedisabled/{value:[01truefalse]+}", boolHandler(site.SetHoldChargeDisabled, site.GetHoldChargeDisabled)},
 		"batterygridcharge":               {"POST", "/batterygridchargelimit/{value:-?[0-9.]+}", floatPtrHandler(site.SetBatteryGridChargeLimit, site.GetBatteryGridChargeLimit)},
