@@ -13,6 +13,7 @@ import (
 	"github.com/evcc-io/evcc/util"
 	"github.com/evcc-io/evcc/util/config"
 	"github.com/evcc-io/evcc/util/templates"
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/gorilla/mux"
 )
 
@@ -30,12 +31,14 @@ func getLoadpointDynamicConfig(lp loadpoint.API) loadpoint.DynamicConfig {
 	return loadpoint.DynamicConfig{
 		Title:                    lp.GetTitle(),
 		DefaultMode:              string(lp.GetDefaultMode()),
+		AlwaysCharge:             string(lp.GetAlwaysCharge()),
 		Priority:                 lp.GetPriority(),
 		PhasesConfigured:         lp.GetPhasesConfigured(),
 		MinCurrent:               lp.GetMinCurrent(),
 		MaxCurrent:               lp.GetMaxCurrent(),
 		SmartCostLimit:           lp.GetSmartCostLimit(),
 		SmartFeedInPriorityLimit: lp.GetSmartFeedInPriorityLimit(),
+		SolarShare:               lp.GetSolarShare(),
 		Thresholds:               lp.GetThresholds(),
 		Soc:                      lp.GetSocConfig(),
 		UI:                       lp.GetUI(),
@@ -119,8 +122,9 @@ func loadpointConfig(dev config.Device[loadpoint.API]) (loadpointFullConfig, err
 			return loadpointFullConfig{}, err
 		}
 
+		// non-strict: runtime settings (mode, ...) are persisted alongside the config
 		var static loadpoint.StaticConfig
-		if err := util.DecodeOther(staticMap, &static); err != nil {
+		if err := mapstructure.Decode(staticMap, &static); err != nil {
 			return loadpointFullConfig{}, err
 		}
 

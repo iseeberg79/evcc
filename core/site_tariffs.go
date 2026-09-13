@@ -63,7 +63,9 @@ func forecastRates(rr api.Rates) forecastSeries {
 //   - the current green share, calculated for the part of the consumption between powerFrom and powerTo
 //     the consumption below powerFrom will get the available green power first
 func (site *Site) greenShare(powerFrom float64, powerTo float64) float64 {
-	greenPower := math.Max(0, site.pvPower) + math.Max(0, site.battery.Power)
+	state := site.state()
+
+	greenPower := math.Max(0, state.pvPower) + math.Max(0, state.battery.Power)
 	greenPowerAvailable := math.Max(0, greenPower-powerFrom)
 
 	power := powerTo - powerFrom
@@ -331,7 +333,7 @@ func (site *Site) querySolarScale(bod time.Time) (float64, error) {
 }
 
 const (
-	consumptionTrendBaseline = 30             // days averaged for the per-slot time-of-day baseline (matches homeProfile window)
+	consumptionTrendBaseline = 28             // days averaged for the per-slot time-of-day baseline (matches homeProfile window)
 	consumptionTrendLookback = 72 * time.Hour // trailing window the current deviation is measured over
 
 	consumptionTrendDailyDecay = 0.41 // fraction of a deviation left after one day of decay
