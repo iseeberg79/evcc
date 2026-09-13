@@ -157,6 +157,7 @@ func (lp *Loadpoint) optimizerCharging(s *types.Suggestion, welcomeCharge bool) 
 	// it unmodelled- the optimizer would then keep asking to stop
 	if welcomeCharge {
 		lp.log.DEBUG.Println("optimizer: stop, welcome charge")
+		lp.resetPVTimer()
 		return true, lp.setLimit(lp.effectiveMinCurrent())
 	}
 

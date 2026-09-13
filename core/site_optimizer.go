@@ -140,9 +140,18 @@ func (d batteryDetail) key() string {
 // comparison. Must only be called for devices with a non-empty key.
 func (d batteryDetail) currentAction(site *Site) string {
 	if d.Type == batteryTypeBattery {
-		return site.GetBatteryMode().String()
+		return site.batteryAction()
 	}
 	return loadpointCurrentAction(site.loadpoints[*d.loadpoint])
+}
+
+// batteryAction returns the battery's current mode for suggestion comparison.
+// A battery that was never switched (BatteryUnknown) is in normal operation.
+func (site *Site) batteryAction() string {
+	if mode := site.GetBatteryMode(); mode != api.BatteryUnknown {
+		return mode.String()
+	}
+	return api.BatteryNormal.String()
 }
 
 type batteryResult struct {
@@ -551,6 +560,9 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 		site.log.DEBUG.Printf("optimizer: home slots updated with measured %.0fWh: %.0f -> %.0f", v, orig, gt[:len(orig)])
 	}
 
+	// heating loadpoints add their forecast demand on top of the measured base load
+	heaters := site.addHeatingDemand(gt, minLen)
+
 	// allow empty solar forecast
 	ft := lo.RepeatBy(minLen, func(i int) float32 { return float32(0) })
 	if solarTariff != nil && len(solar) > 0 {
@@ -650,6 +662,11 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 			continue
 		}
 
+		// heating loadpoints are already accounted for by their demand forecast
+		if slices.Contains(heaters, lp) {
+			continue
+		}
+
 		// no vehicle capacity and no session energy limit to model against:
 		// account for the consumption as uncontrollable load
 		if v := lp.GetVehicle(); v == nil || (v.Capacity() == 0 && lp.GetLimitEnergy() == 0) {
@@ -727,7 +744,7 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 	}
 
 	resp, err := apiClient.PostOptimizeChargeScheduleWithResponse(context.TODO(), req, func(_ context.Context, req *http.Request) error {
-		if sponsor.IsAuthorized() {
+		if sponsor.IsAuthorizedForApi() {
 			req.Header.Set("Authorization", "Bearer "+sponsor.Token)
 		}
 		return nil
@@ -811,6 +828,7 @@ func (site *Site) reapplySuggestions(now time.Time) {
 
 	// horizon passed or no completed solve within suggestionMaxAge: don't march a dead plan forward
 	if slot < 0 || now.Sub(last.completed) > suggestionMaxAge {
+		site.log.DEBUG.Println("optimizer: cached result expired")
 		site.clearSuggestions()
 		return
 	}
@@ -1353,42 +1371,6 @@ func unmodelledPower(lp loadpoint.API) float64 {
 	}
 
 	return max(0, power)
-}
-
-// homeProfile returns the home base load in Wh
-func (site *Site) homeProfile(minLen int) ([]float64, error) {
-	// kWh over last 30 days
-	profile, err := site.collectors[metrics.Home].EnergyProfile(now.BeginningOfDay().AddDate(0, 0, -30))
-	if err != nil {
-		return nil, err
-	}
-
-	// max 4 days
-	slots := make([]float64, 0, minLen+1)
-	for len(slots) <= minLen+24*4 { // allow for prorating first day
-		slots = append(slots, profile[:]...)
-	}
-
-	res := profileSlotsFromNow(slots)
-	if len(res) < minLen {
-		return nil, fmt.Errorf("minimum home profile length %d is less than required %d", len(res), minLen)
-	}
-	if len(res) > minLen {
-		res = res[:minLen]
-	}
-
-	// convert to Wh, applying the data-driven consumption signal, decaying per slot
-	sig := site.effectiveConsumptionSignal()
-	return lo.Map(res, func(v float64, i int) float64 {
-		return v * 1e3 * consumptionSignalDecay(sig, i)
-	}), nil
-}
-
-// profileSlotsFromNow strips away any slots before "now".
-// The profile contains 48 15min slots (00:00-23:45) that repeat for multiple days.
-func profileSlotsFromNow(profile []float64) []float64 {
-	firstSlot := int(time.Now().Truncate(tariff.SlotDuration).Sub(now.BeginningOfDay()) / tariff.SlotDuration)
-	return profile[firstSlot:]
 }
 
 // measuredSlotEnergy returns the summed energy in Wh of the last completed

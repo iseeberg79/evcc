@@ -6,6 +6,7 @@ import (
 	"github.com/evcc-io/evcc/server/db"
 	"github.com/evcc-io/evcc/tariff"
 	"github.com/evcc-io/evcc/util"
+	"github.com/jinzhu/now"
 )
 
 var log = util.NewLogger("metrics")
@@ -206,7 +207,13 @@ func (c *Collector) SetSocTemp(value float64, isTemp bool) error {
 }
 
 func (c *Collector) EnergyProfile(from time.Time) (*[96]float64, error) {
-	return energyProfile(c.entity, from)
+	return energyProfileFiltered(c.entity, from, nil, profilePercentile())
+}
+
+func (c *Collector) EnergyProfileWeekday(weekday time.Weekday) (*[96]float64, error) {
+	wd := int(weekday)
+	from := now.BeginningOfDay().AddDate(0, 0, -28)
+	return energyProfileFiltered(c.entity, from, &wd, profilePercentile())
 }
 
 // LastSlotEnergy returns the energy in kWh of the most recently completed

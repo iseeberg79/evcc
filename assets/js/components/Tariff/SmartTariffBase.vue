@@ -72,7 +72,6 @@
 						{{ activeSlotCost }}
 					</div>
 					<div v-else-if="limitedSlots.length" class="value" :class="activeHoursClass">
-
 						{{ fmtActiveCostRange }}
 					</div>
 					<div v-else class="value value-inactive">
