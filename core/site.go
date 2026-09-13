@@ -1322,7 +1322,12 @@ func (site *Site) update(lp updater) {
 	rate := site.currentRate(consumption)
 
 	// close the gap between solves before battery mode / loadpoint gates read suggestions
-	site.reapplySuggestions(time.Now())
+	if sponsor.IsAuthorized() && optimizerEnabled() {
+		site.reapplySuggestions(time.Now())
+	} else {
+		// don't resurrect the pre-disable solve on re-enable
+		site.setLastOptimizerSolve(nil)
+	}
 
 	// update battery after reading meters to ensure that (modbus) connection is open
 	batteryGridChargeActive := site.batteryGridChargeActive(rate)

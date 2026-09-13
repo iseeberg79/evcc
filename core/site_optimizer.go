@@ -813,17 +813,10 @@ func (site *Site) setLastOptimizerSolve(solve *optimizerSolve) {
 // next solve. This closes that gap every control cycle in between, from data
 // already on hand.
 //
-// Guarded the same way as optimizerUpdateAsync: skipped while the optimizer is
-// disabled or unsponsored (that state is cleared by clearSuggestions, not
-// reapplied here), and TryLock'd against optimizerMu so this never applies a
-// stale cached solve over a fresher one a concurrent real solve just wrote.
+// TryLock'd against optimizerMu so this never applies a stale cached solve
+// over a fresher one a concurrent real solve just wrote. The caller gates on
+// optimizer enabled/sponsored, same as optimizerUpdateAsync.
 func (site *Site) reapplySuggestions(now time.Time) {
-	if !sponsor.IsAuthorized() || !optimizerEnabled() {
-		// don't resurrect the pre-disable solve on re-enable
-		site.setLastOptimizerSolve(nil)
-		return
-	}
-
 	if !site.optimizerMu.TryLock() {
 		return
 	}
