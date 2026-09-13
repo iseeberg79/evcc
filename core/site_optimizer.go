@@ -786,15 +786,14 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 	return nil
 }
 
-// optimizerSolve holds a solve's inputs so the control cycle can reapply it to a
-// newer slot without a new network round-trip - see reapplySuggestions.
+// optimizerSolve caches a solve so the control cycle can reapply it to a newer slot
 type optimizerSolve struct {
 	req       optimizer.OptimizationInput
 	details   requestDetails
 	res       optimizer.OptimizationResult
 	schedule  optimizerSchedule
-	slot      int       // the slot last applied from this solve
-	completed time.Time // when this solve completed, not when a slot was last (re)applied from it
+	slot      int       // last applied slot
+	completed time.Time // solve completion, not last reapply
 }
 
 // setLastOptimizerSolve remembers a solve's inputs for reapplySuggestions
@@ -805,17 +804,9 @@ func (site *Site) setLastOptimizerSolve(solve *optimizerSolve) {
 	site.lastOptimizerSolve = solve
 }
 
-// reapplySuggestions re-derives the last solve's suggestions for whichever slot
-// covers now, without a new network round-trip. optimizerUpdateAsync only
-// re-solves once per loadpoint-update-cycle (or immediately on demand), not
-// aligned to the slot grid - a solve completing partway into its slot leaves the
-// applied suggestions describing that slot for as long after it ends, until the
-// next solve. This closes that gap every control cycle in between, from data
-// already on hand.
-//
-// TryLock'd against optimizerMu so this never applies a stale cached solve
-// over a fresher one a concurrent real solve just wrote. The caller gates on
-// optimizer enabled/sponsored, same as optimizerUpdateAsync.
+// reapplySuggestions re-derives the last solve's suggestions for the slot covering now
+// without a new solve. TryLock so it never overwrites a fresher concurrent solve. The
+// caller gates on optimizer enabled/sponsored, same as optimizerUpdateAsync.
 func (site *Site) reapplySuggestions(now time.Time) {
 	if !site.optimizerMu.TryLock() {
 		return
@@ -835,29 +826,18 @@ func (site *Site) reapplySuggestions(now time.Time) {
 		return
 	}
 
-	// horizon passed, or the solve is older than two slots: don't march a
-	// dead plan forward. last.completed, not site.optimizerUpdated - that
-	// gate gets zeroed on every forced call and stays zero on
-	// errOptimizerNotReady, which would make a genuinely fresh solve look
-	// decades stale. Without this, a stalled optimizer would keep
-	// refreshing site.suggestionsUpdated on every slot boundary (via
-	// applyOptimizerResult -> setSuggestions) forever, defeating
-	// suggestionMaxAge - the read side would never see the data as stale.
+	// horizon passed or no completed solve within suggestionMaxAge: don't march a dead plan forward
 	if slot < 0 || now.Sub(last.completed) > suggestionMaxAge {
 		site.clearSuggestions()
 		return
 	}
 
-	// a loadpoint that disconnected since the solve is excluded from a fresh
-	// request (optimizerRequest); reapplying would advise an empty charger.
-	// Discarding the whole cache is deliberate: evVehicleDisconnectHandler
-	// already forces an immediate fresh solve, this only bridges the gap
-	// until it lands.
+	// disconnected loadpoints are excluded from a fresh solve; don't advise an empty charger
 	for _, d := range last.details.BatteryDetails {
 		if d.loadpoint == nil {
 			continue
 		}
-		if lp := site.loadpoints[*d.loadpoint]; lp == nil || (lp.GetStatus() != api.StatusB && lp.GetStatus() != api.StatusC) {
+		if lp := site.loadpoints[*d.loadpoint]; lp == nil || !lp.connected() {
 			site.setLastOptimizerSolve(nil)
 			return
 		}
