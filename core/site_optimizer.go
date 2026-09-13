@@ -1025,10 +1025,10 @@ func (site *Site) homeProfile(minLen int) ([]float64, error) {
 		res = res[:minLen]
 	}
 
-	// convert to Wh, applying the data-driven consumption signal, decaying per slot
-	sig := site.effectiveConsumptionSignal()
+	// convert to Wh, nudged by the recent consumption trend, decaying back to 1 per slot
+	trend := site.effectiveConsumptionTrend()
 	return lo.Map(res, func(v float64, i int) float64 {
-		return v * 1e3 * consumptionSignalDecay(sig, i)
+		return v * 1e3 * consumptionTrendDecay(trend, i)
 	}), nil
 }
 

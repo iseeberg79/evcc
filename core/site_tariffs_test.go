@@ -95,9 +95,9 @@ func TestTimeseriesMarshal(t *testing.T) {
 	}
 }
 
-// TestQueryConsumptionSignal checks a fresh install with no consumption history yet:
-// the signal should come back unscaled.
-func TestQueryConsumptionSignal(t *testing.T) {
+// TestQueryConsumptionTrend checks a fresh install with no consumption history yet:
+// the trend should come back unscaled.
+func TestQueryConsumptionTrend(t *testing.T) {
 	require.NoError(t, db.NewInstance("sqlite", ":memory:"))
 	require.NoError(t, metrics.SetupSchema())
 
@@ -106,35 +106,35 @@ func TestQueryConsumptionSignal(t *testing.T) {
 	require.NoError(t, err)
 	site.collectors[metrics.Home] = col
 
-	sig, err := site.queryConsumptionSignal()
+	trend, err := site.queryConsumptionTrend()
 	require.NoError(t, err)
-	assert.Equal(t, 1.0, sig)
+	assert.Equal(t, 1.0, trend)
 }
 
-func TestConsumptionSignalDecay(t *testing.T) {
+func TestConsumptionTrendDecay(t *testing.T) {
 	t.Run("no deviation gives the unscaled forecast", func(t *testing.T) {
-		assert.InDelta(t, 1, consumptionSignalDecay(1, 0), 1e-9)
-		assert.InDelta(t, 1, consumptionSignalDecay(1, 191), 1e-9)
+		assert.InDelta(t, 1, consumptionTrendDecay(1, 0), 1e-9)
+		assert.InDelta(t, 1, consumptionTrendDecay(1, 191), 1e-9)
 	})
 
-	t.Run("first slot returns the input signal unchanged, above and below baseline", func(t *testing.T) {
-		for _, sig := range []float64{consumptionSignalMin, 0.7, 1.2, consumptionSignalMax} {
-			assert.InDelta(t, sig, consumptionSignalDecay(sig, 0), 1e-9)
+	t.Run("first slot returns the input trend unchanged, above and below baseline", func(t *testing.T) {
+		for _, trend := range []float64{consumptionTrendMin, 0.7, 1.2, consumptionTrendMax} {
+			assert.InDelta(t, trend, consumptionTrendDecay(trend, 0), 1e-9)
 		}
 	})
 
-	t.Run("after 24h, exactly consumptionSignalPhiDay of the deviation remains", func(t *testing.T) {
-		sig := 1.4
-		want := 1 + consumptionSignalPhiDay*(sig-1)
-		assert.InDelta(t, want, consumptionSignalDecay(sig, 24*4), 1e-9) // 96 slots = 24h
+	t.Run("after 24h, exactly consumptionTrendDailyDecay of the deviation remains", func(t *testing.T) {
+		trend := 1.4
+		want := 1 + consumptionTrendDailyDecay*(trend-1)
+		assert.InDelta(t, want, consumptionTrendDecay(trend, 24*4), 1e-9) // 96 slots = 24h
 	})
 
 	t.Run("deviation decays monotonically towards 1 over the horizon, above and below baseline", func(t *testing.T) {
-		for _, sig := range []float64{1.3, 0.7} {
-			prev := consumptionSignalDecay(sig, 0)
+		for _, trend := range []float64{1.3, 0.7} {
+			prev := consumptionTrendDecay(trend, 0)
 			for i := 1; i <= 192; i++ { // 48h at 15min slots
-				cur := consumptionSignalDecay(sig, i)
-				if sig > 1 {
+				cur := consumptionTrendDecay(trend, i)
+				if trend > 1 {
 					assert.LessOrEqual(t, cur, prev)
 				} else {
 					assert.GreaterOrEqual(t, cur, prev)
@@ -142,7 +142,7 @@ func TestConsumptionSignalDecay(t *testing.T) {
 				prev = cur
 			}
 			// never overshoots past 1
-			if sig > 1 {
+			if trend > 1 {
 				assert.GreaterOrEqual(t, prev, 1.0)
 			} else {
 				assert.LessOrEqual(t, prev, 1.0)
@@ -152,7 +152,7 @@ func TestConsumptionSignalDecay(t *testing.T) {
 
 	t.Run("decay approaches 1 far into the horizon", func(t *testing.T) {
 		// geometric decay, never fully zero: 0.41^5 ~= 0.0116 of the original deviation left after 5 days
-		assert.InDelta(t, 1, consumptionSignalDecay(1.5, 480), 0.01)
+		assert.InDelta(t, 1, consumptionTrendDecay(1.5, 480), 0.01)
 	})
 }
 
