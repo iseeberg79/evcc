@@ -207,7 +207,7 @@ func TestHoldChargePlanAvailable(t *testing.T) {
 	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Charge: 1000}})
 	require.True(t, site.holdChargePlanAvailable(), "fresh plan")
 
-	site.suggestionsUpdated = time.Now().Add(-2 * suggestionMaxAge)
+	site.clearSuggestions()
 	require.False(t, site.holdChargePlanAvailable(), "stale plan")
 }
 

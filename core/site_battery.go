@@ -184,8 +184,9 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive, batteryGridDischa
 	return res
 }
 
-// holdChargePlanAvailable reports whether a recent, current-slot suggestion exists
-// for any home battery - see site.suggestion for the staleness/slot-coverage check.
+// holdChargePlanAvailable reports whether a current-slot suggestion exists for any
+// home battery; a stalled optimizer's suggestions are cleared by reapplySuggestions
+// once its cached solve expires, see suggestionMaxAge.
 func (site *Site) holdChargePlanAvailable() bool {
 	for _, dev := range site.batteryMeters {
 		if dev == nil {
