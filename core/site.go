@@ -122,10 +122,15 @@ type Site struct {
 	suggestionActions        map[string]string           // last notified actionable optimizer action by device key
 	lastOptimizerSolve       *optimizerSolve             // last successful solve, reapplied to newer slots by the control cycle
 
+	batterySuggestionPending   api.BatteryMode // last raw holdChargeMode() result
+	batterySuggestionSince     time.Time       // time batterySuggestionPending last changed
+	batterySuggestionConfirmed api.BatteryMode // debounced mode actually returned
+
 	optimizerMu      sync.Mutex // guards optimizer runs
 	optimizerUpdated time.Time  // last optimizer run, guarded by optimizerMu
 
-	solarScaleCached func() (float64, error) // util.Cached wrapper around querySolarScale
+	solarScaleCached      func() (float64, error) // util.Cached wrapper around querySolarScale
+	holdChargeYieldCached func() (bool, error)    // util.Cached wrapper around queryHoldChargeYieldSufficient
 }
 
 // siteState is the site's cached measurement state, updated once per meter cycle
@@ -411,6 +416,11 @@ func NewSite() *Site {
 		}
 		return scale, err
 	}, 24*time.Hour)
+
+	// re-evaluated at tariff.SlotDuration instead of once a day - see holdChargeYieldSufficient
+	site.holdChargeYieldCached = util.Cached(func() (bool, error) {
+		return site.queryHoldChargeYieldSufficient(now.BeginningOfDay())
+	}, tariff.SlotDuration)
 
 	return site
 }

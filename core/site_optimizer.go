@@ -127,8 +127,9 @@ func (site *Site) batteryAction() string {
 
 type batteryResult struct {
 	batteryDetail
-	Full  time.Time `json:"full,omitzero"`
-	Empty time.Time `json:"empty,omitzero"`
+	Full       time.Time        `json:"full,omitzero"`
+	Empty      time.Time        `json:"empty,omitzero"`
+	Suggestion types.Suggestion `json:"suggestion,omitzero"`
 }
 
 // suggestionThreshold ignores numerical noise in power comparisons (W)
@@ -168,20 +169,44 @@ func suggestionEvent(detail batteryDetail, s types.Suggestion) messenger.Event {
 	return ev
 }
 
-// currentSlotSuggestion maps the optimizer's active-slot result onto an advisory action.
-// Because the optimization is linear, the slot is at an operating-range extreme, so it
+// slotFlags are the per-run/per-slot facts slotSuggestion classifies against.
+type slotFlags struct {
+	// attenuating is true while an attenuate_feedin_peaks/attenuate_grid_peaks
+	// charging strategy is actually in effect (see attenuating()). Both of
+	// slotSuggestion's holdcharge cases only make sense under it: withholding
+	// charge, whether idle or at a capped partial rate, is a deliberate trade
+	// against a live PV forecast - one this specific run's forecast may
+	// already have been judged too unreliable for (holdChargeYieldSufficient
+	// downgrades the strategy to none on exactly that basis). Without an
+	// active reservation to honor, holding back live surplus just exports it
+	// for nothing.
+	attenuating bool
+	// canCapCharge is true when every home battery site-wide can enforce a
+	// partial charge cap - see the charge-cap case below for why it must
+	// hold for all of them, not just this one.
+	canCapCharge  bool
+	gridImporting bool
+	gridExporting bool
+}
+
+// slotSuggestion maps the optimizer's slot-i corner result onto an advisory action.
+// Because the optimization is linear, each slot is at an operating-range extreme, so it
 // maps cleanly onto the discrete battery mode / loadpoint intent that control would later apply.
 // An idle battery is interpreted from the grid flow: importing means discharge is withheld
-// (hold), exporting means charging is withheld (holdcharge).
-func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, slot int, gridImport, gridExport float32, slotHours float64) types.Suggestion {
-	if slot < 0 || slotHours <= 0 || slot >= len(res.ChargingPower) || slot >= len(res.DischargingPower) {
+// (hold), exporting means charging is withheld (holdcharge). Charging without importing (pure
+// self-consumption) is capped at the planned value via holdcharge too, but only when canCapCharge
+// - otherwise there is nothing to gain from holdcharge over normal, since no capability would
+// apply the cap. canCapCharge must hold for every home battery, not just this one: the resulting
+// mode is dispatched site-wide (applyBatteryMode has no per-battery mode concept), so if any
+// other battery lacked the cap it would receive the same HoldCharge mode and, without a value
+// push of its own, fall back to an unconditional 0 W block instead of the intended partial cap.
+func slotSuggestion(detail batteryDetail, res optimizer.BatteryResult, i int, f slotFlags, slotHours float64, gridImport, gridExport float32) types.Suggestion {
+	if slotHours <= 0 || i < 0 || i >= len(res.ChargingPower) || i >= len(res.DischargingPower) {
 		return types.Suggestion{}
 	}
 
-	charge := float64(res.ChargingPower[slot]) / slotHours
-	discharge := float64(res.DischargingPower[slot]) / slotHours
-	gridImporting := gridImport > 0
-	gridExporting := gridExport > 0
+	charge := float64(res.ChargingPower[i]) / slotHours
+	discharge := float64(res.DischargingPower[i]) / slotHours
 
 	s := types.Suggestion{
 		Charge:    charge,
@@ -192,16 +217,28 @@ func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, sl
 	if detail.Type == batteryTypeBattery {
 		idle := charge <= suggestionThreshold && discharge <= suggestionThreshold
 		switch {
-		case charge > suggestionThreshold && gridImporting:
+		case charge > suggestionThreshold && f.gridImporting:
 			// charging while importing means grid charging
 			s.Action = api.BatteryCharge.String()
-		case idle && gridImporting:
+		case charge > suggestionThreshold && !f.gridImporting && f.canCapCharge && f.attenuating:
+			// self-consumption charging with a planned partial power: cap it via holdcharge
+			// so the plan's target is enforced instead of the device's own self-consumption
+			// logic charging past it. Without a charge-cap capability, holdcharge would apply
+			// no cap either, so normal is no worse. Gated on attenuating for the same reason
+			// as the idle+exporting case below: the planned cap is only worth enforcing
+			// against live surplus while the forecast it's based on is trusted enough to
+			// attenuate on in the first place.
+			s.Action = api.BatteryHoldCharge.String()
+		case idle && f.gridImporting:
 			// idle while importing: discharge is deliberately withheld
 			s.Action = api.BatteryHold.String()
-		case idle && gridExporting:
-			// idle while exporting: surplus is exported instead of charged
+		case idle && f.gridExporting && f.attenuating:
+			// idle while exporting: charge is withheld for a later, bigger peak -
+			// only while an attenuate_* strategy actually reserves it; otherwise
+			// (see f.attenuating) this falls through to normal instead, so live
+			// surplus gets charged rather than exported for no reservation
 			s.Action = api.BatteryHoldCharge.String()
-		case discharge > suggestionThreshold && gridExporting:
+		case discharge > suggestionThreshold && f.gridExporting:
 			// discharging while exporting means battery-to-grid discharge
 			s.Action = api.BatteryDischarge.String()
 		default:
@@ -214,6 +251,94 @@ func currentSlotSuggestion(detail batteryDetail, res optimizer.BatteryResult, sl
 	}
 
 	return s
+}
+
+// attenuating reports whether s is one of the strategies that deliberately
+// withholds battery charge - idle or capped - to reserve it for a later,
+// bigger peak. Both holdcharge cases in slotSuggestion are gated on it: a
+// downgraded-to-none request has no such reservation to honor.
+func attenuating(s optimizer.OptimizerStrategyChargingStrategy) bool {
+	return s == optimizer.OptimizerStrategyChargingStrategyAttenuateFeedinPeaks || s == optimizer.OptimizerStrategyChargingStrategyAttenuateGridPeaks
+}
+
+// holdChargeHeadroomMarginFactor gives the remaining forecast some safety margin over a
+// battery's own headroom before treating its later-peak reservation as still worthwhile - see
+// holdChargeReservationWorthwhile. 20% margin: the forecast itself may be optimistic, so
+// "exactly enough" on paper is not treated as enough in practice.
+const holdChargeHeadroomMarginFactor = 1.2
+
+// holdChargeReservationWorthwhile reports whether remainingSurplusWh - the site's forecast PV
+// yield minus its forecast household consumption, both from now to the end of today (see
+// remainingForecastToday) - still comfortably covers headroomWh, a battery's own remaining
+// capacity to 100% SOC (with holdChargeHeadroomMarginFactor margin against the forecast itself
+// being optimistic). Consumption is netted out here because not all remaining PV reaches the
+// battery: the household is served first, so gross PV yield overstates what could actually still
+// be stored. Below the margin, the reservation attenuate_* preserves capacity for is no longer
+// credible: there is not enough surplus left today to be confident the battery fills up
+// regardless of whether it charges now, so every bit of currently available surplus should go in
+// now instead of being deferred for a later peak that may not leave enough behind to complete
+// the fill.
+func holdChargeReservationWorthwhile(remainingSurplusWh, headroomWh float64) bool {
+	return headroomWh <= 0 || remainingSurplusWh >= holdChargeHeadroomMarginFactor*headroomWh
+}
+
+// headroomWh is battery i's own remaining capacity to 100% SOC at slot i, in Wh - see
+// holdChargeReservationWorthwhile. detail.Capacity is the nominal full capacity (kWh); a
+// configured SMax below 100% (e.g. a lower limit soc) is deliberately not used here, since the
+// question this answers is physical ("can more sun still fit"), not policy ("are we allowed to
+// charge that high").
+func headroomWh(detail batteryDetail, res optimizer.BatteryResult, i int) float64 {
+	if i < 0 || i >= len(res.StateOfCharge) {
+		return 0
+	}
+	return detail.Capacity*1e3 - float64(res.StateOfCharge[i])
+}
+
+// remainingForecastToday sums values from slot i up to (not including) the first later slot that
+// falls on a different calendar day than timestamps[i] - the portion of a per-slot Wh series
+// (ft or gt) still relevant to today, see holdChargeReservationWorthwhile. values and timestamps
+// are assumed the same length and slot-aligned (both come from the same optimizer
+// request/response pair); a short values is treated as ending early rather than panicking.
+func remainingForecastToday(values []float32, timestamps []time.Time, i int) float64 {
+	if i < 0 || i >= len(timestamps) {
+		return 0
+	}
+	y, m, d := timestamps[i].Date()
+
+	var sum float64
+	for j := i; j < len(values) && j < len(timestamps); j++ {
+		jy, jm, jd := timestamps[j].Date()
+		if jy != y || jm != m || jd != d {
+			break
+		}
+		sum += float64(values[j])
+	}
+	return sum
+}
+
+// downgradeUnworthwhileHoldCharge clears s back to Normal when it suggests HoldCharge but
+// detail's remaining surplus for today no longer credibly covers its own headroom to 100% SOC -
+// see holdChargeReservationWorthwhile. Applied as a post-step on slotSuggestion's result instead
+// of threading remaining-forecast data through slotSuggestion/slotFlags's signatures.
+func downgradeUnworthwhileHoldCharge(s types.Suggestion, detail batteryDetail, res optimizer.BatteryResult, i int, remainingSurplusWh float64) types.Suggestion {
+	if s.Action != api.BatteryHoldCharge.String() {
+		return s
+	}
+	if holdChargeReservationWorthwhile(remainingSurplusWh, headroomWh(detail, res, i)) {
+		return s
+	}
+	s.Action = api.BatteryNormal.String()
+	return s
+}
+
+// gridFlags derives slot i's import/export state from the optimizer's
+// site-level flow, at the same power threshold as charge/discharge so a
+// trickle (numerical residual) does not count as importing or exporting for
+// mode selection.
+func gridFlags(res *optimizer.OptimizationResult, i int, slotHours float64) (importing, exporting bool) {
+	importing = i < len(res.GridImport) && float64(res.GridImport[i])/slotHours > suggestionThreshold
+	exporting = i < len(res.GridExport) && float64(res.GridExport[i])/slotHours > suggestionThreshold
+	return
 }
 
 // loadpointCurrentAction returns the loadpoint's current operating mode for
@@ -520,9 +645,23 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 		ft = prorate(ftSlots, firstSlotDuration)
 	}
 
+	// attenuate_feedin_peaks/attenuate_grid_peaks level the export profile by withholding
+	// battery charge for a later, bigger peak (the holdcharge suggestion in site_battery.go).
+	// That's only a good trade on a day with enough PV left to actually fill the reservation -
+	// on a poor one it just risks skipping today's safe, unconstrained charge for a peak that
+	// never comes. Downgrade to none instead of gambling on it; see holdChargeYieldSufficient.
+	chargingStrategy := site.GetOptimizerChargingStrategy()
+	switch optimizer.OptimizerStrategyChargingStrategy(chargingStrategy) {
+	case optimizer.OptimizerStrategyChargingStrategyAttenuateFeedinPeaks, optimizer.OptimizerStrategyChargingStrategyAttenuateGridPeaks:
+		if !site.holdChargeYieldSufficient() {
+			site.log.DEBUG.Printf("optimizer: charging strategy %s downgraded to none, insufficient PV yield expected today", chargingStrategy)
+			chargingStrategy = string(optimizer.OptimizerStrategyChargingStrategyNone)
+		}
+	}
+
 	req = optimizer.OptimizationInput{
 		Strategy: optimizer.OptimizerStrategy{
-			ChargingStrategy:    optimizer.OptimizerStrategyChargingStrategy(site.GetOptimizerChargingStrategy()),
+			ChargingStrategy:    optimizer.OptimizerStrategyChargingStrategy(chargingStrategy),
 			DischargingStrategy: optimizer.OptimizerStrategyDischargingStrategyDischargeBeforeImport,
 		},
 		EtaC: eta,
@@ -765,6 +904,12 @@ func (site *Site) reapplySuggestions(now time.Time) {
 func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details requestDetails, res optimizer.OptimizationResult, schedule optimizerSchedule, now time.Time, completed time.Time) {
 	slot := schedule.activeSlot(now)
 	slotHours := schedule.duration(slot).Hours()
+	f := slotFlags{
+		attenuating:  attenuating(req.Strategy.ChargingStrategy),
+		canCapCharge: site.allBatteriesHaveChargeCap(),
+	}
+	f.gridImporting, f.gridExporting = gridFlags(&res, slot, slotHours)
+
 	var gridImport, gridExport float32
 	if slot >= 0 && slot < len(res.GridImport) {
 		gridImport = res.GridImport[slot]
@@ -777,8 +922,19 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 	suggestions := make(map[string]types.Suggestion, len(req.Batteries))
 
 	for i, batReq := range req.Batteries {
+		// guard against a malformed/short optimizer response - request and result are
+		// expected to line up index-for-index, but nothing enforces that across the wire
+		if i >= len(res.Batteries) || i >= len(details.BatteryDetails) {
+			site.log.WARN.Printf("optimizer: result has fewer batteries (%d) than requested (%d), skipping remainder", len(res.Batteries), len(req.Batteries))
+			break
+		}
+
 		batRes := res.Batteries[i]
 		detail := details.BatteryDetails[i]
+
+		suggestion := slotSuggestion(detail, batRes, slot, f, slotHours, gridImport, gridExport)
+		remainingSurplusWh := remainingForecastToday(req.TimeSeries.Ft, details.Timestamps, slot) - remainingForecastToday(req.TimeSeries.Gt, details.Timestamps, slot)
+		suggestion = downgradeUnworthwhileHoldCharge(suggestion, detail, batRes, slot, remainingSurplusWh)
 
 		batteries = append(batteries, batteryResult{
 			batteryDetail: detail,
@@ -788,9 +944,9 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 			Empty: matchSoc(batRes.StateOfCharge, schedule, now, func(soc float32) bool {
 				return soc <= batReq.SMin
 			}),
+			Suggestion: suggestion,
 		})
 
-		suggestion := currentSlotSuggestion(detail, batRes, slot, gridImport, gridExport, slotHours)
 		if suggestion.Action == "" {
 			continue
 		}
