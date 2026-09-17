@@ -428,6 +428,33 @@ func TestBatteryDischargeHemsCurtailed(t *testing.T) {
 	ctrl.Finish()
 }
 
+// TestDischargeControlActiveVehicleDone guards that a vehicle already at its limit no
+// longer holds back the home battery, even while still in StatusC (BMS balancing).
+func TestDischargeControlActiveVehicleDone(t *testing.T) {
+	rate := api.Rate{}
+
+	t.Run("session still active - hold", func(t *testing.T) {
+		lp := &Loadpoint{status: api.StatusC, mode: api.ModeNow, vehicleSoc: 50, limitSoc: 80}
+		site := &Site{log: util.NewLogger("foo"), batteryDischargeControl: true, loadpoints: []*Loadpoint{lp}}
+
+		assert.True(t, site.dischargeControlActive(rate))
+	})
+
+	t.Run("vehicle done - released", func(t *testing.T) {
+		lp := &Loadpoint{status: api.StatusC, mode: api.ModeNow, vehicleSoc: 80, limitSoc: 80}
+		site := &Site{log: util.NewLogger("foo"), batteryDischargeControl: true, loadpoints: []*Loadpoint{lp}}
+
+		assert.False(t, site.dischargeControlActive(rate))
+	})
+
+	t.Run("no soc reading yet - not treated as done", func(t *testing.T) {
+		lp := &Loadpoint{status: api.StatusC, mode: api.ModeNow, vehicleSoc: 0, limitSoc: 80}
+		site := &Site{log: util.NewLogger("foo"), batteryDischargeControl: true, loadpoints: []*Loadpoint{lp}}
+
+		assert.True(t, site.dischargeControlActive(rate))
+	})
+}
+
 // TestBatteryGridDischargeEvFastCharging ensures grid discharge is held back while an EV
 // is fast charging, regardless of the (opt-in, off by default) batteryDischargeControl
 // toggle - forcing the battery to sell while an EV needs a fast charge is a materially

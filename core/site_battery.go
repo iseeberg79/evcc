@@ -267,6 +267,13 @@ func (site *Site) batteryGridDischargeActive(rate api.Rate) bool {
 	return limit != nil && !rate.IsZero() && rate.Value >= *limit
 }
 
+// vehicleDone reports whether the vehicle's soc reached its limit, without
+// LimitSocReached's <100 rounding-noise guard.
+func (site *Site) vehicleDone(lp loadpoint.API) bool {
+	soc := lp.GetSoc()
+	return soc > 0 && soc >= float64(lp.EffectiveLimitSoc())
+}
+
 func (site *Site) dischargeControlActive(rate api.Rate) bool {
 	if !site.GetBatteryDischargeControl() {
 		return false
@@ -274,7 +281,7 @@ func (site *Site) dischargeControlActive(rate api.Rate) bool {
 
 	for _, lp := range site.activeLoadpoints() {
 		smartCostActive := site.smartCostActive(lp, rate)
-		if lp.GetStatus() == api.StatusC && (smartCostActive || lp.IsFastChargingActive()) {
+		if lp.GetStatus() == api.StatusC && !site.vehicleDone(lp) && (smartCostActive || lp.IsFastChargingActive()) {
 			return true
 		}
 	}
