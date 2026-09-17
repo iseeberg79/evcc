@@ -147,7 +147,7 @@ export default defineComponent({
 			if (port === "" && newHost === undefined) {
 				this.localConnection.settings.uri = undefined;
 			} else {
-				this.localConnection.settings.uri = `${newHost === undefined ? "" : newHost}:${port}`;
+				this.localConnection.settings.uri = `${newHost ?? ""}:${port || DEFAULT_PORT}`;
 			}
 		},
 		updatePort(newPort?: string) {
@@ -155,7 +155,7 @@ export default defineComponent({
 			if (host === "" && newPort === undefined) {
 				this.localConnection.settings.uri = undefined;
 			} else {
-				this.localConnection.settings.uri = `${host}:${newPort === undefined ? "" : newPort}`;
+				this.localConnection.settings.uri = `${host}:${newPort || DEFAULT_PORT}`;
 			}
 		},
 		updateModbus(modbus: MODBUS_TYPE) {
