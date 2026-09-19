@@ -47,37 +47,6 @@ func (lp *Loadpoint) gate() *types.Suggestion {
 	return lp.suggestion
 }
 
-// optimizerGate debounces the optimizer's enable/disable decision through the
-// same Enable/Disable delay used in PV mode, so a single flip in the plan
-// does not toggle the charger before the configured delay has elapsed.
-func (lp *Loadpoint) optimizerGate(wantEnabled bool) bool {
-	if wantEnabled == lp.enabled {
-		lp.resetPVTimer()
-		return true
-	}
-
-	delay, action := lp.GetEnableDelay(), pvEnable
-	if !wantEnabled {
-		delay, action = lp.GetDisableDelay(), pvDisable
-	}
-
-	if lp.pvTimer.IsZero() {
-		lp.log.DEBUG.Printf("optimizer %s timer start: %v", action, delay)
-		lp.pvTimer = lp.clock.Now()
-	}
-
-	lp.publishTimer(pvTimer, delay, action)
-
-	if lp.clock.Since(lp.pvTimer) < delay {
-		return false
-	}
-
-	lp.log.DEBUG.Printf("optimizer %s timer elapsed", action)
-	lp.resetPVTimer()
-
-	return true
-}
-
 // planDeadlineCritical returns true if the plan goal can only be reached by
 // charging now. Backstops a plan the optimizer can no longer satisfy.
 func (lp *Loadpoint) planDeadlineCritical() bool {
@@ -122,13 +91,6 @@ func (lp *Loadpoint) optimizerCharging(s *types.Suggestion, welcomeCharge bool) 
 	}
 
 	lp.resetPhaseTimer()
-
-	// stay on/off for at least the configured delay, so a single flip in the
-	// plan does not toggle the charger immediately
-	wantEnabled := s.Action == actionCharge || lp.GetAlwaysCharge().Active() || welcomeCharge || lp.vehicleClimateActive()
-	if !lp.optimizerGate(wantEnabled) {
-		return true, nil
-	}
 
 	if s.Action == actionCharge {
 		if full {
