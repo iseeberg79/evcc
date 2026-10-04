@@ -185,16 +185,24 @@ paths:
     post:
       operationId: setBatteryGridDischarge
       summary: Control battery grid discharge
-      description: "Allow the home battery to discharge to the grid (experimental)."
+      description: "Allow the home battery to discharge to the grid. Enabling may require `force=true` to confirm country-specific feed-in restrictions."
       externalDocs:
         url: https://docs.evcc.io/en/features/battery
       tags:
         - battery
+        - experimental
       parameters:
         - $ref: "#/components/parameters/enable"
+        - name: force
+          in: query
+          description: Confirm country-specific feed-in restrictions
+          schema:
+            type: boolean
       responses:
         "200":
           $ref: "#/components/responses/BooleanResult"
+        "428":
+          description: Confirmation required
   /batterygridchargelimit:
     delete:
       operationId: removeBatteryGridChargeLimit
@@ -845,8 +853,8 @@ paths:
   /config/optimizerautomatic/{value}:
     post:
       operationId: setOptimizerAutomatic
-      summary: Enable/disable optimizer automatic mode
-      description: "Let the optimizer directly control loadpoints and home battery instead of only advising. Requires a sponsor token."
+      summary: Set optimizer automatic level
+      description: "Let the optimizer directly control the home battery (`battery`) or home battery and loadpoints (`full`) instead of only advising (`off`). Requires a sponsor token."
       security:
         - cookieAuth: []
         - bearerAuth: []
@@ -854,19 +862,18 @@ paths:
         - experimental
       parameters:
         - name: value
-          description: Enable or disable automatic optimization.
+          description: What the optimizer controls.
           in: path
           required: true
           schema:
             type: string
             enum:
-              - "true"
-              - "false"
-              - "1"
-              - "0"
+              - "off"
+              - "battery"
+              - "full"
       responses:
         "200":
-          $ref: "#/components/responses/BooleanResult"
+          $ref: "#/components/responses/StringResult"
   /smartfeedinprioritylimit:
     delete:
       operationId: removeGlobalSmartFeedInPriorityLimit
@@ -1009,6 +1016,46 @@ paths:
                 description: Download csv-file
                 type: string
                 format: binary
+  /config/currency:
+    put:
+      operationId: setCurrency
+      summary: Set currency
+      description: "Set the currency used for prices, costs and savings."
+      tags:
+        - general
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+              description: ISO 4217 currency code
+              example: EUR
+      responses:
+        "200":
+          $ref: "#/components/responses/BlankResponse"
+        "400":
+          description: Invalid currency code
+  /config/country:
+    put:
+      operationId: setCountry
+      summary: Set country
+      description: "Set the site country. Used for region-specific hints and defaults. Empty string clears the setting."
+      tags:
+        - general
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+              description: ISO 3166-1 alpha-2 country code
+              example: DE
+      responses:
+        "200":
+          $ref: "#/components/responses/BlankResponse"
+        "400":
+          description: Invalid country code
   /settings/telemetry/{enable}:
     post:
       operationId: setTelemetryStatus
@@ -2143,6 +2190,12 @@ components:
         application/json:
           schema:
             type: boolean
+    StringResult:
+      description: Success - String result
+      content:
+        application/json:
+          schema:
+            type: string
     NullResult:
       description: Success - Null result
       content:

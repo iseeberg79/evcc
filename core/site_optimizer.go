@@ -200,7 +200,8 @@ type slotFlags struct {
 // mode is dispatched site-wide (applyBatteryMode has no per-battery mode concept), so if any
 // other battery lacked the cap it would receive the same HoldCharge mode and, without a value
 // push of its own, fall back to an unconditional 0 W block instead of the intended partial cap.
-func slotSuggestion(detail batteryDetail, res optimizer.BatteryResult, i int, f slotFlags, slotHours float64, gridImport, gridExport float32) types.Suggestion {
+// At its soc bound nothing is withheld, the bound does it, so the battery stays in normal mode.
+func slotSuggestion(detail batteryDetail, req optimizer.BatteryConfig, res optimizer.BatteryResult, i int, f slotFlags, slotHours float64, gridImport, gridExport float32) types.Suggestion {
 	if slotHours <= 0 || i < 0 || i >= len(res.ChargingPower) || i >= len(res.DischargingPower) {
 		return types.Suggestion{}
 	}
@@ -216,6 +217,14 @@ func slotSuggestion(detail batteryDetail, res optimizer.BatteryResult, i int, f 
 
 	if detail.Type == batteryTypeBattery {
 		idle := charge <= suggestionThreshold && discharge <= suggestionThreshold
+
+		var empty, full bool
+		if i < len(res.StateOfCharge) {
+			soc := res.StateOfCharge[i]
+			empty = soc <= req.SMin
+			full = req.SMax > 0 && soc >= req.SMax
+		}
+
 		switch {
 		case charge > suggestionThreshold && f.gridImporting:
 			// charging while importing means grid charging
@@ -229,10 +238,10 @@ func slotSuggestion(detail batteryDetail, res optimizer.BatteryResult, i int, f 
 			// against live surplus while the forecast it's based on is trusted enough to
 			// attenuate on in the first place.
 			s.Action = api.BatteryHoldCharge.String()
-		case idle && f.gridImporting:
+		case idle && f.gridImporting && !empty:
 			// idle while importing: discharge is deliberately withheld
 			s.Action = api.BatteryHold.String()
-		case idle && f.gridExporting && f.attenuating:
+		case idle && f.gridExporting && f.attenuating && !full:
 			// idle while exporting: charge is withheld for a later, bigger peak -
 			// only while an attenuate_* strategy actually reserves it; otherwise
 			// (see f.attenuating) this falls through to normal instead, so live
@@ -517,12 +526,13 @@ const slotsPerHour = float64(time.Hour / tariff.SlotDuration)
 // startup); the slot gate is left open so the next cycle retries.
 var errOptimizerNotReady = errors.New("battery measurements not ready")
 
-// optimizerInterval is the refresh cadence. It divides the slot duration so
-// every slot starts on a fresh result.
+// optimizerInterval is the refresh cadence in automatic mode. It divides the
+// slot duration so every slot starts on a fresh result. Advisory suggestions
+// only need one run per slot.
 const optimizerInterval = 5 * time.Minute
 
 // optimizerUpdateAsync runs the optimizer unless the last run is younger than
-// optimizerInterval. Pass force to run regardless, e.g. when a changed setting
+// the mode's interval. Pass force to run regardless, e.g. when a changed setting
 // should take effect immediately. It is a no-op when the optimizer is not
 // active or a run is already in progress; the running update reflects the
 // change on its next run.
@@ -536,10 +546,15 @@ func (site *Site) optimizerUpdateAsync(force bool) {
 	}
 	defer site.optimizerMu.Unlock()
 
+	interval := tariff.SlotDuration
+	if site.Automatic() {
+		interval = optimizerInterval
+	}
+
 	if force {
 		// keep the gate open so a not-ready run is retried on the next cycle
 		site.optimizerUpdated = time.Time{}
-	} else if time.Since(site.optimizerUpdated) < optimizerInterval {
+	} else if time.Since(site.optimizerUpdated) < interval {
 		return
 	}
 
@@ -932,7 +947,7 @@ func (site *Site) applyOptimizerResult(req optimizer.OptimizationInput, details 
 		batRes := res.Batteries[i]
 		detail := details.BatteryDetails[i]
 
-		suggestion := slotSuggestion(detail, batRes, slot, f, slotHours, gridImport, gridExport)
+		suggestion := slotSuggestion(detail, batReq, batRes, slot, f, slotHours, gridImport, gridExport)
 		remainingSurplusWh := remainingForecastToday(req.TimeSeries.Ft, details.Timestamps, slot) - remainingForecastToday(req.TimeSeries.Gt, details.Timestamps, slot)
 		suggestion = downgradeUnworthwhileHoldCharge(suggestion, detail, batRes, slot, remainingSurplusWh)
 
@@ -1185,6 +1200,7 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 		SInitial:  float32(*b.Capacity * *b.Soc * 10), // Wh
 		// PA:       pa,
 	}
+	bat.SMax = max(bat.SInitial, float32(*b.Capacity*1e3)) // Wh, narrowed by soc limits below
 
 	instance := dev.Instance()
 

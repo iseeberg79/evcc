@@ -592,12 +592,11 @@ func (site *Site) DumpConfig() {
 
 		for i, v := range vehicles {
 			_, rng := api.Cap[api.VehicleRange](v)
-			_, finish := api.Cap[api.VehicleFinishTimer](v)
 			_, status := api.Cap[api.ChargeState](v)
 			_, climate := api.Cap[api.VehicleClimater](v)
 			_, wakeup := api.Cap[api.Resurrector](v)
-			site.log.INFO.Printf("    vehicle %d: range %s finish %s status %s climate %s wakeup %s",
-				i+1, presence[rng], presence[finish], presence[status], presence[climate], presence[wakeup],
+			site.log.INFO.Printf("    vehicle %d: range %s status %s climate %s wakeup %s",
+				i+1, presence[rng], presence[status], presence[climate], presence[wakeup],
 			)
 		}
 	}
@@ -1112,10 +1111,36 @@ func optimizerEnabled() bool {
 	return exp && opt
 }
 
-// Automatic returns true if the optimizer controls the devices instead of only advising
+// optimizer automatic levels: what the optimizer controls instead of only advising
+const (
+	OptimizerAutomaticOff     = "off"
+	OptimizerAutomaticBattery = "battery" // home battery only
+	OptimizerAutomaticFull    = "full"    // home battery and loadpoints
+)
+
+var OptimizerAutomaticLevels = []string{OptimizerAutomaticOff, OptimizerAutomaticBattery, OptimizerAutomaticFull}
+
+// OptimizerAutomatic returns the configured optimizer automatic level
+func OptimizerAutomatic() string {
+	switch v, _ := settings.String(keys.OptimizerAutomatic); v {
+	case OptimizerAutomaticBattery, OptimizerAutomaticFull:
+		return v
+	case "true", "1":
+		// stored by the boolean switch before the levels existed
+		return OptimizerAutomaticFull
+	default:
+		return OptimizerAutomaticOff
+	}
+}
+
+// Automatic returns true if the optimizer controls the home battery instead of only advising
 func (site *Site) Automatic() bool {
-	auto, _ := settings.Bool(keys.OptimizerAutomatic)
-	return auto && optimizerEnabled() && sponsor.IsAuthorized()
+	return OptimizerAutomatic() != OptimizerAutomaticOff && optimizerEnabled() && sponsor.IsAuthorized()
+}
+
+// AutomaticLoadpoints returns true if the optimizer controls the loadpoints as well
+func (site *Site) AutomaticLoadpoints() bool {
+	return OptimizerAutomatic() == OptimizerAutomaticFull && site.Automatic()
 }
 
 // sitePowerResult is the outcome of the site power calculation
@@ -1408,6 +1433,7 @@ func (site *Site) prepare() {
 	}
 
 	site.publish(keys.SiteTitle, site.Title)
+	site.publish(keys.Country, site.GetCountry())
 
 	site.publish(keys.GridConfigured, site.gridMeter != nil)
 	site.publish(keys.Grid, api.Meter(nil))

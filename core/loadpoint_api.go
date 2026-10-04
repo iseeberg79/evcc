@@ -798,8 +798,13 @@ func (lp *Loadpoint) GetChargePower() float64 {
 // GetChargePowerFlexibility returns the flexible amount of current charging power
 func (lp *Loadpoint) GetChargePowerFlexibility(rates api.Rates) float64 {
 	mode := lp.GetMode()
-	if mode == api.ModeNow || !lp.charging() || lp.minSocNotReached() ||
-		lp.planActive || lp.smartLimitActive(lp.GetSmartCostLimit(), rates, true) {
+	if mode == api.ModeNow || !lp.charging() || lp.minSocNotReached() || lp.planActive ||
+		lp.GetBatteryBoost() != boostDisabled || lp.smartLimitActive(lp.GetSmartCostLimit(), rates, true) {
+		return 0
+	}
+
+	// an optimizer setpoint does not yield to a higher priority loadpoint
+	if s := lp.gate(); s != nil && !lp.surplusRegime(s) {
 		return 0
 	}
 

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -25,16 +26,39 @@ func enableAutomatic(t *testing.T) {
 	subject := sponsor.Subject
 	sponsor.Subject = "test"
 
-	for _, k := range []string{keys.Experimental, keys.Optimizer, keys.OptimizerAutomatic} {
+	for _, k := range []string{keys.Experimental, keys.Optimizer} {
 		settings.SetBool(k, true)
 	}
+	settings.SetString(keys.OptimizerAutomatic, OptimizerAutomaticFull)
 
 	t.Cleanup(func() {
 		sponsor.Subject = subject
-		for _, k := range []string{keys.Experimental, keys.Optimizer, keys.OptimizerAutomatic} {
+		for _, k := range []string{keys.Experimental, keys.Optimizer} {
 			settings.SetBool(k, false)
 		}
+		settings.SetString(keys.OptimizerAutomatic, OptimizerAutomaticOff)
 	})
+}
+
+// TestAutomaticLevels verifies that the battery level controls the battery only
+func TestAutomaticLevels(t *testing.T) {
+	enableAutomatic(t)
+	site := &Site{}
+
+	for _, tc := range []struct {
+		stored              string
+		battery, loadpoints bool
+	}{
+		{OptimizerAutomaticOff, false, false},
+		{OptimizerAutomaticBattery, true, false},
+		{OptimizerAutomaticFull, true, true},
+		{"true", true, true}, // boolean switch before the levels
+		{"false", false, false},
+	} {
+		settings.SetString(keys.OptimizerAutomatic, tc.stored)
+		assert.Equal(t, tc.battery, site.Automatic(), tc.stored)
+		assert.Equal(t, tc.loadpoints, site.AutomaticLoadpoints(), tc.stored)
+	}
 }
 
 func automaticLoadpoint(t *testing.T, ac api.AlwaysCharge, automatic bool) (*Loadpoint, *api.MockCharger, *gomock.Controller) {
@@ -162,6 +186,33 @@ func TestOptimizerSurplusRegime(t *testing.T) {
 	ctrl.Finish()
 }
 
+// TestOptimizerFlexibility covers a loadpoint the optimizer pins to a setpoint:
+// it does not yield to a higher priority loadpoint, so its power is not flexible
+func TestOptimizerFlexibility(t *testing.T) {
+	enableAutomatic(t)
+	Voltage = 230
+
+	for _, tc := range []struct {
+		s    types.Suggestion
+		want float64
+	}{
+		{types.Suggestion{Action: actionCharge, Charge: 3680, Grid: 1000}, 0}, // full power
+		{types.Suggestion{Action: actionCharge, Charge: 2300, Grid: 1000}, 0}, // grid-fed setpoint
+		{types.Suggestion{Action: actionCharge, Charge: 2300}, 2700},          // surplus regime, pv loop yields
+	} {
+		lp := NewLoadpoint(util.NewLogger("foo"), nil)
+		lp.mode = api.ModeSmart
+		lp.status = api.StatusC
+		lp.chargePower = 2700
+		lp.phases = 1
+		lp.vehicle = modelledVehicle(gomock.NewController(t))
+		lp.site = &mockSite{automatic: true}
+		lp.setSuggestion(&tc.s)
+
+		assert.Equal(t, tc.want, lp.GetChargePowerFlexibility(nil), tc.s)
+	}
+}
+
 func TestOptimizerGateInactive(t *testing.T) {
 	enableAutomatic(t)
 
@@ -287,4 +338,66 @@ func TestBatteryGridChargeLimitUnavailable(t *testing.T) {
 	limit := 0.2
 	assert.ErrorIs(t, site.SetBatteryGridChargeLimit(&limit), ErrOptimizerAutomatic)
 	assert.ErrorIs(t, site.SetBatteryDischargeControl(true), ErrOptimizerAutomatic)
+}
+
+// TestOptimizerPhaseScaleUp covers a grid-fed charge on 1p behind a circuit:
+// the scale up delay must run across control cycles instead of restarting on each
+func TestOptimizerPhaseScaleUp(t *testing.T) {
+	for _, charge := range []float64{11040, 9200} { // full power, and more than 1p delivers
+		t.Run(fmt.Sprintf("%.0fW", charge), func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			clck := clock.NewMock()
+			clck.Add(time.Hour)
+
+			Voltage = 230
+
+			lp := NewLoadpoint(util.NewLogger("foo"), nil)
+			lp.clock = clck
+			lp.minCurrent = minA
+			lp.maxCurrent = maxA
+			lp.Enable.Delay = 3 * time.Minute
+			lp.phases = 1
+			lp.status = api.StatusC
+			lp.chargePower = 3680
+			lp.wakeUpTimer = NewTimer()
+
+			plainCharger := api.NewMockCharger(ctrl)
+			phaseCharger := api.NewMockPhaseSwitcher(ctrl)
+			lp.charger = struct {
+				*api.MockCharger
+				*api.MockPhaseSwitcher
+			}{plainCharger, phaseCharger}
+
+			plainCharger.EXPECT().Enabled().Return(true, nil).AnyTimes()
+			plainCharger.EXPECT().Enable(gomock.Any()).Return(nil).AnyTimes()
+			plainCharger.EXPECT().MaxCurrent(gomock.Any()).Return(nil).AnyTimes()
+
+			circuit := api.NewMockCircuit(ctrl)
+			lp.circuit = circuit
+			circuit.EXPECT().GetMaxPower().Return(0.0).AnyTimes()
+			circuit.EXPECT().ValidatePower(gomock.Any(), gomock.Any()).DoAndReturn(func(_, new float64) float64 { return new }).AnyTimes()
+			circuit.EXPECT().ValidateCurrent(gomock.Any(), gomock.Any()).DoAndReturn(func(_, new float64) float64 { return new }).AnyTimes()
+
+			s := &types.Suggestion{Action: actionCharge, Charge: charge, Grid: charge}
+
+			handled, err := lp.optimizerCharging(s, false)
+			assert.True(t, handled)
+			assert.NoError(t, err)
+			started := lp.phaseTimer
+			assert.False(t, started.IsZero(), "scale up timer must be running")
+
+			// next cycle keeps the timer
+			clck.Add(time.Minute)
+			_, err = lp.optimizerCharging(s, false)
+			assert.NoError(t, err)
+			assert.Equal(t, started, lp.phaseTimer, "scale up timer must not restart")
+
+			// delay elapsed
+			clck.Add(lp.Enable.Delay)
+			phaseCharger.EXPECT().Phases1p3p(3).Return(nil)
+			_, err = lp.optimizerCharging(s, false)
+			assert.NoError(t, err)
+			assert.Equal(t, 3, lp.GetPhases())
+		})
+	}
 }

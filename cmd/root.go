@@ -454,6 +454,9 @@ func runRoot(cmd *cobra.Command, args []string) {
 	valueChan <- util.Param{Key: keys.Tariffs, Val: globalconfig.ConfigStatus{
 		YamlSource: yamlSource.tariffs,
 	}}
+	valueChan <- util.Param{Key: keys.CircuitsConfig, Val: globalconfig.ConfigStatus{
+		YamlSource: yamlSource.circuits,
+	}}
 
 	// publish remote access status
 	valueChan <- util.Param{Key: keys.Remote, Val: remoteAccess.ConfigStatus()}
@@ -466,7 +469,7 @@ func runRoot(cmd *cobra.Command, args []string) {
 	valueChan <- util.Param{Key: keys.Timezone, Val: time.Now().Format("MST -07:00")}
 	valueChan <- util.Param{Key: keys.Experimental, Val: isExperimental()}
 	valueChan <- util.Param{Key: keys.Optimizer, Val: isOptimizer()}
-	valueChan <- util.Param{Key: keys.OptimizerAutomatic, Val: isOptimizerAutomatic()}
+	valueChan <- util.Param{Key: keys.OptimizerAutomatic, Val: core.OptimizerAutomatic()}
 	valueChan <- util.Param{Key: keys.Mcp, Val: isMcp()}
 
 	// run shutdown functions on stop

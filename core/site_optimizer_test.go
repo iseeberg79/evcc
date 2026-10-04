@@ -392,6 +392,19 @@ func TestBatteryRequestGridModes(t *testing.T) {
 	assert.False(t, req.DischargeToGrid, "grid discharge requires the opt-in")
 }
 
+// Batteries without soc limits must still get the full capacity as SMax, otherwise the
+// optimizer treats any charge as exceeding the limit and never charges the battery.
+func TestBatteryRequestWithoutSocLimiter(t *testing.T) {
+	site := &Site{log: util.NewLogger("foo")}
+	capacity, soc := 10.0, 50.0
+	dev := config.NewStaticDevice(config.Named{}, api.Meter(&struct{ api.Meter }{}))
+
+	req, _ := site.batteryRequest(dev, types.Measurement{Capacity: &capacity, Soc: &soc}, nil, 8, 15*time.Minute)
+
+	assert.Equal(t, float32(0), req.SMin)
+	assert.Equal(t, float32(10000), req.SMax)
+}
+
 // TestBatteryRequestSocLimitsClamp ensures the reported soc is always clamped into
 // the resulting [SMin, SMax] range, even when it lies outside the configured soc
 // limits (e.g. right after a firmware update changed the reported soc or the min/max
@@ -650,7 +663,7 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 				DischargingPower: []float32{tc.disch},
 			}
 			f := slotFlags{attenuating: tc.attenuating, canCapCharge: tc.canCapCharge, gridImporting: tc.importing, gridExporting: tc.export}
-			s := slotSuggestion(batteryDetail{Type: tc.typ}, res, 0, f, 1, tc.gridImp, tc.gridExp)
+			s := slotSuggestion(batteryDetail{Type: tc.typ}, optimizer.BatteryConfig{}, res, 0, f, 1, tc.gridImp, tc.gridExp)
 			assert.Equal(t, tc.want, s.Action)
 			assert.InDelta(t, tc.charge, s.Charge, 1e-3)
 			assert.InDelta(t, tc.disch, s.Discharge, 1e-3)
@@ -667,11 +680,11 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 			DischargingPower: []float32{0, 0},
 		}
 		f := slotFlags{attenuating: true, canCapCharge: true}
-		s0 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 0, f, 285.0/3600, 0, 0)
+		s0 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryConfig{}, res, 0, f, 285.0/3600, 0, 0)
 		assert.Equal(t, "normal", s0.Action)
 		assert.InDelta(t, 0, s0.Charge, 1e-3)
 
-		s1 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 1, f, 900.0/3600, 0, 0)
+		s1 := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryConfig{}, res, 1, f, 900.0/3600, 0, 0)
 		assert.Equal(t, "holdcharge", s1.Action)
 		assert.InDelta(t, 1592/(900.0/3600), s1.Charge, 1e-3) // Wh -> W at the full-slot rate
 	})
@@ -682,15 +695,35 @@ func TestCurrentSlotSuggestion(t *testing.T) {
 			ChargingPower:    []float32{0, 0},
 			DischargingPower: []float32{500, 0}, // discharging now, idle next full slot
 		}
-		s := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, res, 0, slotFlags{attenuating: true, canCapCharge: true, gridImporting: true}, 1, 0, 0)
+		s := slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryConfig{}, res, 0, slotFlags{attenuating: true, canCapCharge: true, gridImporting: true}, 1, 0, 0)
 		assert.InDelta(t, 500, s.Discharge, 1e-3)
 		assert.Equal(t, "normal", s.Action) // discharge > threshold while importing -> not hold
 	})
 
+	// an idle battery at its soc bound withholds nothing: normal instead of hold/holdcharge
+	t.Run("idle at soc bound stays normal", func(t *testing.T) {
+		battery := batteryDetail{Type: batteryTypeBattery}
+		req := optimizer.BatteryConfig{SMin: 1000, SMax: 9000}
+		res := optimizer.BatteryResult{
+			ChargingPower:    []float32{0},
+			DischargingPower: []float32{0},
+			StateOfCharge:    []float32{1000},
+		}
+		imp := slotFlags{attenuating: true, canCapCharge: true, gridImporting: true}
+		exp := slotFlags{attenuating: true, canCapCharge: true, gridExporting: true}
+
+		assert.Equal(t, api.BatteryNormal.String(), slotSuggestion(battery, req, res, 0, imp, 1, 1000, 0).Action, "empty battery idle while importing")
+		res.StateOfCharge[0] = 9000
+		assert.Equal(t, api.BatteryNormal.String(), slotSuggestion(battery, req, res, 0, exp, 1, 0, 1000).Action, "full battery idle while exporting")
+		res.StateOfCharge[0] = 5000
+		assert.Equal(t, api.BatteryHold.String(), slotSuggestion(battery, req, res, 0, imp, 1, 1000, 0).Action)
+		assert.Equal(t, api.BatteryHoldCharge.String(), slotSuggestion(battery, req, res, 0, exp, 1, 0, 1000).Action)
+	})
+
 	// an out-of-range index yields an empty suggestion
 	oobFlags := slotFlags{attenuating: true, canCapCharge: true, gridImporting: true}
-	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{}, 0, oobFlags, 1, 0, 0))
-	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryResult{ChargingPower: []float32{0}, DischargingPower: []float32{0}}, 5, oobFlags, 1, 0, 0))
+	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryConfig{}, optimizer.BatteryResult{}, 0, oobFlags, 1, 0, 0))
+	assert.Empty(t, slotSuggestion(batteryDetail{Type: batteryTypeBattery}, optimizer.BatteryConfig{}, optimizer.BatteryResult{ChargingPower: []float32{0}, DischargingPower: []float32{0}}, 5, oobFlags, 1, 0, 0))
 }
 
 func TestHoldChargeReservationWorthwhile(t *testing.T) {
