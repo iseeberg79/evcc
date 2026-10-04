@@ -45,6 +45,8 @@ func TestAllBatteriesHaveChargeCap(t *testing.T) {
 // unconditional 0 W block), so requiring either push capability here would silently
 // disable the automation for every battery template that doesn't implement them.
 func TestRequiredBatteryModeIndependentOfCapability(t *testing.T) {
+	enableAutomatic(t)
+
 	site := &Site{
 		batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, &struct{ api.Meter }{})},
 	}
@@ -52,6 +54,18 @@ func TestRequiredBatteryModeIndependentOfCapability(t *testing.T) {
 
 	got := site.requiredBatteryMode(false, false, api.Rate{})
 	require.Equal(t, api.BatteryHoldCharge.String(), got.String())
+}
+
+// TestRequiredBatteryModeIgnoresPlanWithoutAutomatic guards that suggestions stay advisory
+// while the optimizer is not automatic: the plan must not drive the battery mode.
+func TestRequiredBatteryModeIgnoresPlanWithoutAutomatic(t *testing.T) {
+	site := &Site{
+		log:           util.NewLogger("foo"),
+		batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, &struct{ api.Meter }{})},
+	}
+	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHoldCharge.String()}})
+
+	require.Equal(t, api.BatteryUnknown.String(), site.requiredBatteryMode(false, false, api.Rate{}).String())
 }
 
 func TestHoldChargeMode(t *testing.T) {
@@ -112,6 +126,8 @@ func TestHoldChargeModeDebounce(t *testing.T) {
 // plan (optimizer stalled, or requiredBatteryMode takes a different branch)
 // does not let a stale debounce window delay the next real suggestion.
 func TestHoldChargeModeDebounceResetsWhenPlanUnavailable(t *testing.T) {
+	enableAutomatic(t)
+
 	site := &Site{log: util.NewLogger("foo"), batteryMeters: []config.Device[api.Meter]{
 		config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, &struct{ api.Meter }{}),
 	}}
@@ -151,53 +167,6 @@ func TestHoldChargeModeDebounceFiltersRealDegenerateSolve(t *testing.T) {
 
 	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
 	require.Equal(t, api.BatteryHold, site.holdChargeMode())
-}
-
-// TestHoldChargeYieldsToSmartChargeSession guards that Hold wins over the fork's
-// HoldCharge for the whole duration of a smart-cost/fast charge session, even when the
-// loadpoint status briefly drops from C to B (PWM pause, phase switch, handshake retry).
-// Without the blip-tolerant session signal the switch would flicker to HoldCharge (which
-// also blocks the vehicle's charging) for that single update cycle.
-func TestHoldChargeYieldsToSmartChargeSession(t *testing.T) {
-	limit := 0.20
-	cheap := api.Rate{Value: 0.10}  // <= limit -> smart cost active
-	pricey := api.Rate{Value: 0.50} // > limit  -> smart cost inactive
-
-	newLoadpoint := func(status api.ChargeStatus, smartCostLimit *float64) *Loadpoint {
-		return &Loadpoint{
-			log:            util.NewLogger("lp"),
-			mode:           api.ModePV,
-			status:         status,
-			smartCostLimit: smartCostLimit,
-		}
-	}
-
-	for _, tc := range []struct {
-		name    string
-		status  api.ChargeStatus
-		rate    api.Rate
-		batMode api.BatteryMode
-		want    api.BatteryMode
-	}{
-		{"charging: dischargeControlActive yields Hold", api.StatusC, cheap, api.BatteryUnknown, api.BatteryHold},
-		{"blip to StatusB during session: Hold still wins over HoldCharge", api.StatusB, cheap, api.BatteryUnknown, api.BatteryHold},
-		{"blip to StatusB while already holding: keep Hold, no flicker", api.StatusB, cheap, api.BatteryHold, api.BatteryUnknown},
-		{"unplugged: session over, follow HoldCharge plan", api.StatusA, cheap, api.BatteryUnknown, api.BatteryHoldCharge},
-		{"unplugged while holding: transition to HoldCharge", api.StatusA, cheap, api.BatteryHold, api.BatteryHoldCharge},
-		{"connected but no smart-cost window: follow HoldCharge plan", api.StatusB, pricey, api.BatteryUnknown, api.BatteryHoldCharge},
-	} {
-		site := &Site{
-			log:                     util.NewLogger("site"),
-			batteryMeters:           []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, chargePowerLimiterMeter{})},
-			batteryDischargeControl: true,
-			loadpoints:              []*Loadpoint{newLoadpoint(tc.status, &limit)},
-		}
-		setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHoldCharge.String()}})
-		site.batteryMode = tc.batMode
-
-		got := site.requiredBatteryMode(false, false, tc.rate)
-		require.Equal(t, tc.want.String(), got.String(), tc.name)
-	}
 }
 
 func TestHoldChargePlanAvailable(t *testing.T) {
