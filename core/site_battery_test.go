@@ -108,6 +108,8 @@ func TestApplyBatteryMode(t *testing.T) {
 // was in control, which then got applied at full power the moment mode switched to charge
 // (case 3).
 func TestUpdateBatteryChargeValues(t *testing.T) {
+	enableAutomatic(t)
+
 	for _, tc := range []struct {
 		name             string
 		suggestion       *types.Suggestion
@@ -156,6 +158,41 @@ func TestUpdateBatteryChargeValues(t *testing.T) {
 		assert.Equal(t, tc.expectedCap, pushedCap, "charge power cap")
 		assert.Equal(t, tc.expectedSetpoint, pushedSetpoint, "charge setpoint")
 	}
+}
+
+// TestUpdateBatteryChargeValuesNotAutomatic guards that advisory suggestions are not pushed
+// into the battery while the optimizer is not automatic.
+func TestUpdateBatteryChargeValuesNotAutomatic(t *testing.T) {
+	var pushedCap, pushedSetpoint float64
+
+	var bat api.Meter = &struct {
+		api.Meter
+		api.BatteryChargePowerLimiter
+		api.BatteryPowerSetpointController
+		api.BatteryPowerLimiter
+	}{
+		BatteryChargePowerLimiter: implement.BatteryChargePowerLimiter(func(watt float64) error {
+			pushedCap = watt
+			return nil
+		}),
+		BatteryPowerSetpointController: implement.BatteryPowerSetpointController(func(watt float64) error {
+			pushedSetpoint = watt
+			return nil
+		}),
+		BatteryPowerLimiter: implement.BatteryPowerLimiter(func() (float64, float64) {
+			return 5000, 5000
+		}),
+	}
+
+	site := &Site{
+		log:           util.NewLogger("foo"),
+		batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice(config.Named{Name: "battery1"}, bat)},
+	}
+	setBatterySuggestions(site, map[string]types.Suggestion{"battery1": {Action: "holdcharge", Charge: 1234}})
+
+	site.updateBatteryChargeValues()
+	assert.Zero(t, pushedCap, "charge power cap")
+	assert.Equal(t, 5000.0, pushedSetpoint, "charge setpoint falls back to hardware max")
 }
 
 func TestSupportedBatteryMode(t *testing.T) {

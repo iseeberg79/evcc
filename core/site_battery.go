@@ -432,9 +432,16 @@ func (site *Site) applyBatteryMode(mode api.BatteryMode) error {
 // optimizer has no current-slot value at all (no optimizer, or plan stale) - not merely
 // because the current-slot suggestion is a deliberate 0 W (hold/holdcharge/normal).
 func (site *Site) updateBatteryChargeValues() {
+	automatic := site.Automatic()
+
 	for _, dev := range site.batteryMeters {
 		instance := dev.Instance()
-		suggestion := site.holdChargeSuggestion(dev.Config().Name)
+
+		// suggestions are advisory unless automatic, a manually set mode must not inherit their values
+		var suggestion types.Suggestion
+		if automatic {
+			suggestion = site.holdChargeSuggestion(dev.Config().Name)
+		}
 
 		if powerLimiter, ok := api.Cap[api.BatteryChargePowerLimiter](instance); ok {
 			site.log.TRACE.Printf("battery %s max charge power: %.0fW action=%q", deviceTitleOrName(dev), suggestion.Charge, suggestion.Action)
