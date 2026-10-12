@@ -75,6 +75,14 @@ func (lp *Loadpoint) remainingPlanEnergy(planEnergy float64) float64 {
 	return max(0, planEnergy-(lp.getChargedEnergy()/1e3-lp.planEnergyOffset))
 }
 
+// GetPlanRemainingEnergy returns the energy plan's missing energy in kWh
+func (lp *Loadpoint) GetPlanRemainingEnergy() float64 {
+	lp.RLock()
+	defer lp.RUnlock()
+	_, energy := lp.getPlanEnergy()
+	return lp.remainingPlanEnergy(energy)
+}
+
 // GetPlanRequiredDuration is the estimated total charging duration
 func (lp *Loadpoint) GetPlanRequiredDuration(goal, maxPower float64) time.Duration {
 	lp.RLock()
@@ -209,8 +217,8 @@ func (lp *Loadpoint) plannerActive() (active bool) {
 	active = !activeSlot.End.IsZero()
 
 	if active {
-		// ignore short plans if not already active
-		if slotRemaining := lp.clock.Until(activeSlot.End); !lp.planActive && slotRemaining < tariff.SlotDuration-time.Minute && !planner.SlotHasSuccessor(activeSlot, plan) {
+		// short slots cost an extra start/stop cycle, defer them if a later slot follows anyway
+		if slotRemaining := lp.clock.Until(activeSlot.End); !lp.planActive && slotRemaining < tariff.SlotDuration-time.Minute && planner.SlotHasLaterSuccessor(activeSlot, plan) {
 			lp.log.DEBUG.Printf("plan: slot too short- ignoring remaining %v", slotRemaining.Round(time.Second))
 			return false
 		}
