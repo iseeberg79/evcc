@@ -150,6 +150,14 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive, batteryGridDischa
 	case site.Automatic() && site.unmodelledCharging():
 		// the suggestion ignores loads the optimizer cannot model as storage
 		res = keepUnlessModified(api.BatteryHold)
+	case site.Automatic():
+		// optimizer decides, replacing grid charge limit and discharge control
+		if site.holdChargePlanAvailable() {
+			res = keepUnlessModified(site.holdChargeMode())
+		} else if batteryModeModified(batMode) {
+			// no suggestion: release the battery
+			res = api.BatteryNormal
+		}
 	case batteryGridChargeActive:
 		// independent limits (buy vs feed-in rate) can both be active at once;
 		// charge wins to avoid buying and immediately selling
@@ -163,9 +171,6 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive, batteryGridDischa
 		res = keepUnlessModified(api.BatteryHold)
 	case batteryGridDischargeActive:
 		res = keepUnlessModified(api.BatteryDischarge)
-	case site.Automatic() && site.holdChargePlanAvailable():
-		// follow the optimizer's current-slot plan
-		res = keepUnlessModified(site.holdChargeMode())
 	case batteryModeModified(batMode):
 		res = api.BatteryNormal
 	}

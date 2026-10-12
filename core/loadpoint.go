@@ -169,6 +169,7 @@ type Loadpoint struct {
 	// optimizer
 	suggestion        *types.Suggestion // optimizer suggestion for the current slot
 	suggestionUpdated time.Time         // time the suggestion was received
+	optimizerPlan     optimizerPlan     // optimizer charging schedule
 
 	// cached state
 	status         api.ChargeStatus // Charger status
@@ -2457,7 +2458,7 @@ NO_DIM:
 
 	// the optimizer schedules the plan itself, the planner only backstops it.
 	// A stalled optimizer has no suggestion and releases the planner again.
-	suggestion := lp.gate()
+	suggestion := lp.activeSuggestion()
 	if suggestion != nil {
 		plannerActive = lp.planDeadlineCritical()
 	}
@@ -2509,11 +2510,11 @@ NO_DIM:
 	case mode == api.ModeSmart:
 		// optimizer decides start/stop and level, replacing the price limits
 		if suggestion != nil {
-			if handled, e := lp.optimizerCharging(suggestion, welcomeCharge); handled {
+			if handled, e := lp.optimizerCharging(suggestion); handled {
 				err = e
 				break
 			}
-			// surplus regime: the pv loop below tracks the measured surplus
+			// surplus regime or stop: the pv loop below tracks the measured surplus
 		}
 
 		// cheap tariff
@@ -2541,6 +2542,12 @@ NO_DIM:
 			lp.resetPhaseTimer()
 			lp.elapsePVTimer() // let PV mode disable immediately afterwards
 			break
+		}
+
+		// the optimizer plans the home battery- bufferSoc and bufferStartSoc must not
+		// keep charging off the battery against its stop (#34606)
+		if suggestion != nil {
+			batteryBuffered, batteryStart = false, false
 		}
 
 		targetCurrent := lp.pvMaxCurrent(sitePower, batteryPower, batteryBuffered, batteryStart)

@@ -2,8 +2,10 @@ package core
 
 import (
 	"math"
+	"time"
 
 	"github.com/evcc-io/evcc/api"
+	"github.com/evcc-io/evcc/core/planner"
 	"github.com/evcc-io/evcc/core/types"
 )
 
@@ -14,6 +16,54 @@ func (lp *Loadpoint) setSuggestion(s *types.Suggestion) {
 
 	lp.suggestion = s
 	lp.suggestionUpdated = lp.clock.Now()
+}
+
+// setOptimizerPlan stores the charging schedule of the last solve
+func (lp *Loadpoint) setOptimizerPlan(plan optimizerPlan) {
+	lp.Lock()
+	defer lp.Unlock()
+
+	lp.optimizerPlan = plan
+}
+
+// OptimizerPlan returns the optimizer's remaining charging schedule up to the
+// plan time and its average power, nil if the optimizer is not in charge. Later
+// slots serve surplus, not the plan.
+func (lp *Loadpoint) OptimizerPlan(planTime time.Time) (api.Rates, float64) {
+	if lp.activeSuggestion() == nil {
+		return nil, 0
+	}
+
+	lp.RLock()
+	defer lp.RUnlock()
+
+	now := lp.clock.Now()
+
+	var rates api.Rates
+	var energy float64
+	for i, slot := range lp.optimizerPlan.rates {
+		// keep what is left until the plan time, like the planner does: the schedule
+		// is from the last solve and its goal slot may end after the plan time
+		clipped := slot
+		if clipped.Start.Before(now) {
+			clipped.Start = now
+		}
+		if clipped.End.After(planTime) {
+			clipped.End = planTime
+		}
+		if !clipped.Start.Before(clipped.End) {
+			continue
+		}
+
+		rates = append(rates, clipped)
+		energy += lp.optimizerPlan.energy[i] * float64(clipped.End.Sub(clipped.Start)) / float64(slot.End.Sub(slot.Start))
+	}
+
+	if len(rates) == 0 {
+		return nil, 0
+	}
+
+	return rates, energy / planner.Duration(rates).Hours()
 }
 
 // optimizerControlled indicates that the optimizer decides for this loadpoint.
@@ -29,9 +79,9 @@ func (lp *Loadpoint) optimizerControlled() bool {
 	return v != nil && v.Capacity() > 0
 }
 
-// gate returns the optimizer's start/stop decision for the current slot,
+// activeSuggestion returns the optimizer's start/stop decision for the current slot,
 // nil if the optimizer does not control this loadpoint
-func (lp *Loadpoint) gate() *types.Suggestion {
+func (lp *Loadpoint) activeSuggestion() *types.Suggestion {
 	if !lp.optimizerControlled() {
 		return nil
 	}
@@ -82,7 +132,7 @@ func (lp *Loadpoint) surplusRegime(s *types.Suggestion) bool {
 // if the loadpoint is to follow pv surplus instead, leaving current and phases
 // to the regular pv control loop. Otherwise current and phases follow the
 // suggested power, only the level is the optimizer's decision.
-func (lp *Loadpoint) optimizerCharging(s *types.Suggestion, welcomeCharge bool) (bool, error) {
+func (lp *Loadpoint) optimizerCharging(s *types.Suggestion) (bool, error) {
 	if lp.surplusRegime(s) {
 		// the charge power matches the forecast surplus, which only holds on average-
 		// the pv loop tracks the measured one, so its timers must keep running
@@ -92,6 +142,17 @@ func (lp *Loadpoint) optimizerCharging(s *types.Suggestion, welcomeCharge bool) 
 		}
 
 		lp.log.DEBUG.Printf("optimizer: charge (%.0fW), following pv surplus", s.Charge)
+		return false, nil
+	}
+
+	if s.Action != actionCharge && !lp.GetAlwaysCharge().Active() {
+		// a stop rests on the forecast surplus, which may be too low- the pv loop still
+		// enables on measured surplus. A timer elapsed by a grid-fed slot stops at once.
+		if !lp.enabled && lp.pvTimer.Equal(elapsed) {
+			lp.resetPVTimer()
+		}
+
+		lp.log.DEBUG.Println("optimizer: stop, following measured pv surplus")
 		return false, nil
 	}
 
@@ -120,24 +181,6 @@ func (lp *Loadpoint) optimizerCharging(s *types.Suggestion, welcomeCharge bool) 
 	}
 
 	// always charge keeps its minimum power, the optimizer plans with it
-	if lp.GetAlwaysCharge().Active() {
-		lp.log.DEBUG.Println("optimizer: stop, keeping minimum power")
-		return true, lp.minCharging()
-	}
-
-	// without welcome charge the vehicle never reports identity and soc, leaving
-	// it unmodelled- the optimizer would then keep asking to stop
-	if welcomeCharge {
-		lp.log.DEBUG.Println("optimizer: stop, welcome charge")
-		lp.resetPVTimer()
-		return true, lp.setLimit(lp.effectiveMinCurrent())
-	}
-
-	if lp.vehicleClimateActive() {
-		lp.log.DEBUG.Println("optimizer: stop, climate active")
-		return true, lp.setLimit(lp.effectiveMinCurrent())
-	}
-
-	lp.log.DEBUG.Println("optimizer: stop")
-	return true, lp.setLimit(0)
+	lp.log.DEBUG.Println("optimizer: stop, keeping minimum power")
+	return true, lp.minCharging()
 }
