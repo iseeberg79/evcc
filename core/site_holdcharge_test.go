@@ -2,7 +2,6 @@ package core
 
 import (
 	"testing"
-	"time"
 
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/types"
@@ -90,83 +89,6 @@ func TestHoldChargeMode(t *testing.T) {
 		setBatterySuggestions(site, tc.suggestions)
 		require.Equal(t, tc.want, site.holdChargeMode(), tc.name)
 	}
-}
-
-// TestHoldChargeModeDebounce guards the fix for a degenerate solve near a very
-// short slot briefly suggesting the wrong mode (previously only caught by an
-// ad-hoc trace-logging patch, see evcc_slot0_findings.md): a single flip must
-// not surface, a change that persists past batterySuggestionDebounce must.
-func TestHoldChargeModeDebounce(t *testing.T) {
-	site := &Site{
-		log:           util.NewLogger("foo"),
-		batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, &struct{ api.Meter }{})},
-	}
-
-	setPlan := func(action string) {
-		setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: action}})
-	}
-
-	setPlan(api.BatteryHold.String())
-	require.Equal(t, api.BatteryHold, site.holdChargeMode(), "first suggestion is adopted immediately")
-
-	setPlan(api.BatteryNormal.String())
-	require.Equal(t, api.BatteryHold, site.holdChargeMode(), "single flip is filtered")
-
-	setPlan(api.BatteryHold.String())
-	require.Equal(t, api.BatteryHold, site.holdChargeMode(), "reverting before the debounce elapses leaves no trace")
-
-	setPlan(api.BatteryCharge.String())
-	require.Equal(t, api.BatteryHold, site.holdChargeMode(), "not yet debounced")
-
-	site.batterySuggestionSince = time.Now().Add(-batterySuggestionDebounce - time.Second)
-	require.Equal(t, api.BatteryCharge, site.holdChargeMode(), "adopted once it has held long enough")
-}
-
-// TestHoldChargeModeDebounceResetsWhenPlanUnavailable guards that leaving the
-// plan (optimizer stalled, or requiredBatteryMode takes a different branch)
-// does not let a stale debounce window delay the next real suggestion.
-func TestHoldChargeModeDebounceResetsWhenPlanUnavailable(t *testing.T) {
-	enableAutomatic(t)
-
-	site := &Site{log: util.NewLogger("foo"), batteryMeters: []config.Device[api.Meter]{
-		config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, &struct{ api.Meter }{}),
-	}}
-
-	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryCharge.String()}})
-	require.Equal(t, api.BatteryCharge, site.requiredBatteryMode(false, false, api.Rate{}))
-	site.batteryMode = api.BatteryCharge // simulate updateBatteryMode having applied it
-
-	// plan gone (stalled optimizer): requiredBatteryMode releases the battery
-	// and must reset the debounce, not just leave it unfed
-	site.setSuggestions(nil)
-	require.Equal(t, api.BatteryNormal, site.requiredBatteryMode(false, false, api.Rate{}))
-	site.batteryMode = api.BatteryNormal
-
-	// a fresh, different suggestion is adopted immediately, not held to the
-	// debounce window left over from before the stall
-	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
-	require.Equal(t, api.BatteryHold, site.requiredBatteryMode(false, false, api.Rate{}))
-}
-
-// TestHoldChargeModeDebounceFiltersRealDegenerateSolve replays the exact
-// mode transition of a captured optimizer response (dt[0]=1s, right at a
-// 15min boundary): slotSuggestion on that slot alone does flip to normal
-// (charging_power=0.0068433, no grid flow), the very next slot's suggestion
-// was hold (matches what was actually observed live).
-func TestHoldChargeModeDebounceFiltersRealDegenerateSolve(t *testing.T) {
-	site := &Site{
-		log:           util.NewLogger("foo"),
-		batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, &struct{ api.Meter }{})},
-	}
-
-	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
-	require.Equal(t, api.BatteryHold, site.holdChargeMode())
-
-	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryNormal.String()}})
-	require.Equal(t, api.BatteryHold, site.holdChargeMode(), "the one-off normal must not surface")
-
-	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}})
-	require.Equal(t, api.BatteryHold, site.holdChargeMode())
 }
 
 func TestHoldChargePlanAvailable(t *testing.T) {

@@ -123,10 +123,6 @@ type Site struct {
 	suggestionActions        map[string]string           // last notified actionable optimizer action by device key
 	lastOptimizerSolve       *optimizerSolve             // last successful solve, reapplied to newer slots by the control cycle
 
-	batterySuggestionPending   api.BatteryMode // last raw holdChargeMode() result
-	batterySuggestionSince     time.Time       // time batterySuggestionPending last changed
-	batterySuggestionConfirmed api.BatteryMode // debounced mode actually returned
-
 	optimizerMu      sync.Mutex // guards optimizer runs
 	optimizerUpdated time.Time  // last optimizer run, guarded by optimizerMu
 
