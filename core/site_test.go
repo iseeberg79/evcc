@@ -233,3 +233,18 @@ func TestRequiredBatteryMode(t *testing.T) {
 		assert.Equal(t, tc.res, res, "expected %s, got %s", tc.res, res)
 	}
 }
+
+func TestSiteUpdateGridMeterImplausiblePower(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	s := newDeleteTestSite(t, ctrl)
+
+	require.NoError(t, s.updateGridMeter())
+	assert.Equal(t, 1e3, s.gridPower)
+
+	m := api.NewMockMeter(ctrl)
+	m.EXPECT().CurrentPower().Return(-1.5e9, nil).AnyTimes()
+	s.gridMeter = config.NewStaticDevice(config.Named{Name: "grid"}, api.Meter(m))
+
+	assert.Error(t, s.updateGridMeter())
+	assert.Equal(t, 1e3, s.gridPower, "implausible reading must not replace grid power")
+}

@@ -44,6 +44,9 @@ import (
 
 const standbyPower = 10 // consider less than 10W as charger in standby
 
+// maxGridPower is the largest grid power in W considered plausible, larger readings are meter glitches
+const maxGridPower = 1e6
+
 // updater abstracts the Loadpoint implementation for testing
 type updater interface {
 	loadpoint.API
@@ -1018,6 +1021,10 @@ func (site *Site) updateGridMeter() error {
 	meter := site.gridMeter.Instance()
 
 	if res, err := backoff.RetryWithData(meter.CurrentPower, modbus.Backoff()); err == nil {
+		if math.Abs(res) > maxGridPower {
+			return fmt.Errorf("grid power: implausible value %.0fW", res)
+		}
+
 		mm.Power = res
 
 		site.Lock()
