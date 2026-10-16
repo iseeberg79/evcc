@@ -60,6 +60,32 @@ func TestMemorySinkForward(t *testing.T) {
 	require.Equal(t, 1500.0, v)
 }
 
+// TestMemoryForwardRoundsForIntSetter verifies that an int control path hands the nested
+// plugin whole units: the stored value is rounded, not truncated, and not passed as a float.
+func TestMemoryForwardRoundsForIntSetter(t *testing.T) {
+	ctx := WithMemoryStore(t.Context())
+
+	sink := memoryFloatSetter(t, ctx, map[string]any{"name": "cap"})
+	fwdP, err := NewMemoryFromConfig(ctx, map[string]any{
+		"name": "cap",
+		"set":  map[string]any{"source": "memory", "name": "out"},
+	})
+	require.NoError(t, err)
+	fwd, err := fwdP.(IntSetter).IntSetter("x")
+	require.NoError(t, err)
+	out := memoryFloatGetter(t, ctx, "out")
+
+	for _, tc := range []struct{ in, want float64 }{
+		{1234.7, 1235}, {1234.2, 1234}, {0.4, 0}, {2500, 2500},
+	} {
+		require.NoError(t, sink(tc.in))
+		require.NoError(t, fwd(4))
+		v, err := out()
+		require.NoError(t, err)
+		require.Equal(t, tc.want, v, "in %v", tc.in)
+	}
+}
+
 // TestMemoryDeviceIsolation verifies that stores scoped to different contexts (i.e.
 // different devices) do not share cells of the same name.
 func TestMemoryDeviceIsolation(t *testing.T) {

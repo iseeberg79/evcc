@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 
 	"github.com/evcc-io/evcc/util"
@@ -142,6 +143,8 @@ func (p *Memory) FloatSetter(param string) (func(float64) error, error) {
 var _ IntSetter = (*Memory)(nil)
 
 // IntSetter mirrors FloatSetter for int-typed control paths (e.g. a batterymode switch).
+// Forwarding goes through the nested IntSetter with the stored value rounded to whole units,
+// so integer-typed targets such as SunSpec percentages are written as such.
 func (p *Memory) IntSetter(param string) (func(int64) error, error) {
 	if p.setConfig == nil {
 		return func(val int64) error {
@@ -150,9 +153,11 @@ func (p *Memory) IntSetter(param string) (func(int64) error, error) {
 		}, nil
 	}
 
-	fwd, err := p.forward(param)
+	set, err := p.setConfig.IntSetter(p.ctx, param)
 	if err != nil {
 		return nil, err
 	}
-	return func(int64) error { return fwd() }, nil
+	return func(int64) error {
+		return set(int64(math.Round(p.store.get(p.name))))
+	}, nil
 }
