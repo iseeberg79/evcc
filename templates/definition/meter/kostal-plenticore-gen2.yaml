@@ -175,6 +175,8 @@ render: |
               encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
       - case: 5 # discharge (forced feed-in arbitrage)
         set:
+          # forced feed-in power, pushed by site into the same powersetpoint cell as the
+          # forced charge (magnitude only): register 1034 is positive for discharging
           source: memory
           name: powersetpoint
           set:
@@ -187,7 +189,7 @@ render: |
   maxchargepowerlimit: # site push target (BatteryChargePowerLimiter); consumed by batterymode case 4
     source: memory
     name: maxchargepowerlimit
-  powersetpoint: # site push target (BatteryPowerSetpointController); consumed by batterymode case 3
+  powersetpoint: # site push target (BatteryPowerSetpointController); consumed by batterymode case 3 and 5
     source: memory
     name: powersetpoint
     {{- if .maxchargepower }}

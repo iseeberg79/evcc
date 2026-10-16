@@ -311,6 +311,19 @@ render: |
             {{- include "modbus-connection" . | indent 10 }}
             id: 1
             value: 124:0:StorCtl_Mod
+        {{- if .maxchargepower }}
+        # forced grid-charge setpoint [W], pushed by site into the powersetpoint cell
+        # (see BatteryPowerSetpointController) and written as a negative percentage of
+        # the nameplate charge power
+        - source: memory
+          name: powersetpoint
+          set:
+            source: sunspec
+            {{- include "modbus-connection" . | indent 10 }}
+            id: 1
+            value: 124:0:OutWRte
+            scale: {{ divf -100 .maxchargepower }} # W to negative %
+        {{- else }}
         - source: const
           value: {{ if .maxchargerate }}-{{ .maxchargerate }}{{ end }} # %
           set:
@@ -318,6 +331,7 @@ render: |
             {{- include "modbus-connection" . | indent 10 }}
             id: 1
             value: 124:0:OutWRte
+        {{- end }}
     - case: 4 # holdcharge
       set:
         source: sequence
@@ -329,6 +343,19 @@ render: |
             {{- include "modbus-connection" . | indent 10 }}
             id: 1
             value: 124:0:StorCtl_Mod
+        {{- if .maxchargepower }}
+        # charge power cap [W], pushed by site into the maxchargepowerlimit cell
+        # (see BatteryChargePowerLimiter) and written as a percentage of the nameplate
+        # charge power. 0 blocks charging, as the static value did.
+        - source: memory
+          name: maxchargepowerlimit
+          set:
+            source: sunspec
+            {{- include "modbus-connection" . | indent 10 }}
+            id: 1
+            value: 124:0:InWRte
+            scale: {{ divf 100 .maxchargepower }} # W to %
+        {{- else }}
         - source: const
           value: 0 # %
           set:
@@ -336,6 +363,7 @@ render: |
             {{- include "modbus-connection" . | indent 10 }}
             id: 1
             value: 124:0:InWRte
+        {{- end }}
     - case: 5 # discharge
       set:
         source: sequence
@@ -347,6 +375,19 @@ render: |
             uri: {{ joinHostPort .host .port }}
             id: 1
             value: 124:0:StorCtl_Mod
+        {{- if .maxchargepower }}
+        # forced feed-in power [W], pushed by site into the powersetpoint cell (magnitude
+        # only) and written as a negative percentage of the nameplate charge power, the
+        # mirror of the forced charge in case 3
+        - source: memory
+          name: powersetpoint
+          set:
+            source: sunspec
+            {{- include "modbus-connection" . | indent 10 }}
+            id: 1
+            value: 124:0:InWRte
+            scale: {{ divf -100 .maxchargepower }} # W to negative %
+        {{- else }}
         - source: const
           value: -100 # %
           set:
@@ -354,6 +395,7 @@ render: |
             uri: {{ joinHostPort .host .port }}
             id: 1
             value: 124:0:InWRte
+        {{- end }}
         - source: const
           value: 100 # %
           set:
@@ -368,5 +410,14 @@ render: |
             uri: {{ joinHostPort .host .port }}
             id: 1
             value: 124:0:StorCtl_Mod
+  maxchargepowerlimit: # site push target (BatteryChargePowerLimiter); consumed by batterymode case 4
+    source: memory
+    name: maxchargepowerlimit
+  powersetpoint: # site push target (BatteryPowerSetpointController); consumed by batterymode case 3 and 5
+    source: memory
+    name: powersetpoint
+    {{- if .maxchargepower }}
+    initial: {{ .maxchargepower }} # W - fallback until the site pushes the first value
+    {{- end }}
   {{- include "battery-params" . }}
   {{- end }}
