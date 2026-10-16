@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -815,8 +816,12 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 		details.DemandDetails = nil
 	}
 
-	if hosted {
-		coarsenHorizon(&req, &details)
+	after, err := coarseSlotsAfter(hosted)
+	if err != nil {
+		site.log.WARN.Println("optimizer:", err)
+	}
+	if after > 0 {
+		coarsenHorizon(&req, &details, after)
 	}
 
 	return req, details, nil
@@ -861,12 +866,18 @@ func (site *Site) optimizerUpdate(battery []types.Measurement) error {
 
 	// publish before the status check so the optimizer page stays available
 	// for diagnosing non-optimal results
-	site.publish("evopt", optimizerResult{
+	result := optimizerResult{
 		Updated: time.Now(),
 		Req:     req,
 		Res:     *resp.JSON200,
 		Details: details,
-	})
+	}
+
+	site.Lock()
+	site.optimizerResult = &result
+	site.Unlock()
+
+	site.publish("evopt", result)
 
 	// feasible results are usable, they are just not proven optimal
 	if status := resp.JSON200.Status; status != optimizer.Optimal && status != optimizer.Feasible {
@@ -1538,14 +1549,30 @@ func asTimestamps(dt []int, now time.Time) []time.Time {
 	return res
 }
 
-// coarseSlotsAfter is where the request switches from quarter hour to clock hour slots: the long
-// horizons are the requests that take the hosted optimizer's slow split path and set its p99.
-const coarseSlotsAfter = 48 * time.Hour
+// defaultCoarseSlotsAfter is where the request switches from quarter hour to clock hour slots: the long
+// horizons are the requests that take the optimizer's slow split path and set the hosted p99.
+const defaultCoarseSlotsAfter = 48 * time.Hour
 
-// coarsenHorizon merges the quarter hour slots beyond coarseSlotsAfter into clock hours. Quarter
-// slots bridge to the first full hour, and a plan goal ends its slot so the departure keeps its
-// time. Energies are summed, prices averaged by duration.
-func coarsenHorizon(req *optimizer.OptimizationInput, details *requestDetails) {
+// coarseSlotsAfter returns where the request switches to clock hour slots. A self-hosted optimizer
+// may move it with OPTIMIZER_COARSEN_AFTER in hours, 0 keeps quarter hour slots for the full horizon.
+func coarseSlotsAfter(hosted bool) (time.Duration, error) {
+	v := os.Getenv("OPTIMIZER_COARSEN_AFTER")
+	if hosted || v == "" {
+		return defaultCoarseSlotsAfter, nil
+	}
+
+	h, err := strconv.Atoi(v)
+	if err != nil || h < 0 {
+		return defaultCoarseSlotsAfter, fmt.Errorf("invalid OPTIMIZER_COARSEN_AFTER %q, using %v", v, defaultCoarseSlotsAfter)
+	}
+
+	return time.Duration(h) * time.Hour, nil
+}
+
+// coarsenHorizon merges the quarter hour slots beyond after into clock hours. Quarter slots bridge
+// to the first full hour, and a plan goal ends its slot so the departure keeps its time. Energies
+// are summed, prices averaged by duration.
+func coarsenHorizon(req *optimizer.OptimizationInput, details *requestDetails, after time.Duration) {
 	dt, ts := req.TimeSeries.Dt, details.Timestamps
 
 	goalEnds := func(i int) bool {
@@ -1556,7 +1583,7 @@ func coarsenHorizon(req *optimizer.OptimizationInput, details *requestDetails) {
 
 	// first slot index of every output slot; hourly latches at the first full hour past the boundary
 	starts := make([]int, 0, len(dt))
-	coarse := ts[0].Add(coarseSlotsAfter)
+	coarse := ts[0].Add(after)
 	var hourly bool
 	for i := range dt {
 		if hourly && ts[i].Minute() != 0 && !goalEnds(i-1) {
