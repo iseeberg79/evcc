@@ -95,10 +95,14 @@ func (site *Site) updateBatteryMode(batteryGridChargeActive, batteryGridDischarg
 		batteryMode = api.BatteryNormal
 	}
 
-	// refresh each battery's charge values in its device-local cell before applying the
-	// mode, so a control path consuming them (batterymode charge/holdcharge case) reads a
-	// fresh value in the same cycle
-	site.updateBatteryChargeValues()
+	// refresh each battery's power values in its device-local cell before applying the
+	// mode, so a control path consuming them (batterymode charge/holdcharge/discharge case)
+	// reads a fresh value in the same cycle
+	mode := batteryMode
+	if mode == api.BatteryUnknown {
+		mode = site.GetBatteryMode()
+	}
+	site.updateBatteryChargeValues(mode)
 
 	// NOTE: applyBatteryMode is always called when charge or discharge mode is active to
 	// validate max soc / min soc reserve
@@ -211,7 +215,7 @@ func (site *Site) holdChargePlanAvailable() bool {
 // single global battery mode that applies to all home batteries. The optimizer already
 // classifies each battery (normal/hold/charge/holdcharge), so we map that action
 // directly instead of re-deriving it from raw charge power. On conflicting suggestions
-// the peak-shaving intent wins: holdcharge > hold > charge > normal. Order-independent
+// the peak-shaving intent wins: holdcharge > hold > charge > discharge > normal. Order-independent
 // (holdcharge short-circuits; the rest only upgrade the priority).
 func (site *Site) holdChargeMode() api.BatteryMode {
 	mode := api.BatteryNormal
@@ -235,8 +239,12 @@ loop:
 				mode = api.BatteryHold
 			}
 		case api.BatteryCharge.String():
-			if mode == api.BatteryNormal {
+			if mode == api.BatteryNormal || mode == api.BatteryDischarge {
 				mode = api.BatteryCharge
+			}
+		case api.BatteryDischarge.String():
+			if mode == api.BatteryNormal {
+				mode = api.BatteryDischarge
 			}
 		}
 	}
@@ -382,19 +390,21 @@ func (site *Site) applyBatteryMode(mode api.BatteryMode) error {
 	return nil
 }
 
-// updateBatteryChargeValues pushes the optimizer's current-slot charge values into each
+// updateBatteryChargeValues pushes the optimizer's current-slot power values into each
 // battery's device-local cell via typed capabilities. The values are consumed by the
-// device's own batterymode control path (charge / holdcharge case) and therefore ride the
-// mode's watchdog/reset lifecycle - on leaving the mode that path stops writing them, so
-// there is no separate lifecycle to unwind here. Pushing unconditionally (not gated on the
+// device's own batterymode control path (charge / holdcharge / discharge case) and therefore
+// ride the mode's watchdog/reset lifecycle - on leaving the mode that path stops writing them,
+// so there is no separate lifecycle to unwind here. Pushing unconditionally (not gated on the
 // current mode) keeps the cell fresh, so the consuming case reads the right value the
 // moment the mode applies.
 //
 // Charge power cap (holdcharge): the raw current-slot suggestion. Power setpoint (forced
-// grid charge): the suggestion, or the battery's own reported max charge power when the
-// optimizer has no current-slot value at all (no optimizer, or plan stale) - not merely
-// because the current-slot suggestion is a deliberate 0 W (hold/holdcharge/normal).
-func (site *Site) updateBatteryChargeValues() {
+// grid charge or forced feed-in, magnitude only): the charge or discharge power of the
+// suggestion, depending on the mode, or the battery's own reported maximum in that direction
+// when the optimizer has no value for it (no optimizer, plan stale, or the mode comes from
+// elsewhere) - not merely because the current-slot suggestion is a deliberate 0 W
+// (hold/holdcharge/normal).
+func (site *Site) updateBatteryChargeValues(mode api.BatteryMode) {
 	automatic := site.Automatic()
 
 	for _, dev := range site.batteryMeters {
@@ -414,14 +424,23 @@ func (site *Site) updateBatteryChargeValues() {
 		}
 
 		if setpointCtrl, ok := api.Cap[api.BatteryPowerSetpointController](instance); ok {
-			watt := suggestion.Charge
-			fallback := suggestion.Action == ""
+			discharge := mode == api.BatteryDischarge
+
+			watt, fallback := suggestion.Charge, suggestion.Action == ""
+			if discharge {
+				watt, fallback = suggestion.Discharge, suggestion.Action != api.BatteryDischarge.String()
+			}
+
 			if fallback {
 				if powerLimiter, ok := api.Cap[api.BatteryPowerLimiter](instance); ok {
-					watt, _ = powerLimiter.GetPowerLimits()
+					maxCharge, maxDischarge := powerLimiter.GetPowerLimits()
+					watt = maxCharge
+					if discharge {
+						watt = maxDischarge
+					}
 				}
 			}
-			site.log.TRACE.Printf("battery %s power setpoint: %.0fW action=%q fallback=%v", deviceTitleOrName(dev), watt, suggestion.Action, fallback)
+			site.log.TRACE.Printf("battery %s power setpoint: %.0fW mode=%s action=%q fallback=%v", deviceTitleOrName(dev), watt, mode, suggestion.Action, fallback)
 			if err := setpointCtrl.SetPowerSetpoint(watt); err != nil && !errors.Is(err, api.ErrNotAvailable) {
 				site.log.ERROR.Printf("battery %s power setpoint: %v", deviceTitleOrName(dev), err)
 			}

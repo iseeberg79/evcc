@@ -112,13 +112,17 @@ func TestUpdateBatteryChargeValues(t *testing.T) {
 
 	for _, tc := range []struct {
 		name             string
+		mode             api.BatteryMode
 		suggestion       *types.Suggestion
 		expectedCap      float64
 		expectedSetpoint float64
 	}{
-		{"suggestion available for both", &types.Suggestion{Action: "charge", Charge: 1234}, 1234, 1234},
-		{"holdcharge: real suggestion, deliberately 0 W - must not fall back", &types.Suggestion{Action: "holdcharge", Charge: 0}, 0, 0},
-		{"no suggestion at all: cap stays 0, setpoint falls back to hardware max", nil, 0, 5000},
+		{"suggestion available for both", api.BatteryCharge, &types.Suggestion{Action: "charge", Charge: 1234}, 1234, 1234},
+		{"holdcharge: real suggestion, deliberately 0 W - must not fall back", api.BatteryHoldCharge, &types.Suggestion{Action: "holdcharge", Charge: 0}, 0, 0},
+		{"no suggestion at all: cap stays 0, setpoint falls back to hardware max charge", api.BatteryCharge, nil, 0, 5000},
+		{"discharge: the planned discharge power is the setpoint", api.BatteryDischarge, &types.Suggestion{Action: "discharge", Discharge: 3000}, 0, 3000},
+		{"discharge without a plan: setpoint falls back to hardware max discharge", api.BatteryDischarge, nil, 0, 4000},
+		{"discharge mode from elsewhere: self-consumption plan is not a feed-in power", api.BatteryDischarge, &types.Suggestion{Action: "normal", Discharge: 800}, 0, 4000},
 	} {
 		t.Logf("%+v", tc)
 
@@ -139,7 +143,7 @@ func TestUpdateBatteryChargeValues(t *testing.T) {
 				return nil
 			}),
 			BatteryPowerLimiter: implement.BatteryPowerLimiter(func() (float64, float64) {
-				return 5000, 5000
+				return 5000, 4000
 			}),
 		}
 
@@ -154,7 +158,7 @@ func TestUpdateBatteryChargeValues(t *testing.T) {
 		}
 		setBatterySuggestions(site, suggestions)
 
-		site.updateBatteryChargeValues()
+		site.updateBatteryChargeValues(tc.mode)
 		assert.Equal(t, tc.expectedCap, pushedCap, "charge power cap")
 		assert.Equal(t, tc.expectedSetpoint, pushedSetpoint, "charge setpoint")
 	}
@@ -180,7 +184,7 @@ func TestUpdateBatteryChargeValuesNotAutomatic(t *testing.T) {
 			return nil
 		}),
 		BatteryPowerLimiter: implement.BatteryPowerLimiter(func() (float64, float64) {
-			return 5000, 5000
+			return 5000, 4000
 		}),
 	}
 
@@ -190,9 +194,9 @@ func TestUpdateBatteryChargeValuesNotAutomatic(t *testing.T) {
 	}
 	setBatterySuggestions(site, map[string]types.Suggestion{"battery1": {Action: "holdcharge", Charge: 1234}})
 
-	site.updateBatteryChargeValues()
+	site.updateBatteryChargeValues(api.BatteryDischarge)
 	assert.Zero(t, pushedCap, "charge power cap")
-	assert.Equal(t, 5000.0, pushedSetpoint, "charge setpoint falls back to hardware max")
+	assert.Equal(t, 4000.0, pushedSetpoint, "setpoint falls back to hardware max discharge, not the advisory suggestion")
 }
 
 // TestUnmodelledCharging guards that a loadpoint the optimizer does not control

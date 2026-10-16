@@ -80,6 +80,10 @@ func TestHoldChargeMode(t *testing.T) {
 		{"empty action (default)", map[string]types.Suggestion{"b": {}}, api.BatteryNormal},
 		{"holdcharge wins over charge", map[string]types.Suggestion{"a": {Action: api.BatteryCharge.String()}, "b": {Action: api.BatteryHoldCharge.String()}}, api.BatteryHoldCharge},
 		{"hold wins over charge", map[string]types.Suggestion{"a": {Action: api.BatteryCharge.String()}, "b": {Action: api.BatteryHold.String()}}, api.BatteryHold},
+		{"discharge action", map[string]types.Suggestion{"b": {Action: api.BatteryDischarge.String()}}, api.BatteryDischarge},
+		{"charge wins over discharge", map[string]types.Suggestion{"a": {Action: api.BatteryDischarge.String()}, "b": {Action: api.BatteryCharge.String()}}, api.BatteryCharge},
+		{"hold wins over discharge", map[string]types.Suggestion{"a": {Action: api.BatteryDischarge.String()}, "b": {Action: api.BatteryHold.String()}}, api.BatteryHold},
+		{"discharge wins over normal", map[string]types.Suggestion{"a": {Action: api.BatteryNormal.String()}, "b": {Action: api.BatteryDischarge.String()}}, api.BatteryDischarge},
 	} {
 		devs := make([]config.Device[api.Meter], 0, len(tc.suggestions))
 		for name := range tc.suggestions {
