@@ -21,7 +21,7 @@ func (i *iBattery) Soc() (float64, error) {
 	return i.battery0()
 }
 
-func BatteryCapacity(batteryCapacity0 func() float64) api.BatteryCapacity {
+func BatteryCapacity(batteryCapacity0 func() (float64, error)) api.BatteryCapacity {
 	if batteryCapacity0 == nil {
 		return nil
 	}
@@ -29,10 +29,10 @@ func BatteryCapacity(batteryCapacity0 func() float64) api.BatteryCapacity {
 }
 
 type iBatteryCapacity struct {
-	batteryCapacity0 func() float64
+	batteryCapacity0 func() (float64, error)
 }
 
-func (i *iBatteryCapacity) Capacity() float64 {
+func (i *iBatteryCapacity) Capacity() (float64, error) {
 	return i.batteryCapacity0()
 }
 
@@ -86,7 +86,7 @@ func (i *iBatteryController) SetBatteryMode(p0 api.BatteryMode) error {
 	return i.batteryController1(p0)
 }
 
-func BatteryPowerLimiter(batteryPowerLimiter0 func() (float64, float64)) api.BatteryPowerLimiter {
+func BatteryPowerLimiter(batteryPowerLimiter0 func() (float64, float64, error)) api.BatteryPowerLimiter {
 	if batteryPowerLimiter0 == nil {
 		return nil
 	}
@@ -94,14 +94,14 @@ func BatteryPowerLimiter(batteryPowerLimiter0 func() (float64, float64)) api.Bat
 }
 
 type iBatteryPowerLimiter struct {
-	batteryPowerLimiter0 func() (float64, float64)
+	batteryPowerLimiter0 func() (float64, float64, error)
 }
 
-func (i *iBatteryPowerLimiter) GetPowerLimits() (float64, float64) {
+func (i *iBatteryPowerLimiter) GetPowerLimits() (float64, float64, error) {
 	return i.batteryPowerLimiter0()
 }
 
-func BatterySocLimiter(batterySocLimiter0 func() (float64, float64)) api.BatterySocLimiter {
+func BatterySocLimiter(batterySocLimiter0 func() (float64, float64, error)) api.BatterySocLimiter {
 	if batterySocLimiter0 == nil {
 		return nil
 	}
@@ -109,10 +109,10 @@ func BatterySocLimiter(batterySocLimiter0 func() (float64, float64)) api.Battery
 }
 
 type iBatterySocLimiter struct {
-	batterySocLimiter0 func() (float64, float64)
+	batterySocLimiter0 func() (float64, float64, error)
 }
 
-func (i *iBatterySocLimiter) GetSocLimits() (float64, float64) {
+func (i *iBatterySocLimiter) GetSocLimits() (float64, float64, error) {
 	return i.batterySocLimiter0()
 }
 
