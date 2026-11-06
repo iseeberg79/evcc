@@ -148,15 +148,15 @@ func (site *Site) requiredBatteryMode(batteryGridChargeActive, batteryGridDischa
 	case site.Automatic() && site.unmodelledCharging(rate):
 		// the suggestion ignores loads the optimizer cannot model as storage;
 		// grid charging cannot drain the battery into them, so only charge passes
-		if site.holdChargePlanAvailable() && site.holdChargeMode() == api.BatteryCharge {
-			res = keepUnlessModified(api.BatteryCharge)
+		if mode, ok := site.batterySuggestionMode(); ok && mode == api.BatteryCharge {
+			res = keepUnlessModified(mode)
 		} else {
 			res = keepUnlessModified(api.BatteryHold)
 		}
 	case site.Automatic():
 		// optimizer decides, replacing grid charge limit and discharge control
-		if site.holdChargePlanAvailable() {
-			res = keepUnlessModified(site.holdChargeMode())
+		if mode, ok := site.batterySuggestionMode(); ok {
+			res = keepUnlessModified(mode)
 		} else if batteryModeModified(batMode) {
 			// no suggestion: release the battery
 			res = api.BatteryNormal
@@ -200,30 +200,9 @@ func (site *Site) unmodelledCharging(rate api.Rate) bool {
 	return false
 }
 
-// holdChargePlanAvailable reports whether a current-slot suggestion exists for any
-// home battery; a stalled optimizer's suggestions are cleared by reapplySuggestions
-// once its cached solve expires, see suggestionMaxAge.
-func (site *Site) holdChargePlanAvailable() bool {
-	for _, dev := range site.batteryMeters {
-		if dev == nil {
-			continue
-		}
-		if site.suggestion(batteryKey(dev.Config().Name), site.GetBatteryMode().String()) != nil {
-			return true
-		}
-	}
-	return false
-}
-
-// holdChargeMode collapses the plan's current-slot per-battery suggestions into the
-// single global battery mode that applies to all home batteries. The optimizer already
-// classifies each battery (normal/hold/charge/holdcharge), so we map that action
-// directly instead of re-deriving it from raw charge power. On conflicting suggestions
-// the peak-shaving intent wins: holdcharge > hold > charge > discharge > normal. Order-independent
-// (holdcharge short-circuits; the rest only upgrade the priority).
-func (site *Site) holdChargeMode() api.BatteryMode {
-	mode := api.BatteryNormal
-loop:
+// batterySuggestionMode returns the optimizer's mode for the first controllable battery.
+// TODO apply per battery once the site tracks more than a single battery mode
+func (site *Site) batterySuggestionMode() (api.BatteryMode, bool) {
 	for _, dev := range site.batteryMeters {
 		if dev == nil {
 			continue
@@ -234,26 +213,17 @@ loop:
 			continue
 		}
 
-		switch s.Action {
-		case api.BatteryHoldCharge.String():
-			mode = api.BatteryHoldCharge
-			break loop
-		case api.BatteryHold.String():
-			if mode != api.BatteryHoldCharge {
-				mode = api.BatteryHold
-			}
-		case api.BatteryCharge.String():
-			if mode == api.BatteryNormal || mode == api.BatteryDischarge {
-				mode = api.BatteryCharge
-			}
-		case api.BatteryDischarge.String():
-			if mode == api.BatteryNormal {
-				mode = api.BatteryDischarge
-			}
+		mode, err := api.BatteryModeString(s.Action)
+		if err != nil {
+			// unknown action, release the battery
+			site.log.DEBUG.Printf("battery %s: cannot apply suggestion %s", deviceTitleOrName(dev), s.Action)
+			return api.BatteryNormal, true
 		}
+
+		return mode, true
 	}
 
-	return mode
+	return api.BatteryUnknown, false
 }
 
 // batterySocLimitReached reports whether the battery has reached the soc bound

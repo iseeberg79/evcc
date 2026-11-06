@@ -67,45 +67,6 @@ func TestRequiredBatteryModeIgnoresPlanWithoutAutomatic(t *testing.T) {
 	require.Equal(t, api.BatteryUnknown.String(), site.requiredBatteryMode(false, false, api.Rate{}).String())
 }
 
-func TestHoldChargeMode(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		suggestions map[string]types.Suggestion
-		want        api.BatteryMode
-	}{
-		{"holdcharge action", map[string]types.Suggestion{"b": {Action: api.BatteryHoldCharge.String()}}, api.BatteryHoldCharge},
-		{"hold action", map[string]types.Suggestion{"b": {Action: api.BatteryHold.String()}}, api.BatteryHold},
-		{"charge action", map[string]types.Suggestion{"b": {Action: api.BatteryCharge.String()}}, api.BatteryCharge},
-		{"normal action", map[string]types.Suggestion{"b": {Action: api.BatteryNormal.String()}}, api.BatteryNormal},
-		{"empty action (default)", map[string]types.Suggestion{"b": {}}, api.BatteryNormal},
-		{"holdcharge wins over charge", map[string]types.Suggestion{"a": {Action: api.BatteryCharge.String()}, "b": {Action: api.BatteryHoldCharge.String()}}, api.BatteryHoldCharge},
-		{"hold wins over charge", map[string]types.Suggestion{"a": {Action: api.BatteryCharge.String()}, "b": {Action: api.BatteryHold.String()}}, api.BatteryHold},
-		{"discharge action", map[string]types.Suggestion{"b": {Action: api.BatteryDischarge.String()}}, api.BatteryDischarge},
-		{"charge wins over discharge", map[string]types.Suggestion{"a": {Action: api.BatteryDischarge.String()}, "b": {Action: api.BatteryCharge.String()}}, api.BatteryCharge},
-		{"hold wins over discharge", map[string]types.Suggestion{"a": {Action: api.BatteryDischarge.String()}, "b": {Action: api.BatteryHold.String()}}, api.BatteryHold},
-		{"discharge wins over normal", map[string]types.Suggestion{"a": {Action: api.BatteryNormal.String()}, "b": {Action: api.BatteryDischarge.String()}}, api.BatteryDischarge},
-	} {
-		devs := make([]config.Device[api.Meter], 0, len(tc.suggestions))
-		for name := range tc.suggestions {
-			devs = append(devs, config.NewStaticDevice[api.Meter](config.Named{Name: name}, &struct{ api.Meter }{}))
-		}
-		site := &Site{batteryMeters: devs}
-		setBatterySuggestions(site, tc.suggestions)
-		require.Equal(t, tc.want, site.holdChargeMode(), tc.name)
-	}
-}
-
-func TestHoldChargePlanAvailable(t *testing.T) {
-	site := &Site{batteryMeters: []config.Device[api.Meter]{config.NewStaticDevice[api.Meter](config.Named{Name: "b"}, &struct{ api.Meter }{})}}
-	require.False(t, site.holdChargePlanAvailable(), "no plan")
-
-	setBatterySuggestions(site, map[string]types.Suggestion{"b": {Charge: 1000}})
-	require.True(t, site.holdChargePlanAvailable(), "fresh plan")
-
-	site.clearSuggestions()
-	require.False(t, site.holdChargePlanAvailable(), "stale plan")
-}
-
 // the slot-boundary lookup itself is covered by TestOptimizerSchedule
 // (core/optimizer_schedule_test.go) - optimizerSchedule.activeSlot is the
 // production mechanism now, this file only exercises the site/battery layer
