@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -67,6 +68,43 @@ func TestFeedInRatesWithoutTariff(t *testing.T) {
 		{Start: grid[0].Start, End: grid[0].End},
 		{Start: grid[1].Start, End: grid[1].End},
 	}, feedInRates(nil, grid))
+}
+
+func TestOptimizerRequestForecastUnavailable(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	tariffWith := func(rr api.Rates, err error) api.Tariff {
+		m := api.NewMockTariff(ctrl)
+		m.EXPECT().Rates().Return(rr, err).AnyTimes()
+		m.EXPECT().Type().Return(api.TariffTypePriceForecast).AnyTimes()
+		return m
+	}
+
+	start := time.Now().Truncate(tariff.SlotDuration)
+	day := make(api.Rates, 96)
+	for i := range day {
+		slot := start.Add(time.Duration(i) * tariff.SlotDuration)
+		day[i] = api.Rate{Start: slot, End: slot.Add(tariff.SlotDuration), Value: 0.3}
+	}
+
+	unavailable := errors.New("503 Service Unavailable")
+
+	for _, tc := range []struct {
+		name    string
+		tariffs tariff.Tariffs
+		err     string
+	}{
+		{"grid", tariff.Tariffs{Grid: tariffWith(nil, unavailable)}, "not enough forecast slots"},
+		{"feedin", tariff.Tariffs{Grid: tariffWith(day, nil), FeedIn: tariffWith(nil, unavailable)}, "not enough forecast slots"},
+		{"solar", tariff.Tariffs{Grid: tariffWith(day, nil), Solar: tariffWith(nil, unavailable)}, "solar forecast unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			site := &Site{tariffs: &tc.tariffs}
+
+			_, _, err := site.optimizerRequest(nil)
+			require.ErrorContains(t, err, tc.err)
+		})
+	}
 }
 
 func TestApplyPrecondition(t *testing.T) {
@@ -145,6 +183,40 @@ func TestApplyPlanGoalEnergy(t *testing.T) {
 		require.Len(t, bat.SGoal, 16)
 		assert.Equal(t, sInitial+11000, lo.Max(bat.SGoal), "s_initial %.0f", sInitial)
 	}
+}
+
+// TestApplyPlanGoalSoc guards that all vehicle plans within the horizon become goals,
+// not only the next one (#35547)
+func TestApplyPlanGoalSoc(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	now := time.Now()
+	first := now.Add(2 * time.Hour)
+
+	vehicle := api.NewMockVehicle(ctrl)
+	vehicle.EXPECT().Capacity().Return(50.0).AnyTimes()
+
+	lp := loadpoint.NewMockAPI(ctrl)
+	lp.EXPECT().GetPlanGoal().Return(50.0, true).AnyTimes()
+	lp.EXPECT().GetVehicle().Return(vehicle).AnyTimes()
+	lp.EXPECT().EffectivePlanTime().Return(first).AnyTimes()
+	lp.EXPECT().GetSocPlanGoals().Return([]loadpoint.PlanGoal{
+		{Time: first, Soc: 50},
+		{Time: now.Add(5 * time.Hour), Soc: 70},
+		{Time: now.Add(6 * time.Hour), Soc: 90},   // above s_max, capped
+		{Time: now.Add(100 * time.Hour), Soc: 90}, // beyond horizon
+		{Time: now.Add(-time.Hour), Soc: 90},      // past
+	}).AnyTimes()
+
+	site := &Site{log: util.NewLogger("foo")}
+
+	bat := optimizer.BatteryConfig{SMax: 40000}
+	site.applyPlanGoal(lp, &bat, 32)
+
+	require.Len(t, bat.SGoal, 32)
+	// goal values in slot order, independent of where applyPlanGoal's clock falls within the slot
+	assert.Equal(t, []float32{25000, 35000, 40000}, lo.Filter(bat.SGoal, func(g float32, _ int) bool { return g > 0 }))
+	assert.Equal(t, float32(40000), bat.SMax, "later goals must not raise s_max")
 }
 
 func TestLoadpointCurrentAction(t *testing.T) {
@@ -707,6 +779,27 @@ func TestOptimizerChargingStrategy(t *testing.T) {
 	assert.Equal(t, "attenuate_grid_peaks", site.GetOptimizerChargingStrategy())
 }
 
+func TestEndOfHorizonValue(t *testing.T) {
+	const eta = 0.9
+
+	for _, tc := range []struct {
+		name      string
+		pN, pE    float32
+		canExport bool
+		want      float32
+	}{
+		{"battery, export below import", 0.3, 0.08, true, 0.3 * eta * 0.99},
+		{"battery, export above import", 0.3, 0.33, true, 0.33 / eta * 1.01},
+		{"vehicle, export below import", 0.3, 0.08, false, 0.3 * eta * 0.99},
+		{"vehicle, export above import", 0.3, 0.33, false, 0.3 * eta * 0.99},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := endOfHorizonValue([]float32{tc.pN, 2 * tc.pN}, []float32{tc.pE, 2 * tc.pE}, eta, tc.canExport)
+			assert.InDelta(t, tc.want, got, 1e-6)
+		})
+	}
+}
+
 func TestGridExportLimit(t *testing.T) {
 	site := &Site{log: util.NewLogger("foo")}
 
@@ -1219,4 +1312,28 @@ func TestCircuitMaxImport(t *testing.T) {
 
 		assert.Equal(t, tc.expected, circuitMaxImport(c), "power %.0f current %.0f", tc.power, tc.current)
 	}
+}
+
+// TestOptimizerRerunAfterBusy verifies that a forced trigger arriving during a run is not dropped
+func TestOptimizerRerunAfterBusy(t *testing.T) {
+	enableAutomatic(t)
+	site := &Site{log: util.NewLogger("foo")}
+
+	// run in progress: forced trigger is remembered, regular one is not
+	site.optimizerMu.Lock()
+	site.optimizerUpdateAsync(false)
+	assert.False(t, site.optimizerRerun.Load())
+	site.optimizerUpdateAsync(true)
+	assert.True(t, site.optimizerRerun.Load())
+
+	// unlock re-runs on its own, despite the closed interval gate
+	last := time.Now().Add(-time.Second)
+	site.optimizerUpdated = last
+	site.optimizerUnlock()
+	assert.Eventually(t, func() bool { return !site.optimizerRerun.Load() }, time.Second, time.Millisecond)
+
+	// the re-run holds the lock from before consuming the trigger until done
+	site.optimizerMu.Lock()
+	defer site.optimizerMu.Unlock()
+	assert.True(t, site.optimizerUpdated.After(last), "pending trigger must bypass interval gate")
 }
