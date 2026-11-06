@@ -272,4 +272,4 @@ replace github.com/enbility/eebus-go => github.com/andig/eebus-go v0.0.0-2026093
 
 replace github.com/enbility/ship-go => github.com/andig/ship-go v0.6.1-0.20261105091126-6d7902ac41a1
 
-replace github.com/evcc-io/optimizer => github.com/iseeberg79/optimizer v0.0.0-20261012221135-526e298e21f7
+replace github.com/evcc-io/optimizer => github.com/iseeberg79/optimizer v0.0.0-20261106205745-62bd7cd82852
