@@ -297,8 +297,8 @@ github.com/insomniacslk/tapo v1.1.0 h1:Z1s1EjtdVi1dWheW/gWEZPvppOPneHEUZ/Naw065v
 github.com/insomniacslk/tapo v1.1.0/go.mod h1:1wuMYu0+alZ4oE4BIzxAwQNveZgbb2tRqiIUwIe7SZE=
 github.com/insomniacslk/xjson v0.0.0-20231023101448-2249e546a131 h1:bVGPuMhjgFtxVdQGfYnFq+EnCqArOAjLNciow/nArwE=
 github.com/insomniacslk/xjson v0.0.0-20231023101448-2249e546a131/go.mod h1:Z4EVr4bVv9LZbbje9xyZEyOLpdCOmCvr5S9BJtrdTfw=
-github.com/iseeberg79/optimizer v0.0.0-20261106205745-62bd7cd82852 h1:50eehBCXyXzyaW4WHjjw4gDelFobuxMfQAcNRq9mI7g=
-github.com/iseeberg79/optimizer v0.0.0-20261106205745-62bd7cd82852/go.mod h1:xpgtmxTi0OUd3PBFwSz6KaA8/CZln9bpiEmN5RBzg1I=
+github.com/iseeberg79/optimizer v0.0.0-20261112213922-04758711e105 h1:Fpu2HCXFQM6iha4kp6fmElJgOczsGxfGa3a8lSVEzfg=
+github.com/iseeberg79/optimizer v0.0.0-20261112213922-04758711e105/go.mod h1:xpgtmxTi0OUd3PBFwSz6KaA8/CZln9bpiEmN5RBzg1I=
 github.com/itchyny/gojq v0.12.20 h1:mvxzKjEJDfeLlPc/15q5Kf6wLtEW2T399BL8xmOd9EQ=
 github.com/itchyny/gojq v0.12.20/go.mod h1:cgT47OXUC/BWCBh9V4LuuTRSwFIJNR5loUyqlzbIJbw=
 github.com/itchyny/timefmt-go v0.1.9 h1:J4j1qMqZbg5jycwT6zIKfRgZ9aqqMxqanaI6Rr9Ezs8=
