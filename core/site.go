@@ -50,6 +50,7 @@ type updater interface {
 	loadpoint.API
 	Update(sitePower, batteryPower float64, consumption, feedin api.Rates, batteryBuffered, batteryStart bool, greenShare float64, effectivePrice, effectiveCo2 *float64, dim *bool)
 	activeSuggestion() *types.Suggestion
+	surplusRegime(*types.Suggestion) bool
 }
 
 var _ site.API = (*Site)(nil)
@@ -1304,8 +1305,9 @@ func (site *Site) loadpointSitePower(lp updater, res sitePowerResult) float64 {
 	}
 
 	// a charge next to planned battery charging gives the battery priority, too: the PV loop
-	// would otherwise take the battery's charge power and invert the optimizer's PV split
-	if suggestion != nil && (suggestion.Action != actionCharge || suggestion.BatteryCharge > suggestionThreshold) && res.state.battery.Power < 0 {
+	// would otherwise take the battery's charge power and invert the optimizer's PV split.
+	// A setpoint only rises to surplus that would be exported, never to the battery's charge.
+	if suggestion != nil && (suggestion.Action != actionCharge || suggestion.BatteryCharge > suggestionThreshold || !lp.surplusRegime(suggestion)) && res.state.battery.Power < 0 {
 		sitePower -= res.state.battery.Power + res.state.excessDCPower
 	}
 

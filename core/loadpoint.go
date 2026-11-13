@@ -2731,7 +2731,7 @@ NO_DIM:
 	case mode == api.ModeSmart:
 		// optimizer decides start/stop and level, replacing the price limits
 		if suggestion != nil {
-			if handled, e := lp.optimizerCharging(suggestion); handled {
+			if handled, e := lp.optimizerCharging(suggestion, sitePower); handled {
 				err = e
 				break
 			}

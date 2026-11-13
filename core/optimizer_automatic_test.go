@@ -230,7 +230,7 @@ func TestOptimizerStopFollowsSurplus(t *testing.T) {
 
 	// disabled: a timer elapsed by a grid-fed slot must not skip the enable delay
 	lp.pvTimer = elapsed
-	handled, err := lp.optimizerCharging(stop)
+	handled, err := lp.optimizerCharging(stop, 0)
 	assert.NoError(t, err)
 	assert.False(t, handled, "stop must leave the decision to the pv loop")
 	assert.True(t, lp.pvTimer.IsZero(), "enable delay must apply")
@@ -238,9 +238,65 @@ func TestOptimizerStopFollowsSurplus(t *testing.T) {
 	// enabled after a grid-fed slot: disable without measured surplus at once
 	lp.enabled = true
 	lp.pvTimer = elapsed
-	handled, _ = lp.optimizerCharging(stop)
+	handled, _ = lp.optimizerCharging(stop, 0)
 	assert.False(t, handled)
 	assert.True(t, lp.pvTimer.Equal(elapsed))
+}
+
+// TestOptimizerSetpointFollowsSurplus covers a setpoint based on a forecast surplus that is
+// too low: measured surplus beyond the planned export raises it instead of being exported
+func TestOptimizerSetpointFollowsSurplus(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		s         types.Suggestion
+		sitePower float64
+		current   float64
+	}{
+		{"battery-fed setpoint", types.Suggestion{Action: actionCharge, Charge: 1380, BatteryDischarge: 200}, -1150, 11},
+		{"capped at max current", types.Suggestion{Action: actionCharge, Charge: 1380, BatteryDischarge: 200}, -5000, maxA},
+		{"planned export", types.Suggestion{Action: actionCharge, Charge: 1380, Grid: -1150, BatteryDischarge: 200}, -1150, minA},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			charger := api.NewMockCharger(ctrl)
+
+			lp := NewLoadpoint(util.NewLogger("foo"), nil)
+			lp.site = &mockSite{automatic: true}
+			lp.vehicle = modelledVehicle(ctrl)
+			lp.charger = charger
+			lp.minCurrent = minA
+			lp.maxCurrent = maxA
+			lp.phases = 1
+			lp.status = api.StatusC
+			lp.enabled = true
+			lp.offeredCurrent = minA
+			lp.chargePower = 1380
+
+			if tc.current != minA {
+				charger.EXPECT().MaxCurrent(int64(tc.current))
+			}
+
+			handled, err := lp.optimizerCharging(&tc.s, tc.sitePower)
+			assert.True(t, handled)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.current, lp.offeredCurrent)
+		})
+	}
+}
+
+// TestOptimizerSetpointBatteryPriority covers a setpoint next to a charging battery: it only
+// rises to surplus that would be exported, the battery keeps its charge power
+func TestOptimizerSetpointBatteryPriority(t *testing.T) {
+	lp := NewLoadpoint(util.NewLogger("foo"), nil)
+	lp.site = &mockSite{automatic: true}
+	lp.vehicle = modelledVehicle(gomock.NewController(t))
+	lp.setSuggestion(&types.Suggestion{Action: actionCharge, Charge: 1380, BatteryDischarge: 200})
+
+	// battery charging 1000W, exporting 500W
+	res := sitePowerResult{state: siteState{battery: types.BatteryState{Power: -1000}}, power: -1500}
+
+	site := &Site{log: util.NewLogger("foo")}
+	assert.Equal(t, -500.0, site.loadpointSitePower(lp, res))
 }
 
 // TestOptimizerPrioritySoc covers the battery priority of a loadpoint the optimizer
@@ -561,7 +617,7 @@ func TestOptimizerPhaseScaleUp(t *testing.T) {
 
 			s := &types.Suggestion{Action: actionCharge, Charge: charge, Grid: charge}
 
-			handled, err := lp.optimizerCharging(s)
+			handled, err := lp.optimizerCharging(s, 0)
 			assert.True(t, handled)
 			assert.NoError(t, err)
 			started := lp.phaseTimer
@@ -569,14 +625,14 @@ func TestOptimizerPhaseScaleUp(t *testing.T) {
 
 			// next cycle keeps the timer
 			clck.Add(time.Minute)
-			_, err = lp.optimizerCharging(s)
+			_, err = lp.optimizerCharging(s, 0)
 			assert.NoError(t, err)
 			assert.Equal(t, started, lp.phaseTimer, "scale up timer must not restart")
 
 			// delay elapsed
 			clck.Add(lp.Enable.Delay)
 			phaseCharger.EXPECT().Phases1p3p(3).Return(nil)
-			_, err = lp.optimizerCharging(s)
+			_, err = lp.optimizerCharging(s, 0)
 			assert.NoError(t, err)
 			assert.Equal(t, 3, lp.GetPhases())
 		})
@@ -900,7 +956,7 @@ func TestOptimizerPhaseGap(t *testing.T) {
 
 			for range 5 {
 				clck.Add(time.Hour) // phase switch and delays elapsed
-				handled, err := lp.optimizerCharging(s)
+				handled, err := lp.optimizerCharging(s, 0)
 				assert.True(t, handled)
 				assert.NoError(t, err)
 			}

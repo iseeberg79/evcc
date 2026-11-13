@@ -201,7 +201,7 @@ func (lp *Loadpoint) surplusRegime(s *types.Suggestion) bool {
 // if the loadpoint is to follow pv surplus instead, leaving current and phases
 // to the regular pv control loop. Otherwise current and phases follow the
 // suggested power, only the level is the optimizer's decision.
-func (lp *Loadpoint) optimizerCharging(s *types.Suggestion) (bool, error) {
+func (lp *Loadpoint) optimizerCharging(s *types.Suggestion, sitePower float64) (bool, error) {
 	if lp.surplusRegime(s) {
 		// the charge power matches the forecast surplus, which only holds on average-
 		// the pv loop tracks the measured one, so its timers must keep running
@@ -244,7 +244,13 @@ func (lp *Loadpoint) optimizerCharging(s *types.Suggestion) (bool, error) {
 	if s.Action == actionCharge {
 		// a limited setpoint, e.g. a minimum demand or a grid import limit
 		if current := grid.PowerToCurrent(s.Charge, lp.ActivePhases()); current >= lp.effectiveMinCurrent() {
-			lp.log.DEBUG.Printf("optimizer: charge (%.0fW)", s.Charge)
+			// the setpoint rests on the forecast: raise it to unplanned export, the battery keeps its charge (loadpointSitePower)
+			if surplus := lp.chargePower - sitePower + min(s.Grid, 0); surplus > s.Charge+suggestionThreshold {
+				lp.log.DEBUG.Printf("optimizer: charge (%.0fW), following measured pv surplus (%.0fW)", s.Charge, surplus)
+				current = grid.PowerToCurrent(surplus, lp.ActivePhases())
+			} else {
+				lp.log.DEBUG.Printf("optimizer: charge (%.0fW)", s.Charge)
+			}
 			return true, lp.setLimit(min(current, lp.effectiveMaxCurrent()))
 		}
 
