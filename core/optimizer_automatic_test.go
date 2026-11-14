@@ -285,18 +285,21 @@ func TestOptimizerSetpointFollowsSurplus(t *testing.T) {
 }
 
 // TestOptimizerSetpointBatteryPriority covers a setpoint next to a charging battery: it only
-// rises to surplus that would be exported, the battery keeps its charge power
+// rises to surplus that would be exported, the battery keeps its entire charge power, planned
+// or not. Capping it to the planned share only applies to the surplus regime.
 func TestOptimizerSetpointBatteryPriority(t *testing.T) {
-	lp := NewLoadpoint(util.NewLogger("foo"), nil)
-	lp.site = &mockSite{automatic: true}
-	lp.vehicle = modelledVehicle(gomock.NewController(t))
-	lp.setSuggestion(&types.Suggestion{Action: actionCharge, Charge: 1380, BatteryDischarge: 200})
-
 	// battery charging 1000W, exporting 500W
 	res := sitePowerResult{state: siteState{battery: types.BatteryState{Power: -1000}}, power: -1500}
 
-	site := &Site{log: util.NewLogger("foo")}
-	assert.Equal(t, -500.0, site.loadpointSitePower(lp, res))
+	for _, batCharge := range []float64{0, 400} {
+		lp := NewLoadpoint(util.NewLogger("foo"), nil)
+		lp.site = &mockSite{automatic: true}
+		lp.vehicle = modelledVehicle(gomock.NewController(t))
+		lp.setSuggestion(&types.Suggestion{Action: actionCharge, Charge: 1380, BatteryDischarge: 200, BatteryCharge: batCharge})
+
+		site := &Site{log: util.NewLogger("foo")}
+		assert.Equal(t, -500.0, site.loadpointSitePower(lp, res))
+	}
 }
 
 // TestOptimizerPrioritySoc covers the battery priority of a loadpoint the optimizer
@@ -327,7 +330,7 @@ func TestOptimizerPrioritySoc(t *testing.T) {
 		{"uncontrolled below prioritySoc", false, actionStop, below, 100, 0},
 		// a charge next to planned battery charging gives the battery priority, the vehicle gets the remainder
 		{"charge with planned battery charge", true, actionCharge, above, 0, 1000},
-		{"charge with partial planned battery charge", true, actionCharge, above, 0, 400},
+		{"charge with partial planned battery charge", true, actionCharge, above, -600, 400},
 		{"charge below prioritySoc with planned battery charge", true, actionCharge, below, 0, 1000},
 		{"charge with planned battery charge below threshold", true, actionCharge, above, -1000, suggestionThreshold},
 		// a stop claims the planned charge, a battery charging only what the vehicle leaves over shows no deficit

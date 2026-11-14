@@ -1317,7 +1317,14 @@ func (site *Site) loadpointSitePower(lp updater, res sitePowerResult) float64 {
 	// would otherwise take the battery's charge power and invert the optimizer's PV split.
 	// A setpoint only rises to surplus that would be exported, never to the battery's charge.
 	if suggestion != nil && (suggestion.Action != actionCharge || suggestion.BatteryCharge > suggestionThreshold || !lp.surplusRegime(suggestion)) && res.state.battery.Power < 0 {
-		sitePower -= res.state.battery.Power + res.state.excessDCPower
+		hide := -(res.state.battery.Power + res.state.excessDCPower)
+
+		// only the planned share: a battery charging beyond it would keep the vehicle below its minimum power
+		if lp.surplusRegime(suggestion) {
+			hide = min(hide, suggestion.BatteryCharge)
+		}
+
+		sitePower += hide
 	}
 
 	return sitePower
