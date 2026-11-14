@@ -330,6 +330,10 @@ func TestOptimizerPrioritySoc(t *testing.T) {
 		{"charge with partial planned battery charge", true, actionCharge, above, 0, 400},
 		{"charge below prioritySoc with planned battery charge", true, actionCharge, below, 0, 1000},
 		{"charge with planned battery charge below threshold", true, actionCharge, above, -1000, suggestionThreshold},
+		// a stop claims the planned charge, a battery charging only what the vehicle leaves over shows no deficit
+		{"stop with planned battery charge", true, actionStop, above, 2000, 3000},
+		{"stop below prioritySoc with planned battery charge", true, actionStop, below, 2000, 3000},
+		{"stop while discharging with planned battery charge", true, actionStop, sitePowerResult{state: siteState{battery: types.BatteryState{Power: 500}}, power: 500}, 3500, 3000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			lp := NewLoadpoint(util.NewLogger("foo"), nil)
@@ -339,6 +343,33 @@ func TestOptimizerPrioritySoc(t *testing.T) {
 
 			site := &Site{log: util.NewLogger("foo")}
 			assert.Equal(t, tc.expect, site.loadpointSitePower(lp, tc.res))
+		})
+	}
+}
+
+// TestOptimizerStopExport covers a stop next to export: export beyond the plan shows
+// the battery cannot take its planned charge, the vehicle may take that export
+func TestOptimizerStopExport(t *testing.T) {
+	// 1500W export, battery charging 1000W of planned 3000W
+	exporting := sitePowerResult{state: siteState{gridPower: -1500, battery: types.BatteryState{Power: -1000}}, power: -2500}
+
+	for _, tc := range []struct {
+		name   string
+		grid   float64 // planned site grid flow
+		expect float64
+	}{
+		{"unplanned export", 0, -1000},
+		{"planned export", -1500, 500},
+		{"partly planned export", -500, -500},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lp := NewLoadpoint(util.NewLogger("foo"), nil)
+			lp.site = &mockSite{automatic: true}
+			lp.vehicle = modelledVehicle(gomock.NewController(t))
+			lp.setSuggestion(&types.Suggestion{Action: actionStop, Grid: tc.grid, BatteryCharge: 3000})
+
+			site := &Site{log: util.NewLogger("foo")}
+			assert.Equal(t, tc.expect, site.loadpointSitePower(lp, exporting))
 		})
 	}
 }

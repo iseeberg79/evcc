@@ -1304,6 +1304,15 @@ func (site *Site) loadpointSitePower(lp updater, res sitePowerResult) float64 {
 		sitePower += res.priorityAdjustment
 	}
 
+	// a stop gives the battery priority: hide its planned charge, not only the measured one.
+	// A battery charging what the vehicle leaves over shows no deficit, the vehicle would keep it.
+	// Export beyond the plan shows the battery cannot take more, the vehicle may have that.
+	if suggestion != nil && suggestion.Action != actionCharge {
+		charge := max(0, -(res.state.battery.Power + res.state.excessDCPower))
+		unplanned := max(0, -res.state.gridPower-max(0, -suggestion.Grid))
+		return sitePower + max(charge, suggestion.BatteryCharge-unplanned)
+	}
+
 	// a charge next to planned battery charging gives the battery priority, too: the PV loop
 	// would otherwise take the battery's charge power and invert the optimizer's PV split.
 	// A setpoint only rises to surplus that would be exported, never to the battery's charge.
