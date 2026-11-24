@@ -1,21 +1,21 @@
 <template>
 	<div class="container px-4 safe-area-inset d-flex flex-column">
-		<TopHeader :title="`${$t('energy.title')} 🧪`" />
+		<TopHeader :title="$t('energy.title')" />
 		<div class="row flex-grow-1 d-flex">
 			<main class="col-12 d-flex flex-column">
-				<PeriodHeader ref="header">
+				<PeriodHeader ref="header" :loading="loading">
 					<template #period>
 						<PeriodSelector
-							:period="effectivePeriod"
+							:period="requested.period"
 							:periodOptions="periodOptions"
 							@update:period="changePeriod"
 						/>
 					</template>
 					<template #navigator>
 						<DateNavigator
-							:day="effectiveDay"
-							:month="effectiveMonth"
-							:year="effectiveYear"
+							:day="requested.day"
+							:month="requested.month"
+							:year="requested.year"
 							:startDate="startDate"
 							:showDay="showDayNavigation"
 							:showMonth="showMonthNavigation"
@@ -25,15 +25,29 @@
 					</template>
 				</PeriodHeader>
 
-				<div v-if="!hasData && !loading" class="flex-grow-1 d-flex">
-					<div class="empty-box p-5 text-center">
-						<span class="text-muted">{{ $t("energy.empty") }}</span>
-					</div>
-				</div>
-				<template v-else>
+				<Card
+					v-if="!hasData && !loading"
+					edge-to-edge
+					class="box-pull-out mb-4 text-center text-muted"
+				>
+					<p class="my-5">
+						{{ emptyDescription }}
+						<button
+							v-if="!isCurrentSpan"
+							type="button"
+							class="btn btn-link btn-sm text-muted d-block mx-auto mt-2"
+							@click="showCurrent"
+						>
+							{{ $t("energy.empty.showCurrent") }}
+						</button>
+					</p>
+				</Card>
+				<div v-else :class="{ stale }" :aria-busy="loading">
 					<Summary
-						v-if="hasSummary"
-						:has-battery="batteries.length > 0"
+						v-if="showSummary"
+						:pending="cold"
+						:has-pv="framePv"
+						:has-battery="summaryHasBattery"
 						:has-price-tariff="hasPriceTariff"
 						:has-co2-tariff="hasCo2Tariff"
 						:autarky="autarky"
@@ -49,7 +63,7 @@
 						:title="overviewTitle"
 						edge-to-edge
 						class="box-pull-out mb-4"
-						data-testid="energy-flow"
+						:label="$t('energy.flow.overview')"
 						data-anchor
 					>
 						<template #actions>
@@ -71,7 +85,8 @@
 								<div :style="{ height: `${OVERVIEW_HEIGHT}px` }"></div>
 								<LegendList class="mt-4" :legends="stackLegends" />
 							</div>
-							<FlowChart :flows="flowChartFlows" />
+							<div v-if="cold" class="skeleton-chart"></div>
+							<FlowChart v-else :flows="flowChartFlows" />
 						</div>
 						<template v-else>
 							<GroupChart
@@ -93,276 +108,308 @@
 							<LegendList class="mt-4" :legends="stackLegends" />
 						</template>
 					</Card>
-				</template>
-				<Card
-					v-if="hasGrid"
-					:title="$t('energy.grid.title')"
-					edge-to-edge
-					class="box-pull-out mb-4"
-					data-testid="energy-grid"
-					data-anchor
-				>
-					<template #icon>
-						<shopicon-regular-powersupply></shopicon-regular-powersupply>
+					<template v-if="cold">
+						<Card
+							v-for="card in frameCards"
+							:key="card.key"
+							:title="card.title"
+							edge-to-edge
+							class="box-pull-out mb-4"
+						>
+							<template #icon>
+								<component :is="card.icon" v-if="card.icon" />
+								<VehicleIcon v-else name="heater" />
+							</template>
+							<template #stats>
+								<StatRow :stats="card.stats" inline />
+							</template>
+							<GroupChart
+								:group="card.key"
+								color=""
+								:height="card.height"
+								:period="effectivePeriod"
+								:from="from"
+								:to="to"
+							/>
+							<!-- the legend's line -->
+							<div class="mt-4"><span class="skeleton-value"></span></div>
+						</Card>
 					</template>
-					<template #stats>
-						<GridStats
-							:import-energy="gridImport"
-							:export-energy="gridExport"
-							:cost="flow?.cost"
-							:currency="currency"
-							:direction="gridDaily ? gridDirection : undefined"
-							@update:direction="setGridDirection"
-						/>
-					</template>
-					<template v-if="!isDay" #actions>
-						<EntityChartToggle :chart="entityChart" @update:chart="setEntityChart" />
-					</template>
-					<PatternChart
-						v-if="gridDaily"
-						:series="gridDaily"
-						:color="gridDailyColor"
-						:period="effectivePeriod"
-						:from="from"
-						:to="to"
-						:height="gridDailyHeight"
-					/>
-					<GroupChart
-						v-else
-						group="grid"
-						:color="colors.grid || ''"
-						:series="gridSeries"
-						:prices="chartPrices"
-						:currency="currency"
-						:height="200"
-						:period="effectivePeriod"
-						:from="from"
-						:to="to"
-						@slot="drillDown"
-					/>
-					<LegendList class="mt-4" :legends="gridLegends" @focus="focusGridLegend" />
-				</Card>
-				<Card
-					v-if="pvSeries.length"
-					:title="productionTitle"
-					:parent="productionParent"
-					:parent-static="!focusedPvSeries"
-					edge-to-edge
-					class="box-pull-out mb-4"
-					data-testid="energy-production"
-					data-anchor
-					@parent="clearFocusPv"
-				>
-					<template #icon>
-						<shopicon-regular-sun></shopicon-regular-sun>
-					</template>
-					<template #stats>
-						<StatRow
-							:stats="productionStats"
-							inline
-							:selected="forecastSelected"
-							@select="toggleForecastGap"
-						/>
-					</template>
-					<template v-if="!isDay" #actions>
-						<EntityChartToggle :chart="entityChart" @update:chart="setEntityChart" />
-					</template>
-					<PatternChart
-						v-if="pvDaily"
-						:series="pvDaily"
-						:color="groupColor('pv')"
-						:period="effectivePeriod"
-						:from="from"
-						:to="to"
-						:height="260"
-					/>
-					<GroupChart
-						v-else
-						group="pv"
-						:color="groupColor('pv')"
-						:series="pvSeries"
-						:overlay="forecastSeries"
-						:overlay-color="groupColor('forecast')"
-						:overlay-label="$t('energy.group.forecast')"
-						:show-overlay="hasForecast && focusedPv === null"
-						:overlay-gap="showForecastGap"
-						:height="260"
-						:focused-entity="focusedPv"
-						:period="effectivePeriod"
-						:from="from"
-						:to="to"
-						@slot="drillDown"
-					/>
-					<LegendList
-						v-if="productionLegends.length"
-						class="mt-4"
-						:legends="productionLegends"
-						@focus="toggleFocusPv"
-					/>
-				</Card>
-				<EntityGroup
-					v-if="batteries.length"
-					group="battery"
-					:title="$t('energy.group.battery')"
-					:entities="batteries"
-					:colors="batteryColors"
-					:daily="batteryDaily"
-					:period="effectivePeriod"
-					:from="from"
-					:to="to"
-					:chart="entityChart"
-					:direction="batteryDirection"
-					data-testid="energy-battery"
-					@update:chart="setEntityChart"
-					@update:direction="setBatteryDirection"
-					@drill="drillDown"
-				>
-					<template #icon>
-						<shopicon-regular-batterythreequarters></shopicon-regular-batterythreequarters>
-					</template>
-				</EntityGroup>
-				<EntityGroup
-					v-for="lps in loadpointGroups"
-					:key="lps.key"
-					group="loadpoint"
-					:title="lps.title"
-					:entities="lps.entities"
-					:colors="loadpointColors"
-					:device-colors="deviceColors"
-					:flows="flow?.entities"
-					:flow-sources="flowSources"
-					:daily="loadpointDaily"
-					:period="effectivePeriod"
-					:from="from"
-					:to="to"
-					:currency="currency"
-					:chart="entityChart"
-					:data-testid="`energy-${lps.key}`"
-					@update:chart="setEntityChart"
-					@drill="drillDown"
-					@sources="showSources"
-					@sources-change="refreshSources"
-				>
-					<template #icon>
-						<LoadpointIcon v-if="lps.key === 'charging'" />
-						<VehicleIcon v-else name="heater" />
-					</template>
-				</EntityGroup>
-				<Card
-					v-if="consumers.length"
-					:title="consumer ? '' : $t('energy.group.consumer')"
-					edge-to-edge
-					class="box-pull-out mb-4"
-					data-testid="energy-consumers"
-					data-anchor="consumers"
-				>
-					<template #icon><shopicon-regular-home></shopicon-regular-home></template>
-					<template v-if="!consumer" #actions>
-						<IconSelectGroup>
-							<IconSelectItem
-								v-for="option in consumerViewOptions"
-								:key="option.value"
-								:active="consumerView === option.value"
-								:title="option.name"
-								@click="setConsumerView(option.value)"
-							>
-								<component :is="option.icon" />
-							</IconSelectItem>
-						</IconSelectGroup>
-					</template>
-					<template v-if="!consumer" #stats>
-						<StatRow :stats="consumersStats" inline />
-					</template>
-					<template v-if="!consumer" #ring>
-						<SourcesButton :rows="homeSources" @click="showHomeSources" />
-					</template>
-					<ConsumerTreemap
-						:consumers="consumers"
-						:others="others"
-						:device-colors="deviceColors"
-						:others-cost="othersCost"
-						:currency="currency"
-						:selected="consumer"
-						@select="selectConsumer"
+					<Card
+						v-if="hasGrid"
+						:title="$t('energy.grid.title')"
+						edge-to-edge
+						class="box-pull-out mb-4"
+						data-anchor
 					>
-						<template v-if="consumer" #chart>
-							<EntityDetail
-								data-testid="consumer-detail"
-								:parent="$t('energy.group.consumer')"
-								:pickable="consumerPickable"
-								:device-color="deviceColors[consumerTitle] || ''"
-								sink="home"
-								:flows="consumerFlows"
-								:title="consumerTitle"
-								:color="consumerColor"
-								:series="consumerSeries ?? undefined"
-								:period="effectivePeriod"
-								:from="from"
-								:to="to"
-								:currency="currency"
-								:daily="consumerDaily ?? undefined"
-								:chart="entityChart"
-								:flow-sources="flowSources"
-								@update:chart="setEntityChart"
-								@drill="drillDown"
-								@sources="showSources"
-								@sources-change="refreshSources"
-								@close="selectConsumer(null)"
-							>
-								<template #icon>
-									<shopicon-regular-home></shopicon-regular-home>
-								</template>
-							</EntityDetail>
+						<template #icon>
+							<shopicon-regular-powersupply></shopicon-regular-powersupply>
 						</template>
-						<template v-else-if="consumerView === CONSUMER_VIEW.RIVER" #chart>
-							<ConsumerRiver
-								:layers="riverLayers"
-								:selected="consumer"
-								:period="effectivePeriod"
-								:from="from"
-								:to="to"
-								@select="selectConsumer"
+						<template #stats>
+							<GridStats
+								:import-energy="gridImport"
+								:export-energy="gridExport"
+								:cost="flow?.cost"
+								:currency="currency"
+								:direction="gridDaily ? gridDirection : undefined"
+								@update:direction="setGridDirection"
 							/>
 						</template>
-					</ConsumerTreemap>
-				</Card>
-				<!-- no individual consumers: the house consumption alone, nothing to break down -->
-				<Card
-					v-else-if="homeEnergy > 0"
-					edge-to-edge
-					class="box-pull-out mb-4"
-					data-testid="energy-consumers"
-					data-anchor="consumers"
-				>
-					<EntityDetail
-						sink="home"
-						:flows="consumerFlows"
-						:title="consumerTitle"
-						:color="consumerColor"
-						:series="consumerSeries ?? undefined"
+						<template v-if="!isDay" #actions>
+							<EntityChartToggle
+								:chart="entityChart"
+								@update:chart="setEntityChart"
+							/>
+						</template>
+						<PatternChart
+							v-if="gridDaily"
+							:series="gridDaily"
+							:color="gridDailyColor"
+							:period="effectivePeriod"
+							:from="from"
+							:to="to"
+							:height="gridDailyHeight"
+						/>
+						<GroupChart
+							v-else
+							group="grid"
+							:color="colors.grid || ''"
+							:series="gridSeries"
+							:upper-label="$t('energy.grid.export')"
+							:lower-label="$t('energy.grid.import')"
+							:prices="chartPrices"
+							:currency="currency"
+							:height="200"
+							:period="effectivePeriod"
+							:from="from"
+							:to="to"
+							@slot="drillDown"
+						/>
+						<LegendList class="mt-4" :legends="gridLegends" @focus="focusGridLegend" />
+					</Card>
+					<Card
+						v-if="pvSeries.length"
+						:title="productionTitle"
+						:parent="productionParent"
+						:parent-static="!focusedPvSeries"
+						edge-to-edge
+						class="box-pull-out mb-4"
+						:label="$t('energy.production.title')"
+						data-anchor
+						@parent="clearFocusPv"
+					>
+						<template #icon>
+							<shopicon-regular-sun></shopicon-regular-sun>
+						</template>
+						<template #stats>
+							<StatRow
+								:stats="productionStats"
+								inline
+								:selected="forecastSelected"
+								@select="toggleForecastGap"
+							/>
+						</template>
+						<template v-if="!isDay" #actions>
+							<EntityChartToggle
+								:chart="entityChart"
+								@update:chart="setEntityChart"
+							/>
+						</template>
+						<PatternChart
+							v-if="pvDaily"
+							:series="pvDaily"
+							:color="groupColor('pv')"
+							:period="effectivePeriod"
+							:from="from"
+							:to="to"
+							:height="260"
+						/>
+						<GroupChart
+							v-else
+							group="pv"
+							:color="groupColor('pv')"
+							:series="pvSeries"
+							:overlay="forecastSeries"
+							:overlay-color="groupColor('forecast')"
+							:overlay-label="$t('energy.group.forecast')"
+							:show-overlay="hasForecast && focusedPv === null"
+							:overlay-gap="showForecastGap"
+							:height="260"
+							:focused-entity="focusedPv"
+							:period="effectivePeriod"
+							:from="from"
+							:to="to"
+							@slot="drillDown"
+						/>
+						<LegendList
+							v-if="productionLegends.length"
+							class="mt-4"
+							:legends="productionLegends"
+							@focus="toggleFocusPv"
+						/>
+					</Card>
+					<EntityGroup
+						v-if="batteries.length"
+						group="battery"
+						:title="$t('energy.group.battery')"
+						:entities="batteries"
+						:colors="batteryColors"
+						:daily="batteryDaily"
+						:period="effectivePeriod"
+						:from="from"
+						:to="to"
+						:chart="entityChart"
+						:direction="batteryDirection"
+						@update:chart="setEntityChart"
+						@update:direction="setBatteryDirection"
+						@drill="drillDown"
+					>
+						<template #icon>
+							<shopicon-regular-batterythreequarters></shopicon-regular-batterythreequarters>
+						</template>
+					</EntityGroup>
+					<EntityGroup
+						v-for="lps in loadpointGroups"
+						:key="lps.key"
+						group="loadpoint"
+						:title="lps.title"
+						:entities="lps.entities"
+						:colors="loadpointColors"
+						:device-colors="deviceColors"
+						:flows="flow?.entities"
+						:flow-sources="flowSources"
+						:daily="loadpointDaily"
 						:period="effectivePeriod"
 						:from="from"
 						:to="to"
 						:currency="currency"
-						:daily="consumerDaily ?? undefined"
 						:chart="entityChart"
-						:flow-sources="flowSources"
 						@update:chart="setEntityChart"
 						@drill="drillDown"
 						@sources="showSources"
 						@sources-change="refreshSources"
+					>
+						<template #icon>
+							<LoadpointIcon v-if="lps.key === 'charging'" />
+							<VehicleIcon v-else name="heater" />
+						</template>
+					</EntityGroup>
+					<Card
+						v-if="consumers.length"
+						:title="consumer ? '' : $t('energy.group.consumer')"
+						edge-to-edge
+						class="box-pull-out mb-4"
+						:label="$t('energy.group.consumer')"
+						data-anchor="consumers"
+					>
+						<template #icon><shopicon-regular-home></shopicon-regular-home></template>
+						<template v-if="!consumer" #actions>
+							<IconSelectGroup>
+								<IconSelectItem
+									v-for="option in consumerViewOptions"
+									:key="option.value"
+									:active="consumerView === option.value"
+									:title="option.name"
+									@click="setConsumerView(option.value)"
+								>
+									<component :is="option.icon" />
+								</IconSelectItem>
+							</IconSelectGroup>
+						</template>
+						<template v-if="!consumer" #stats>
+							<StatRow :stats="consumersStats" inline />
+						</template>
+						<template v-if="!consumer" #ring>
+							<SourcesButton :rows="homeSources" @click="showHomeSources" />
+						</template>
+						<ConsumerTreemap
+							:consumers="consumers"
+							:others="others"
+							:device-colors="deviceColors"
+							:others-cost="othersCost"
+							:currency="currency"
+							:selected="consumer"
+							@select="selectConsumer"
+						>
+							<template v-if="consumer" #chart>
+								<EntityDetail
+									data-testid="consumer-detail"
+									:parent="$t('energy.group.consumer')"
+									:pickable="consumerPickable"
+									:device-color="deviceColors[consumerTitle] || ''"
+									sink="home"
+									:flows="consumerFlows"
+									:title="consumerTitle"
+									:color="consumerColor"
+									:series="consumerSeries ?? undefined"
+									:period="effectivePeriod"
+									:from="from"
+									:to="to"
+									:currency="currency"
+									:daily="consumerDaily ?? undefined"
+									:chart="entityChart"
+									:flow-sources="flowSources"
+									@update:chart="setEntityChart"
+									@drill="drillDown"
+									@sources="showSources"
+									@sources-change="refreshSources"
+									@close="selectConsumer(null)"
+								>
+									<template #icon>
+										<shopicon-regular-home></shopicon-regular-home>
+									</template>
+								</EntityDetail>
+							</template>
+							<template v-else-if="consumerView === CONSUMER_VIEW.RIVER" #chart>
+								<ConsumerRiver
+									:layers="riverLayers"
+									:selected="consumer"
+									:period="effectivePeriod"
+									:from="from"
+									:to="to"
+									@select="selectConsumer"
+								/>
+							</template>
+						</ConsumerTreemap>
+					</Card>
+					<!-- no individual consumers: the house consumption alone, nothing to break down -->
+					<Card
+						v-else-if="homeEnergy > 0"
+						edge-to-edge
+						class="box-pull-out mb-4"
+						:label="$t('energy.group.consumer')"
+						data-anchor="consumers"
+					>
+						<EntityDetail
+							sink="home"
+							:flows="consumerFlows"
+							:title="consumerTitle"
+							:color="consumerColor"
+							:series="consumerSeries ?? undefined"
+							:period="effectivePeriod"
+							:from="from"
+							:to="to"
+							:currency="currency"
+							:daily="consumerDaily ?? undefined"
+							:chart="entityChart"
+							:flow-sources="flowSources"
+							@update:chart="setEntityChart"
+							@drill="drillDown"
+							@sources="showSources"
+							@sources-change="refreshSources"
+						/>
+					</Card>
+					<MetersCard
+						v-if="meters.length"
+						:meters="meters"
+						:colors="meterColors"
+						:device-colors="deviceColors"
+						:period="effectivePeriod"
+						:from="from"
+						:to="to"
+						@drill="drillDown"
 					/>
-				</Card>
-				<MetersCard
-					v-if="meters.length"
-					:meters="meters"
-					:colors="meterColors"
-					:device-colors="deviceColors"
-					:period="effectivePeriod"
-					:from="from"
-					:to="to"
-					@drill="drillDown"
-				/>
+				</div>
 				<SourcesModal
 					ref="sourcesModal"
 					:title="sourcesDetail.title"
@@ -446,6 +493,7 @@ import {
 	type PriceOverlay,
 	type TariffSlot,
 	OTHERS,
+	pendingStat,
 } from "../components/Energy/types";
 import type { DeviceColors, UiSolarDetails } from "@/types/evcc";
 import { CURRENCY } from "@/types/evcc";
@@ -459,6 +507,42 @@ const OVERVIEW_HEIGHT = 300;
 
 function daysInMonth(year: number, month: number) {
 	return new Date(year, month, 0).getDate();
+}
+
+interface Span {
+	period: PERIODS;
+	year: number;
+	month: number;
+	day: number;
+	from: Date;
+	to: Date;
+}
+
+// the route's period with today filling the gaps
+function resolveSpan(period?: PERIODS, y?: number, m?: number, d?: number): Span {
+	const now = new Date();
+	const p = period && ENERGY_PERIODS.includes(period) ? period : PERIODS.DAY;
+	const year = y ?? now.getFullYear();
+	const month = m ?? now.getMonth() + 1;
+	const day = Math.min(d ?? now.getDate(), daysInMonth(year, month));
+	const from =
+		p === PERIODS.DAY
+			? new Date(year, month - 1, day)
+			: p === PERIODS.YEAR
+				? new Date(year, 0, 1)
+				: new Date(year, month - 1, 1);
+	return { period: p, year, month, day, from, to: shiftPeriod(p, from, 1) };
+}
+
+function aggregateOf(period: PERIODS): string {
+	switch (period) {
+		case PERIODS.DAY:
+			return "15m";
+		case PERIODS.MONTH:
+			return "day";
+		default:
+			return "month";
+	}
 }
 
 function shiftPeriod(period: PERIODS, from: Date, offset: number): Date {
@@ -524,6 +608,9 @@ export default defineComponent({
 			CONSUMER_VIEW,
 			OVERVIEW_HEIGHT,
 			loading: false,
+			// the period on screen, follows the route once its data is in: content of the
+			// previous period keeps its own axes until then
+			shown: resolveSpan(this.period, this.year, this.month, this.day),
 			// the scroll position is held until this time, see holdScroll
 			holdUntil: 0,
 			holdStop: null as (() => void) | null,
@@ -553,6 +640,102 @@ export default defineComponent({
 				s.data.some((slot) => slot.energy > 0 || slot.returnEnergy > 0)
 			);
 		},
+		isCurrentSpan(): boolean {
+			const now = new Date();
+			return this.requested.from <= now && now < this.requested.to;
+		},
+		emptyDescription(): string {
+			const key = this.isCurrentSpan ? "descriptionCurrent" : "description";
+			return this.$t(`energy.empty.${key}`);
+		},
+		cold(): boolean {
+			return this.loading && !this.hasData;
+		},
+		stale(): boolean {
+			return this.loading && this.hasData;
+		},
+		framePv(): boolean {
+			return !!store.state.pv?.length;
+		},
+		frameBattery(): boolean {
+			return !!store.state.battery?.devices?.length;
+		},
+		showSummary(): boolean {
+			return this.cold ? this.framePv || this.frameBattery : this.hasSummary;
+		},
+		summaryHasBattery(): boolean {
+			return this.cold ? this.frameBattery : this.batteries.length > 0;
+		},
+		// first load: the cards the configured devices are expected to fill, with the
+		// stats every site with that device gets and a subline where one follows
+		frameCards(): {
+			key: string;
+			title: string;
+			height: number;
+			icon: string;
+			stats: StatItem[];
+		}[] {
+			const { grid, pv, battery, loadpoints = [] } = store.state;
+			const wait = (key: string, label: string, sub = "") =>
+				pendingStat(key, this.$t(label), sub);
+			const cost = this.hasPriceTariff ? "…" : "";
+			const consumed = (label: string) => [
+				wait("energy", label),
+				...(cost ? [wait("cost", "energy.consumers.cost", cost)] : []),
+			];
+			const cards = [
+				{
+					show: !!grid,
+					key: "grid",
+					title: "energy.grid.title",
+					height: 200,
+					icon: "shopicon-regular-powersupply",
+					stats: [
+						wait("gridExport", "energy.direction.grid.returnEnergy", cost),
+						wait("gridImport", "energy.direction.grid.energy", cost),
+					],
+				},
+				{
+					show: !!pv?.length,
+					key: "pv",
+					title: "energy.production.title",
+					height: 260,
+					icon: "shopicon-regular-sun",
+					stats: [
+						wait("energy", "energy.production.produced"),
+						wait("selfConsumed", "energy.production.selfConsumed", "…"),
+					],
+				},
+				{
+					show: !!battery?.devices?.length,
+					key: "battery",
+					title: "energy.group.battery",
+					height: 200,
+					icon: "shopicon-regular-batterythreequarters",
+					stats: [
+						wait("charged", "energy.battery.charged"),
+						wait("discharged", "energy.battery.discharged"),
+					],
+				},
+				{
+					show: loadpoints.some((lp) => !lp.chargerFeatureHeating),
+					key: "charging",
+					title: "energy.flow.charging",
+					height: 200,
+					icon: "LoadpointIcon",
+					stats: consumed("energy.direction.loadpoint.energy"),
+				},
+				{
+					show: loadpoints.some((lp) => lp.chargerFeatureHeating),
+					key: "heating",
+					title: "energy.flow.heating",
+					height: 200,
+					icon: "",
+					stats: consumed("energy.direction.heating.energy"),
+				},
+			];
+			return cards.filter((c) => c.show).map((c) => ({ ...c, title: this.$t(c.title) }));
+		},
 		deviceColors(): DeviceColors {
 			return deviceColorMap(store.state.deviceColors);
 		},
@@ -579,7 +762,7 @@ export default defineComponent({
 			const list: StatItem[] = [
 				{
 					key: "energy",
-					label: this.$t("energy.stat.energy"),
+					label: this.$t("energy.direction.consumer.energy"),
 					number: this.homeEnergy,
 					format: (v: number) => this.fmtKWh(v),
 				},
@@ -985,18 +1168,19 @@ export default defineComponent({
 			const shown = this.gridDaily ? this.gridDirection : null;
 			const pick = (direction: "import" | "export") =>
 				shown ? { focusable: true, focusKey: direction, dim: shown !== direction } : {};
+			// export first, the chart draws it above the baseline
 			const list: Legend[] = [
-				{
-					label: this.$t("energy.grid.import"),
-					color: colors.grid || "",
-					value: this.fmtKWh(this.gridImport),
-					...pick("import"),
-				},
 				{
 					label: this.$t("energy.grid.export"),
 					color: colors.export || "",
 					value: this.fmtKWh(this.gridExport),
 					...pick("export"),
+				},
+				{
+					label: this.$t("energy.grid.import"),
+					color: colors.grid || "",
+					value: this.fmtKWh(this.gridImport),
+					...pick("import"),
 				},
 			];
 			const prices = this.gridPrices;
@@ -1014,20 +1198,20 @@ export default defineComponent({
 				this.isDay || !amount || !energy
 					? range(band)
 					: `ø ${this.fmtPricePerKWh(amount / energy, this.currency)}`;
-			if (prices?.import) {
-				list.push({
-					label: this.$t("energy.grid.importPrice"),
-					color: colors.price || "",
-					value: price(prices.import, cost?.import, cost?.importEnergy),
-					type: "line",
-					dim: !!shown,
-				});
-			}
 			if (prices?.feedin) {
 				list.push({
 					label: this.$t("energy.grid.exportPrice"),
 					color: colors.export || "",
 					value: price(prices.feedin, cost?.export, cost?.exportEnergy),
+					type: "line",
+					dim: !!shown,
+				});
+			}
+			if (prices?.import) {
+				list.push({
+					label: this.$t("energy.grid.importPrice"),
+					color: colors.price || "",
+					value: price(prices.import, cost?.import, cost?.importEnergy),
 					type: "line",
 					dim: !!shown,
 				});
@@ -1121,7 +1305,7 @@ export default defineComponent({
 				case PERIODS.DAY:
 					return 96;
 				case PERIODS.MONTH:
-					return daysInMonth(this.effectiveYear, this.effectiveMonth);
+					return daysInMonth(this.shown.year, this.shown.month);
 				default:
 					return 12;
 			}
@@ -1252,6 +1436,14 @@ export default defineComponent({
 					dim: this.focusedPv !== null,
 				});
 			}
+			if (this.showForecastGap) {
+				list.push({
+					label: this.$t("energy.production.deviation"),
+					color: groupColor("forecast"),
+					value: "",
+					type: "hatched",
+				});
+			}
 			return list;
 		},
 		entityChart(): ENTITY_CHART {
@@ -1272,7 +1464,7 @@ export default defineComponent({
 			const titles = [this.activeConsumer, ...this.loadpoints.map((s) => s.title)].filter(
 				Boolean
 			);
-			return pattern ? `${this.fetchKey}|${titles.join(",")}` : "";
+			return pattern ? `${this.shownKey}|${titles.join(",")}` : "";
 		},
 		// csv of the period's series, same query as the charts
 		downloadHref(): string {
@@ -1285,14 +1477,7 @@ export default defineComponent({
 			return `./api/history/energy?${params.toString()}`;
 		},
 		aggregate(): string {
-			switch (this.effectivePeriod) {
-				case PERIODS.DAY:
-					return "15m";
-				case PERIODS.MONTH:
-					return "day";
-				default:
-					return "month";
-			}
+			return aggregateOf(this.effectivePeriod);
 		},
 		others(): number {
 			return (
@@ -1300,21 +1485,12 @@ export default defineComponent({
 			);
 		},
 
+		// what the route asks for: the header and the next request
+		requested(): Span {
+			return resolveSpan(this.period, this.year, this.month, this.day);
+		},
 		effectivePeriod(): PERIODS {
-			return this.period && ENERGY_PERIODS.includes(this.period)
-				? (this.period as PERIODS)
-				: PERIODS.DAY;
-		},
-		effectiveYear(): number {
-			return this.year ?? new Date().getFullYear();
-		},
-		effectiveMonth(): number {
-			return this.month ?? new Date().getMonth() + 1;
-		},
-		effectiveDay(): number {
-			const fallback = new Date().getDate();
-			const d = this.day ?? fallback;
-			return Math.min(d, daysInMonth(this.effectiveYear, this.effectiveMonth));
+			return this.shown.period;
 		},
 		periodOptions() {
 			return ENERGY_PERIODS.map((value) => ({
@@ -1323,28 +1499,24 @@ export default defineComponent({
 			}));
 		},
 		showDayNavigation(): boolean {
-			return this.effectivePeriod === PERIODS.DAY;
+			return this.requested.period === PERIODS.DAY;
 		},
 		showMonthNavigation(): boolean {
-			return this.effectivePeriod === PERIODS.MONTH;
+			return this.requested.period === PERIODS.MONTH;
 		},
 		showYearNavigation(): boolean {
-			return [PERIODS.MONTH, PERIODS.YEAR].includes(this.effectivePeriod);
+			return [PERIODS.MONTH, PERIODS.YEAR].includes(this.requested.period);
 		},
 		from(): Date {
-			switch (this.effectivePeriod) {
-				case PERIODS.DAY:
-					return new Date(this.effectiveYear, this.effectiveMonth - 1, this.effectiveDay);
-				case PERIODS.YEAR:
-					return new Date(this.effectiveYear, 0, 1);
-				default:
-					return new Date(this.effectiveYear, this.effectiveMonth - 1, 1);
-			}
+			return this.shown.from;
 		},
 		to(): Date {
-			return shiftPeriod(this.effectivePeriod, this.from, 1);
+			return this.shown.to;
 		},
 		fetchKey(): string {
+			return `${this.requested.from.getTime()}|${this.requested.to.getTime()}`;
+		},
+		shownKey(): string {
 			return `${this.from.getTime()}|${this.to.getTime()}`;
 		},
 	},
@@ -1449,14 +1621,16 @@ export default defineComponent({
 		async fetchData() {
 			this.loading = true;
 			const requestKey = this.fetchKey;
+			const span = this.requested;
 			try {
 				const [flow, energy, tariffs] = await Promise.all([
-					this.fetchFlow(this.from, this.to),
-					this.fetchEnergy(this.from, this.to),
-					this.fetchTariffs(this.from, this.to),
+					this.fetchFlow(span.from, span.to),
+					this.fetchEnergy(span.from, span.to, span.period),
+					this.fetchTariffs(span.from, span.to, span.period),
 				]);
 				// a newer request superseded this one
 				if (requestKey !== this.fetchKey) return;
+				this.shown = span;
 				this.flow = flow.data || null;
 				this.series = energy.data || [];
 				this.tariffs = tariffs.data || [];
@@ -1465,6 +1639,13 @@ export default defineComponent({
 				this.prefetchAdjacent();
 			} catch (e) {
 				console.error("Failed to load energy flow", e);
+				// another period failed: its header must not sit above the previous data
+				if (requestKey === this.fetchKey && requestKey !== this.shownKey) {
+					this.shown = span;
+					this.flow = null;
+					this.series = [];
+					this.tariffs = [];
+				}
 			} finally {
 				if (requestKey === this.fetchKey) {
 					this.loading = false;
@@ -1478,21 +1659,21 @@ export default defineComponent({
 				params: { from: from.toISOString(), to: to.toISOString() },
 			});
 		},
-		fetchTariffs(from: Date, to: Date) {
+		fetchTariffs(from: Date, to: Date, period: PERIODS) {
 			return api.get("history/tariffs", {
 				params: {
 					from: from.toISOString(),
 					to: to.toISOString(),
-					aggregate: this.aggregate,
+					aggregate: aggregateOf(period),
 				},
 			});
 		},
-		fetchEnergy(from: Date, to: Date) {
+		fetchEnergy(from: Date, to: Date, period: PERIODS) {
 			return api.get("history/energy", {
 				params: {
 					from: from.toISOString(),
 					to: to.toISOString(),
-					aggregate: this.aggregate,
+					aggregate: aggregateOf(period),
 				},
 			});
 		},
@@ -1613,9 +1794,9 @@ export default defineComponent({
 			};
 			frame = requestAnimationFrame(tick);
 			this.holdStop = stop;
-			// the user takes over
+			// the user takes over. Capture phase: the chart touch gate stops propagation
 			for (const event of ["wheel", "touchstart", "keydown"]) {
-				window.addEventListener(event, stop, { once: true, passive: true });
+				window.addEventListener(event, stop, { once: true, passive: true, capture: true });
 			}
 		},
 		// the card under the sticky header first, then the ones below it. A card that
@@ -1688,7 +1869,8 @@ export default defineComponent({
 				const to = shiftPeriod(this.effectivePeriod, this.from, offset + 1);
 				if (from > new Date() || to <= this.startDate) continue;
 				this.fetchFlow(from, to).catch(() => {});
-				this.fetchEnergy(from, to).catch(() => {});
+				this.fetchEnergy(from, to, this.effectivePeriod).catch(() => {});
+				this.fetchTariffs(from, to, this.effectivePeriod).catch(() => {});
 			}
 		},
 		buildBaseQuery(): Record<string, string | undefined> {
@@ -1703,19 +1885,28 @@ export default defineComponent({
 			query["period"] = newPeriod === PERIODS.DAY ? undefined : newPeriod;
 			const now = new Date();
 			if (newPeriod === PERIODS.DAY) {
-				query["year"] = String(this.effectiveYear);
-				query["month"] = String(this.effectiveMonth);
+				query["year"] = String(this.requested.year);
+				query["month"] = String(this.requested.month);
 				query["day"] = String(this.day ?? now.getDate());
 			} else if (newPeriod === PERIODS.MONTH) {
-				query["year"] = String(this.effectiveYear);
-				query["month"] = String(this.effectiveMonth);
+				query["year"] = String(this.requested.year);
+				query["month"] = String(this.requested.month);
 				delete query["day"];
 			} else {
-				query["year"] = String(this.effectiveYear);
+				query["year"] = String(this.requested.year);
 				delete query["month"];
 				delete query["day"];
 			}
 			this.$router.push({ query });
+		},
+		showCurrent() {
+			const now = new Date();
+			const { period } = this.requested;
+			this.updateDate({
+				year: now.getFullYear(),
+				month: period === PERIODS.YEAR ? undefined : now.getMonth() + 1,
+				day: period === PERIODS.DAY ? now.getDate() : undefined,
+			});
 		},
 		updateDate({ year, month, day }: { year: number; month?: number; day?: number }) {
 			const query = this.buildBaseQuery();
@@ -1723,7 +1914,7 @@ export default defineComponent({
 			if (month !== undefined) query["month"] = String(month);
 			else delete query["month"];
 			if (day !== undefined) query["day"] = String(day);
-			else if (this.effectivePeriod !== PERIODS.DAY) delete query["day"];
+			else if (this.requested.period !== PERIODS.DAY) delete query["day"];
 			this.$router.push({ query });
 		},
 	},

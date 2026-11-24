@@ -74,19 +74,19 @@ test.describe("api", () => {
 
 async function gotoDay(page: Page, year: number, month: number, day: number): Promise<void> {
   await page.goto(`/#/energy?period=day&year=${year}&month=${month}&day=${day}`);
-  await expect(page.getByTestId("energy-flow")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Overview" })).toBeVisible();
 }
 
 async function gotoMonth(page: Page, year: number, month: number): Promise<void> {
   await page.goto(`/#/energy?period=month&year=${year}&month=${month}`);
-  await expect(page.getByTestId("energy-flow")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Overview" })).toBeVisible();
 }
 
 const CARDS: Record<string, string> = {
-  pv: "energy-production",
-  battery: "energy-battery",
-  consumer: "energy-consumers",
-  meter: "energy-meters",
+  pv: "Production",
+  battery: "Battery",
+  consumer: "Consumption",
+  meter: "Additional meters",
 };
 
 // the share of one source in the breakdown behind a sources button
@@ -100,7 +100,7 @@ async function expectSource(page: Page, sources: Locator, source: string, share:
 }
 
 function card(page: Page, group: string): Locator {
-  return page.getByTestId(CARDS[group] ?? "");
+  return page.getByRole("region", { name: CARDS[group] ?? "" });
 }
 
 function chart(page: Page, group: string): Locator {
@@ -108,29 +108,31 @@ function chart(page: Page, group: string): Locator {
 }
 
 // Y-axis labels rendered by echarts: position=right uses text-anchor=start.
-// DOM order: axis name first, then ticks bottom→top (min, ..., max).
+// DOM order: axis name first, then ticks bottom→top (min, ..., max). The rotated
+// lower side label shares the anchor
 async function yAxis(c: Locator): Promise<string[]> {
   const els = c.locator('svg text[text-anchor="start"]');
   await els.first().waitFor();
-  return els.allTextContents();
+  return (await els.allTextContents()).filter((t) => t !== "Discharge");
 }
 
 test.describe("axis and units", () => {
   test("battery ±3 kW, 1 decimal", async ({ page }) => {
     await gotoDay(page, 2026, 4, 3);
+    // discharge below the baseline is positive power
     expect(await yAxis(chart(page, "battery"))).toEqual([
       "kW",
-      "-3.0",
-      "-1.5",
-      "0.0",
-      "1.5",
       "3.0",
+      "1.5",
+      "0.0",
+      "-1.5",
+      "-3.0",
     ]);
   });
 
   test("battery ±6 kW, integer labels", async ({ page }) => {
     await gotoDay(page, 2026, 4, 4);
-    expect(await yAxis(chart(page, "battery"))).toEqual(["kW", "-6", "-3", "0", "3", "6"]);
+    expect(await yAxis(chart(page, "battery"))).toEqual(["kW", "6", "3", "0", "-3", "-6"]);
   });
 
   test("unidirectional axis stays positive", async ({ page }) => {
@@ -147,14 +149,8 @@ test.describe("axis and units", () => {
 
   test("month view uses kWh unit", async ({ page }) => {
     await gotoMonth(page, 2026, 6);
-    expect(await yAxis(chart(page, "battery"))).toEqual([
-      "kWh",
-      "-2.0",
-      "-1.0",
-      "0.0",
-      "1.0",
-      "2.0",
-    ]);
+    // energy amounts, unsigned
+    expect(await yAxis(chart(page, "battery"))).toEqual(["kWh", "2.0", "1.0", "0.0", "1.0", "2.0"]);
   });
 });
 
@@ -311,7 +307,7 @@ test.describe("battery card", () => {
   test("month keeps charge and discharge apart per battery", async ({ page }) => {
     await gotoMonth(page, 2026, 7);
     // one card, a legend row per battery and the sums in the header
-    const battery = page.getByTestId("energy-battery");
+    const battery = page.getByRole("region", { name: "Battery" });
     await expect(battery).toHaveCount(1);
     await expect(battery.getByRole("button", { name: "Battery 6.0 kWh 3.0 kWh" })).toBeVisible();
     const second = battery.getByRole("button", { name: "Battery 2 4.5 kWh 4.5 kWh" });
@@ -365,6 +361,6 @@ test.describe("reconnect", () => {
   test("page still shows content after backend restart", async ({ page }) => {
     await gotoDay(page, 2026, 3, 24);
     await restart();
-    await expect(page.getByTestId("energy-flow")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Overview" })).toBeVisible();
   });
 });

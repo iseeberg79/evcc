@@ -36,7 +36,7 @@ import formatter, { POWER_UNIT } from "@/mixins/formatter";
 import echartsChart from "@/mixins/echartsChart";
 import { PERIODS } from "../Sessions/types";
 import { is12hFormat } from "@/units";
-import { hasColorPicker, isBidirectional } from "./groups";
+import { energyLabel, hasColorPicker, isBidirectional } from "./groups";
 import type { PriceBand, PriceOverlay } from "./types";
 import { CURRENCY } from "@/types/evcc";
 import { energyAxisScale, type EnergyAxisScale } from "@/utils/energyAxis";
@@ -162,6 +162,9 @@ export default defineComponent({
 		},
 		// Peak of stacked per-slot sums, incl. overlay when shown so its line isn't
 		// clipped. Bidirectional: pos/neg separately.
+		hasSlots(): boolean {
+			return this.series.some((s) => s.data.length > 0);
+		},
 		axisPeak(): number {
 			const factor = this.valueFactor;
 			// Stacked groups: sum entities per slot. Unstacked (grid, meter): max per entity.
@@ -227,6 +230,14 @@ export default defineComponent({
 		isBidirectional(): boolean {
 			return isBidirectional(this.group, this.series);
 		},
+		// grid export goes up like the overview's export band, import hangs below
+		mirrored(): boolean {
+			return this.group === "grid";
+		},
+		// day view axis follows the meter convention: grid import and battery discharge are positive
+		powerSign(): number {
+			return this.group === "grid" || this.group === "battery" ? -1 : 1;
+		},
 		// day view: soc or temperature per category from the first visible series carrying it
 		socTempValues(): (number | null)[] | null {
 			if (this.period !== PERIODS.DAY || !this.socTemp) return null;
@@ -245,9 +256,10 @@ export default defineComponent({
 		subPanel(): SubPanel | null {
 			if (!this.socTempValues) return this.pricePanel;
 			const isTemp = this.socTempIsTemp;
+			const source = this.socTempSource ? this.series.indexOf(this.socTempSource) : -1;
 			return socTempPanel(
 				this.socTempValues,
-				this.entryColors[0] || this.color,
+				this.entryColors[source] || this.color,
 				isTemp,
 				(v) => (isTemp ? this.fmtNumber(v, 0, "celsius") : this.fmtPercentage(v))
 			);
@@ -261,12 +273,16 @@ export default defineComponent({
 		sideLabels(): Record<string, unknown>[][] {
 			const has = (key: "energy" | "returnEnergy") =>
 				this.series.some((s) => s.data.some((slot) => slot[key] > 0));
+			const [up, down] = this.upperFirst<"energy" | "returnEnergy">([
+				"energy",
+				"returnEnergy",
+			]);
 			// each area runs from the baseline to its axis end (an infinite value is
 			// clipped to it) and carries its label on the outer corner: at the left edge of
 			// the grid's inset, and shifted along the rotated text
 			// (positive is up) to the chart's own top and bottom
 			return [
-				...(this.upperLabel && has("energy")
+				...(this.upperLabel && has(up)
 					? [
 							[
 								{
@@ -282,7 +298,7 @@ export default defineComponent({
 							],
 						]
 					: []),
-				...(this.lowerLabel && has("returnEnergy")
+				...(this.lowerLabel && has(down)
 					? [
 							[
 								{
@@ -291,7 +307,8 @@ export default defineComponent({
 									label: {
 										position: [-30, "100%"],
 										align: "left",
-										offset: [-17, 0],
+										// a panel below has its own axis labels in the inset
+										offset: [this.subPanel ? 0 : -17, 0],
 									},
 								},
 								{ yAxis: -Infinity },
@@ -446,6 +463,9 @@ export default defineComponent({
 			const slotKey = (start: string) => this.timestampKey(new Date(start).getTime());
 			const radius = 2;
 			const factor = this.valueFactor;
+			const mirror = this.mirrored ? -1 : 1;
+			const capUp = [radius, radius, 0, 0];
+			const capDown = [0, 0, radius, radius];
 
 			const result: Record<string, unknown>[] = [];
 
@@ -639,8 +659,9 @@ export default defineComponent({
 						!this.stackEntities ||
 						topEnergyPerSlot[idx] === i ||
 						this.focusedEntity === stableIdx;
-					if (!isTop) return v;
-					return { value: v, itemStyle: { borderRadius: [radius, radius, 0, 0] } };
+					const value = v * mirror;
+					if (!isTop) return value;
+					return { value, itemStyle: { borderRadius: mirror > 0 ? capUp : capDown } };
 				});
 				const returnEnergyData: (
 					| number
@@ -652,8 +673,9 @@ export default defineComponent({
 						!this.stackEntities ||
 						topReturnEnergyPerSlot[idx] === i ||
 						this.focusedEntity === stableIdx;
-					if (!isBottom) return v;
-					return { value: v, itemStyle: { borderRadius: [0, 0, radius, radius] } };
+					const value = v * mirror;
+					if (!isBottom) return value;
+					return { value, itemStyle: { borderRadius: mirror > 0 ? capDown : capUp } };
 				});
 				result.push({
 					id: `entity-${stableIdx}-${i}-energy`,
@@ -704,20 +726,17 @@ export default defineComponent({
 						id: "overlay-gap",
 						name: this.overlayLabel,
 						data: span((o, sum) => Math.abs(o - sum)),
-						// in place of the bar's upper part or above it. Striped on dark, solid
-						// on light where stripes get lost
-						itemStyle: colors.dark
-							? {
-									color: "transparent",
-									borderRadius: radius,
-									decal: {
-										color: overlayCol,
-										dashArrayX: [1, 0],
-										dashArrayY: [3, 3],
-										rotation: -Math.PI / 4,
-									},
-								}
-							: { color: overlayCol, borderRadius: radius },
+						// in place of the bar's upper part or above it
+						itemStyle: {
+							color: "transparent",
+							borderRadius: radius,
+							decal: {
+								color: overlayCol,
+								dashArrayX: [1, 0],
+								dashArrayY: [2, 1],
+								rotation: -Math.PI / 4,
+							},
+						},
 					}
 				);
 			}
@@ -755,17 +774,13 @@ export default defineComponent({
 				? (t: number) => this.fmtMonthNarrow(new Date(t))
 				: (t: number) => this.fmtMonth(new Date(t), true);
 		},
-		// Column headers for bidirectional tooltips (grid: imported/exported,
-		// battery: charged/discharged, meter: energy/reverse). Null when the group
-		// has no direction labels.
-		directionHeaders(): string[] | null {
-			if (!this.isBidirectional) return null;
-			const energyKey = `energy.direction.${this.group}.energy`;
-			const returnEnergyKey = `energy.direction.${this.group}.returnEnergy`;
-			const energy = this.$t(energyKey);
-			const returnEnergy = this.$t(returnEnergyKey);
-			if (energy === energyKey || returnEnergy === returnEnergyKey) return null;
-			return [String(energy), String(returnEnergy)];
+		// tooltip column headers: the group's energy, per direction when it has two
+		energyHeaders(): string[] {
+			const label = (direction: "energy" | "returnEnergy") =>
+				energyLabel((key) => this.$t(key), this.group, this.series[0]?.isTemp, direction);
+			return this.isBidirectional && !this.singleValue
+				? this.upperFirst([label("energy"), label("returnEnergy")])
+				: [label("energy")];
 		},
 		tooltipDateLabel(): (t: number) => string {
 			if (this.period === PERIODS.DAY) {
@@ -865,50 +880,53 @@ export default defineComponent({
 						const nameByIdx = new Map(
 							this.series.map((s, i) => [s.paletteIndex ?? i, s.title])
 						);
-						const showName = this.series.length > 1 && this.focusedEntity === null;
-
-						// one unit for all rows, based on the largest individual value (not the total)
-						const rowValues = indices.map(
-							(i) => totals.get(i) ?? { energy: 0, returnEnergy: 0 }
-						);
-						const unit = this.getPowerUnit(
-							Math.max(
-								0,
-								...rowValues.flatMap((t) =>
-									this.isBidirectional && !this.singleValue
-										? [t.energy, t.returnEnergy]
-										: [t.energy + t.returnEnergy]
-								)
-							) * 1000
-						);
-						const formatValue = (v: number) => {
-							const watts = Math.abs(v) * 1000;
-							return this.period === PERIODS.DAY
-								? this.fmtW(watts, unit)
-								: this.fmtWh(watts, unit);
-						};
+						const several = this.series.length > 1 && this.focusedEntity === null;
+						const twoCols = this.isBidirectional && !this.singleValue;
+						// bar values are average power in the day view, the tooltip shows energy
+						const factor = this.valueFactor;
+						const withPower = this.period === PERIODS.DAY && !twoCols;
+						const rowValues = indices.map((i) => {
+							const t = totals.get(i) ?? { energy: 0, returnEnergy: 0 };
+							// a single value covers both sides, a sink can draw from above and below
+							const cols = twoCols
+								? this.upperFirst([t.energy, t.returnEnergy])
+								: [t.energy + t.returnEnergy];
+							return cols.map((v) => (v * 1000) / factor);
+						});
+						// one unit per column kind, based on the largest row value (not the total)
+						const peak = Math.max(0, ...rowValues.flat());
+						const energyUnit = this.getPowerUnit(peak);
+						const powerUnit = this.getPowerUnit(peak * factor);
+						const cells = (wh: number[]) => [
+							...wh.map((v) => this.fmtWh(v, energyUnit)),
+							...(withPower ? wh.map((v) => this.fmtW(v * factor, powerUnit)) : []),
+						];
 
 						// the overlay line's value in this slot, e.g. the solar forecast
 						const forecast = params.find((p) => p.seriesId === "overlay")?.value;
-						const rows: TooltipRow[] = indices.map((i, idx) => {
-							const t = rowValues[idx] ?? { energy: 0, returnEnergy: 0 };
-							// a single value covers both sides, a sink can draw from above and below
-							const values =
-								this.isBidirectional && !this.singleValue
-									? [formatValue(t.energy), formatValue(t.returnEnergy)]
-									: [formatValue(t.energy + t.returnEnergy)];
-							return {
-								// the price or forecast row below needs a name column to line up with
-								name: showName
-									? (nameByIdx.get(i) ?? "")
-									: this.prices
-										? this.$t("energy.grid.energy")
-										: forecast != null
-											? this.singleEntityName(this.series[idx]!)
-											: undefined,
-								values,
-							};
-						});
+						const rows: TooltipRow[] = indices.map((i, idx) => ({
+							// more than one row: each needs a name
+							name: several
+								? (nameByIdx.get(i) ?? "")
+								: this.prices
+									? this.$t("energy.grid.energy")
+									: forecast != null
+										? this.singleEntityName(this.series[idx]!)
+										: undefined,
+							values: cells(rowValues[idx] ?? []),
+						}));
+						// soc or temperature of the one entity shown, as its own column
+						const socTempValues = several ? null : this.socTempValues;
+						if (socTempValues) {
+							const socTemp = socTempValues[first.dataIndex];
+							rows[0]?.values.push(
+								socTemp == null
+									? ""
+									: this.socTempIsTemp
+										? this.fmtTemperature(socTemp)
+										: this.fmtPercentage(socTemp)
+							);
+						}
 						// cost or revenue and the price of the slot, per direction
 						const at = (
 							values: (number | null)[] | undefined,
@@ -917,11 +935,24 @@ export default defineComponent({
 							const v = values?.[first.dataIndex];
 							return v == null ? "" : fmt(v);
 						};
+						const sums = (rowValues[0] ?? []).map((_, col) =>
+							rowValues.reduce((acc, row) => acc + (row[col] ?? 0), 0)
+						);
 						if (this.prices) {
+							// its rows are quantities, the power fits in as one more
+							if (this.period === PERIODS.DAY) {
+								rows.push({
+									name: `ø ${this.$t("energy.socTemp.power")}`,
+									values: sums.map((v) => this.fmtW(v * factor, powerUnit)),
+								});
+							}
 							const { import: imported, feedin } = this.prices;
 							const money = (v: number) => this.fmtMoneyWithSymbol(v, this.currency);
 							const price = (v: number) => this.fmtPricePerKWh(v, this.currency);
-							const amounts = [at(imported?.cost, money), at(feedin?.cost, money)];
+							const amounts = this.upperFirst([
+								at(imported?.cost, money),
+								at(feedin?.cost, money),
+							]);
 							if (amounts.some((v) => v !== "")) {
 								rows.push({ name: this.$t("energy.grid.amount"), values: amounts });
 							}
@@ -931,21 +962,16 @@ export default defineComponent({
 									this.period === PERIODS.DAY
 										? this.$t("energy.grid.price")
 										: `ø ${this.$t("energy.grid.price")}`,
-								values: [at(imported?.avg, price), at(feedin?.avg, price)],
+								values: this.upperFirst([
+									at(imported?.avg, price),
+									at(feedin?.avg, price),
+								]),
 							});
 						}
-						if (showName) {
-							const sum = (key: "energy" | "returnEnergy") =>
-								rowValues.reduce((acc, t) => acc + t[key], 0);
+						if (several) {
 							rows.push({
 								name: this.$t("sessions.total"),
-								values:
-									this.isBidirectional && !this.singleValue
-										? [
-												formatValue(sum("energy")),
-												formatValue(sum("returnEnergy")),
-											]
-										: [formatValue(sum("energy") + sum("returnEnergy"))],
+								values: cells(sums),
 								total: true,
 							});
 						}
@@ -953,47 +979,21 @@ export default defineComponent({
 						if (forecast != null) {
 							rows.push({
 								name: this.overlayLabel,
-								values: [formatValue(forecast)],
+								values: cells([(forecast * 1000) / factor]),
 								total: true,
 							});
 						}
-						// one entity with its soc or temperature in the day view: a named row
-						// per value
-						const socTemp = this.socTempValues?.[first.dataIndex];
-						if (socTemp != null && !showName) {
-							const socTempText = this.socTempIsTemp
-								? this.fmtTemperature(socTemp)
-								: this.fmtPercentage(socTemp);
-							const t = rowValues[0] ?? { energy: 0, returnEnergy: 0 };
-							const label = (key: string) => this.$t(`energy.socTemp.${key}`);
-							const named: TooltipRow[] = this.isBidirectional
+						return tooltipTable(head, rows, [
+							...this.energyHeaders,
+							...(withPower ? [`ø ${this.$t("energy.socTemp.power")}`] : []),
+							...(socTempValues
 								? [
-										{
-											name: this.directionHeaders?.[0],
-											values: [formatValue(t.energy)],
-										},
-										{
-											name: this.directionHeaders?.[1],
-											values: [formatValue(t.returnEnergy)],
-										},
+										this.$t(
+											`energy.socTemp.${this.socTempIsTemp ? "temperature" : "soc"}`
+										),
 									]
-								: [
-										{
-											name: label(this.socTempIsTemp ? "used" : "charged"),
-											values: [formatValue(t.energy)],
-										},
-									];
-							named.push({
-								name: label(this.socTempIsTemp ? "temperature" : "soc"),
-								values: [socTempText],
-							});
-							return tooltipTable(head, named);
-						}
-						return tooltipTable(
-							head,
-							rows,
-							this.singleValue ? undefined : (this.directionHeaders ?? undefined)
-						);
+								: []),
+						]);
 					},
 				},
 				xAxis: this.subPanel
@@ -1028,16 +1028,24 @@ export default defineComponent({
 							showMaxLine: true,
 							lineStyle: { color: colors.border || "" },
 						},
-						name: this.unit,
+						// without series the scale is made up, only its lines show
+						name: this.hasSlots ? this.unit : "",
 						...axisNameStyle(),
 						axisLabel: {
+							show: this.hasSlots,
 							color: colors.muted || "",
 							hideOverlap: true,
 							formatter: (v: number): string => {
 								const { unit, digits } = this.axisScale;
+								// longer periods show energy amounts, unsigned
 								return this.period === PERIODS.DAY
-									? this.fmtW(v * 1000, unit, false, digits)
-									: this.fmtWh(v * 1000, unit, false, digits);
+									? this.fmtW(
+											(v * this.powerSign || 0) * 1000,
+											unit,
+											false,
+											digits
+										)
+									: this.fmtWh(Math.abs(v) * 1000, unit, false, digits);
 							},
 						},
 					}),
@@ -1170,6 +1178,10 @@ export default defineComponent({
 			if (this.period === PERIODS.YEAR) return `m${d.getMonth()}`;
 			if (this.period === PERIODS.MONTH) return `d${d.getDate()}`;
 			return `t${d.getHours()}:${d.getMinutes()}`;
+		},
+		// an energy and returnEnergy pair in the order the bars stack, top first
+		upperFirst<T>(pair: [T, T]): [T, T] {
+			return this.mirrored ? [pair[1], pair[0]] : pair;
 		},
 		directionLabel(s: HistorySeries, dir: "energy" | "returnEnergy"): string {
 			const key = `energy.direction.${s.group}.${dir}`;

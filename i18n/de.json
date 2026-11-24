@@ -251,7 +251,7 @@
       "amount": "Anzahl",
       "asleep": "schläft",
       "broker": "Broker",
-      "bucket": "Bucket",
+      "bucket": "Bucket / Datenbank",
       "capacity": "Kapazität",
       "chargeStatus": "Status",
       "chargeStatusA": "nicht verbunden",
@@ -415,6 +415,7 @@
       "change": "Ändern",
       "clear": "Löschen",
       "close": "Schließen",
+      "configured": "Konfiguriert",
       "confirmDisable": "Dieses Gerät deaktivieren? Es wird nach dem nächsten Neustart ignoriert.",
       "confirmEnable": "Dieses Gerät wieder aktivieren?",
       "confirmSave": "Es gibt ungespeicherte Änderungen. Jetzt speichern?",
@@ -426,7 +427,9 @@
       "delete": "Löschen",
       "disable": "Deaktivieren",
       "disabled": "deaktiviert",
-      "dismiss": "Ausblenden",
+      "dismiss": "Ignorieren",
+      "dismissAll": "Alle ignorieren",
+      "dismissed": "Ignoriert",
       "docsLink": "Siehe Dokumentation.",
       "dragHandle": "Verschieben",
       "dragItem": "Verschiebbar: {title}",
@@ -502,7 +505,7 @@
     "influx": {
       "description": "Schreibt Ladedaten und andere Metriken in InfluxDB. Verwende Grafana oder andere Tools, um die Daten zu visualisieren.",
       "descriptionToken": "Siehe die InfluxDB-Dokumentation, um zu erfahren, wie du einen erstellst. https://docs.influxdata.com/influxdb/v2/admin/",
-      "labelBucket": "Bucket",
+      "labelBucket": "Bucket / Datenbank",
       "labelCheckInsecure": "Erlaube unsichere Verbindungen",
       "labelDatabase": "Datenbank",
       "labelInsecure": "Zertifikatsüberprüfung",
@@ -513,7 +516,7 @@
       "labelUser": "Benutzer",
       "title": "InfluxDB",
       "v1Support": "Unterstützung für InfluxDB 1.x?",
-      "v2Support": "Zurück zu InfluxDB 2.x"
+      "v2Support": "Zurück zu InfluxDB 2+"
     },
     "loadpoint": {
       "addCharger": {
@@ -974,7 +977,8 @@
       "manualLogin": "Oder melde dich manuell unter {url} in deinem Browser mit diesen Zugangsdaten an:",
       "noClients": "Noch keine Clients. Niemand kann sich verbinden.",
       "password": "Passwort",
-      "passwordOnce": "Dieses Passwort wird nur einmal angezeigt. QR-Code scannen oder jetzt kopieren. Es wird später nicht mehr angezeigt.",
+      "passwordOnce": "Dieses Passwort wird nur einmal angezeigt. QR-Code scannen, kopieren oder jetzt drucken. Es wird später nicht mehr angezeigt.",
+      "print": "Drucken / PDF",
       "privacy": "Mit der Aktivierung dieser Funktion akzeptierst du unsere {0}.",
       "privacyLink": "Datenschutzerklärung",
       "qrInstall": "Installiere die evcc-App für {ios} oder {android}.",
@@ -1219,7 +1223,9 @@
   },
   "energy": {
     "battery": {
+      "charge": "Ladung",
       "charged": "Geladen",
+      "discharge": "Entladung",
       "discharged": "Entladen"
     },
     "consumers": {
@@ -1236,19 +1242,35 @@
     },
     "direction": {
       "battery": {
-        "energy": "geladen",
-        "returnEnergy": "entladen"
+        "energy": "Geladen",
+        "returnEnergy": "Entladen"
+      },
+      "consumer": {
+        "energy": "Verbraucht"
       },
       "grid": {
-        "energy": "Bezug",
-        "returnEnergy": "Einspeisung"
+        "energy": "Bezogen",
+        "returnEnergy": "Eingespeist"
+      },
+      "heating": {
+        "energy": "Verbraucht"
+      },
+      "loadpoint": {
+        "energy": "Geladen"
       },
       "meter": {
         "energy": "Energie",
         "returnEnergy": "Energie (rückwärts)"
+      },
+      "pv": {
+        "energy": "Erzeugt"
       }
     },
-    "empty": "Keine Energiedaten für diesen Zeitraum verfügbar.",
+    "empty": {
+      "description": "Keine Energiedaten für diesen Zeitraum.",
+      "descriptionCurrent": "Noch keine Energiedaten. Werte erscheinen, sobald die ersten Messungen aufgezeichnet wurden.",
+      "showCurrent": "Aktuellen Zeitraum anzeigen"
+    },
     "flow": {
       "battery": "Batterie",
       "batteryCharge": "Batterieladung",
@@ -1286,16 +1308,16 @@
     },
     "production": {
       "accuracy": "Genauigkeit",
+      "deviation": "Abweichung",
       "produced": "Erzeugt",
       "remainingToday": "heute verbleibend",
       "selfConsumed": "Selbst verbraucht",
       "title": "Erzeugung"
     },
     "socTemp": {
-      "charged": "geladen",
+      "power": "Leistung",
       "soc": "Ladestand",
-      "temperature": "Temperatur",
-      "used": "verbraucht"
+      "temperature": "Temperatur"
     },
     "sources": {
       "battery": "Batterie",
@@ -1314,7 +1336,6 @@
       "co2Saved": "CO₂ gespart",
       "co2SavedTooltip": "Im Vergleich zum Bezug der verbrauchten {energy} aus dem Netz.",
       "configure": "Jetzt einrichten",
-      "energy": "Energie",
       "fromGrid": "{value} aus dem Netz",
       "noCo2": "Keine CO₂-Daten.",
       "noPrice": "Keine Preisdaten.",
@@ -1322,6 +1343,7 @@
       "savingsTooltip": "Im Vergleich zum Bezug der verbrauchten {energy} aus dem Netz.",
       "versus": "{value} statt {reference}"
     },
+    "summary": "Zusammenfassung",
     "title": "Energie"
   },
   "footer": {
@@ -1433,6 +1455,7 @@
     "price": {
       "average": "Durchschnitt",
       "constant": "Preis",
+      "estimate": "Schätzung",
       "lowestHour": "Günstigste Stunde",
       "range": "Bereich"
     },
@@ -1464,6 +1487,7 @@
     "cancel": "Abbrechen",
     "download": "Download",
     "error": "Fehler",
+    "loading": "Lädt",
     "none": "keine",
     "note": "Hinweis:",
     "warning": "Warnung"
@@ -1614,8 +1638,7 @@
         "continuousCo2Description": "Wählt die sauberste unterbrechungsfreie Folge von Zeitfenstern.",
         "continuousPriceDescription": "Wählt die günstigste unterbrechungsfreie Folge von Zeitfenstern.",
         "disabledDescription": "Benötigt einen dynamischen Tarif oder eine CO₂-Vorhersage.",
-        "label": "Optimierung",
-        "optimizerDescription": "Der {optimizer} wählt die günstigsten Zeitfenster. Kann zu mehreren Starts und Stopps führen."
+        "label": "Optimierung"
       },
       "planNumber": "Plan {number}",
       "precondition": {
@@ -1632,7 +1655,8 @@
       "repeatingPlans": "Wiederholende Pläne",
       "selectAll": "Alle wählen",
       "strategy": {
-        "label": "Strategie"
+        "label": "Strategie",
+        "optimizerHint": "Der {optimizer} berücksichtigt die Optimierung noch nicht und wählt immer die günstigsten Zeitfenster. Stelle die automatische Steuerung auf „Hausbatterie“, falls du sie brauchst."
       },
       "time": "Zeit",
       "title": "Plan",
@@ -1914,10 +1938,9 @@
       "title": "Gibt es eine Hausbatterie?"
     },
     "checklist": {
-      "dismiss": "Ausblenden",
       "legacyTariffs": "Veraltete Tarifkonfiguration aktiv.",
-      "progress": "{done} von {total} erledigt",
-      "title": "Einrichtung abschließen"
+      "suggestions": "1 Vorschlag | {count} Vorschläge",
+      "title": "Deine Einrichtung"
     },
     "control": {
       "description": "Beginne mit dem ersten. Weitere lassen sich später auf der Konfigurationsseite ergänzen.",
@@ -2190,7 +2213,6 @@
   "tabBar": {
     "battery": "Batterie",
     "charge": "Laden",
-    "comingSoon": "Diese Seite ist in Arbeit.",
     "energy": "Energie",
     "forecast": "Vorhersage",
     "more": "Mehr",
