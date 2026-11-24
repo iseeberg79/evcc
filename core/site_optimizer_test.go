@@ -677,7 +677,6 @@ func TestBatteryRequestGridModes(t *testing.T) {
 	req, _ := site.batteryRequest(newBatteryDevice(t, api.BatteryNormal, api.BatteryHoldDischarge, api.BatteryCharge), m, nil, 8, 15*time.Minute)
 	assert.True(t, req.ChargeFromGrid)
 	assert.False(t, req.DischargeToGrid, "grid discharge opt-in must not apply to a battery without discharge mode")
-	assert.Equal(t, socDepletionCostLow, req.PrcDplSocLow)
 
 	req, _ = site.batteryRequest(newBatteryDevice(t, api.BatteryNormal, api.BatteryDischarge), m, nil, 8, 15*time.Minute)
 	assert.False(t, req.ChargeFromGrid)

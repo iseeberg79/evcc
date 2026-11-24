@@ -143,11 +143,8 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 		ft = prorate(scaleAndPrune(solarEnergy, site.effectiveSolarScale(), minLen), firstSlotDuration)
 	}
 
-	// attenuate_feedin_peaks/attenuate_grid_peaks level the export profile by withholding
-	// battery charge for a later, bigger peak (the holdcharge suggestion in site_battery.go).
-	// That's only a good trade on a day with enough PV left to actually fill the reservation -
-	// on a poor one it just risks skipping today's safe, unconstrained charge for a peak that
-	// never comes. Downgrade to none instead of gambling on it; see holdChargeYieldSufficient.
+	// attenuate_* withholds charge for a later peak, which only pays on a day with enough PV:
+	// downgrade to none otherwise
 	chargingStrategy := site.GetOptimizerChargingStrategy()
 	switch optimizer.OptimizerStrategyChargingStrategy(chargingStrategy) {
 	case optimizer.OptimizerStrategyChargingStrategyAttenuateFeedinPeaks, optimizer.OptimizerStrategyChargingStrategyAttenuateGridPeaks:
@@ -511,8 +508,6 @@ func (site *Site) batteryRequest(dev config.Device[api.Meter], b types.Measureme
 		bat.SMin = min(bat.SInitial, float32(socToWh(*b.Capacity, minSoc)))
 		bat.SMax = max(bat.SInitial, float32(socToWh(*b.Capacity, maxSoc)))
 	}
-
-	bat.PrcDplSocLow = socDepletionCostLow
 
 	detail := batteryDetail{
 		Type:         batteryTypeBattery,

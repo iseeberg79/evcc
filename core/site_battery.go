@@ -33,12 +33,8 @@ func (site *Site) hasBatteryControl() bool {
 	return false
 }
 
-// allBatteriesHaveChargeCap reports whether every configured battery can have its charge
-// power capped (BatteryChargePowerLimiter). It gates only the self-consumption holdcharge
-// case in slotSuggestion, which needs every battery to follow a capped value: the resulting
-// mode is dispatched site-wide (applyBatteryMode has no per-battery mode concept), so if any
-// battery lacked the cap it would receive the same HoldCharge mode and, without a value push
-// of its own, fall back to an unconditional 0 W block instead of the intended partial cap.
+// allBatteriesHaveChargeCap reports whether every battery can cap its charge power. The mode is
+// dispatched site-wide, so one battery without the cap would block charging instead of capping it.
 func (site *Site) allBatteriesHaveChargeCap() bool {
 	for _, dev := range site.batteryMeters {
 		if dev == nil {
@@ -95,9 +91,7 @@ func (site *Site) updateBatteryMode(batteryGridChargeActive, batteryGridDischarg
 		batteryMode = api.BatteryNormal
 	}
 
-	// refresh each battery's power values in its device-local cell before applying the
-	// mode, so a control path consuming them (batterymode charge/holdcharge/discharge case)
-	// reads a fresh value in the same cycle
+	// refresh the power values before applying the mode so its control path reads them in the same cycle
 	mode := batteryMode
 	if mode == api.BatteryUnknown {
 		mode = site.GetBatteryMode()
@@ -363,20 +357,13 @@ func (site *Site) applyBatteryMode(mode api.BatteryMode) error {
 	return nil
 }
 
-// updateBatteryChargeValues pushes the optimizer's current-slot power values into each
-// battery's device-local cell via typed capabilities. The values are consumed by the
-// device's own batterymode control path (charge / holdcharge / discharge case) and therefore
-// ride the mode's watchdog/reset lifecycle - on leaving the mode that path stops writing them,
-// so there is no separate lifecycle to unwind here. Pushing unconditionally (not gated on the
-// current mode) keeps the cell fresh, so the consuming case reads the right value the
-// moment the mode applies.
+// updateBatteryChargeValues pushes the optimizer's current-slot power values into each battery's
+// device-local cell. The batterymode control path consumes them, so they follow the mode's
+// lifecycle. Pushed regardless of mode so the value is fresh when the mode applies.
 //
-// Charge power cap (holdcharge): the raw current-slot suggestion. Power setpoint (forced
-// grid charge or forced feed-in, magnitude only): the charge or discharge power of the
-// suggestion, depending on the mode, or the battery's own reported maximum in that direction
-// when the optimizer has no value for it (no optimizer, plan stale, or the mode comes from
-// elsewhere) - not merely because the current-slot suggestion is a deliberate 0 W
-// (hold/holdcharge/normal).
+// Charge cap (holdcharge): the current-slot suggestion. Power setpoint (forced grid charge or
+// feed-in): the suggested charge or discharge power, or the battery's own maximum when the
+// optimizer has no value for it (no optimizer, stale plan, foreign mode).
 func (site *Site) updateBatteryChargeValues(mode api.BatteryMode) {
 	automatic := site.Automatic()
 

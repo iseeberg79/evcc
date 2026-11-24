@@ -69,12 +69,6 @@ const (
 	batteryTypeLoadpoint batteryType = "loadpoint"
 	batteryTypeVehicle   batteryType = "vehicle"
 	batteryTypeBattery   batteryType = "battery"
-
-	// socDepletionCostLow is a small reserve-comfort price (€/h) that keeps the home battery off the
-	// low floor: it ramps from zero at 20% soc to full at s_min. Not battery aging, but a soft buffer
-	// for spontaneous loads and forecast deviation. Below the import price, so it never triggers
-	// grid charging by itself and yields to real arbitrage.
-	socDepletionCostLow = float32(0.002)
 )
 
 type batteryDetail struct {

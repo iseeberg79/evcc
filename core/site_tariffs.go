@@ -339,20 +339,12 @@ func percentileOf(values []float64, p float64, minSamples int) (float64, bool) {
 	return s[int(p*float64(len(s)-1))], true
 }
 
-// holdChargeMinYieldFactor is the minimum ratio of today's forecast PV yield to today's
-// forecast consumption required before the optimizer is allowed to withhold battery charge
-// for a later, bigger export peak (attenuate_feedin_peaks / attenuate_grid_peaks). Below
-// it, the day risks turning out too poor in PV to ever fill the reservation - unconstrained
-// charging is the safer default. 150% headroom rather than exact parity leaves margin for
-// the forecast itself being optimistic.
+// holdChargeMinYieldFactor is the minimum ratio of today's PV forecast to consumption for
+// withholding charge (attenuate_*). The margin over parity covers an optimistic forecast.
 const holdChargeMinYieldFactor = 1.5
 
-// holdChargeYieldSufficient reports whether today is forecast to produce enough PV to
-// justify withholding battery charge for a later peak. Re-evaluated on holdChargeYieldCached's
-// TTL (roughly every optimizer cycle), not once a day, so a forecast revision - up or down -
-// is reflected within the day instead of only unwinding once tomorrow's midnight reset comes
-// around. See queryHoldChargeYieldSufficient for how that avoids the naive-recheck trap this
-// used to sidestep by freezing for the whole day.
+// holdChargeYieldSufficient reports whether today's PV forecast justifies withholding charge.
+// Re-evaluated per slot so a forecast revision takes effect within the day.
 func (site *Site) holdChargeYieldSufficient() bool {
 	ok, err := site.holdChargeYieldCached()
 	if err != nil {
@@ -362,18 +354,9 @@ func (site *Site) holdChargeYieldSufficient() bool {
 	return ok
 }
 
-// queryHoldChargeYieldSufficient reads today's forecast solar yield and 30-day home
-// consumption profile and delegates the comparison to holdChargeYieldSufficientFrom.
-//
-// The live solar tariff (tariff.SlotWrapper.Rates) drops slots once they end, so a plain
-// solarEnergy(solar, bod, eod) call would silently shrink to "yield from now on" as the day
-// goes on - the reactive, too-late correction this whole mechanism exists to avoid (a
-// bad-PV-day withhold decision only unwinding once the morning's charging window is already
-// gone). Today's already-elapsed portion is read back from the forecast metrics collector
-// instead: it logs the live forecast for the current slot every cycle (see
-// solarDetails/forecastSlotEnergy), so the history it leaves behind for a past slot is
-// whatever the forecast actually said while that slot was still live - it doesn't shrink
-// away once the slot ends, the way the tariff's own in-memory rates do.
+// queryHoldChargeYieldSufficient compares today's forecast yield to the 30-day consumption profile.
+// The live solar tariff drops elapsed slots, so the elapsed part is read back from the forecast
+// metrics instead, else the check would shrink to "yield from now on" over the day.
 func (site *Site) queryHoldChargeYieldSufficient(bod time.Time) (bool, error) {
 	solar := tariff.Rates(site.GetTariff(api.TariffUsageSolar))
 	if len(solar) == 0 {
@@ -402,11 +385,8 @@ func (site *Site) queryHoldChargeYieldSufficient(bod time.Time) (bool, error) {
 	return holdChargeYieldSufficientFrom(solar, elapsedKWh*1e3, *profile, bod, at), nil
 }
 
-// holdChargeYieldSufficientFrom compares today's total forecast solar yield - elapsedWh (the
-// already-past portion, see queryHoldChargeYieldSufficient) plus the live forecast from at to
-// the following midnight - to holdChargeMinYieldFactor times today's forecast consumption,
-// the same 30-day time-of-day baseline the optimizer request uses for the home profile (see
-// homeProfile).
+// holdChargeYieldSufficientFrom compares today's total forecast yield (elapsed plus live) to the
+// scaled consumption profile.
 func holdChargeYieldSufficientFrom(solar api.Rates, elapsedWh float64, profile [96]float64, bod, at time.Time) bool {
 	pv := elapsedWh + solarEnergy(solar, at, bod.AddDate(0, 0, 1))
 
